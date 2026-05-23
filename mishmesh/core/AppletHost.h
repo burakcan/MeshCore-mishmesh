@@ -1,0 +1,50 @@
+#pragma once
+
+#include <stdint.h>
+#include <mishmesh/core/InputEvent.h>
+#include <mishmesh/core/InputSource.h>
+#include <mishmesh/core/Applet.h>
+#include <mishmesh/core/Canvas.h>
+
+namespace mishmesh {
+
+// The UI runtime: owns a fixed-size applet stack (root at index 0), the input
+// sources, the Canvas, and render scheduling. No allocation after construction.
+class AppletHost {
+public:
+  static const int MAX_STACK = 8;
+  static const int MAX_SOURCES = 4;
+
+  AppletHost(DisplayDriver* display, const AppletContext& ctx);
+
+  void addSource(InputSource* src);
+
+  void setRoot(Applet* root);
+  void push(Applet* a);
+  void pop();
+
+  Applet* foreground() const;
+  int depth() const { return _depth; }
+
+  void dispatch(InputEvent ev);
+  void loop(uint32_t now_ms);
+
+private:
+  void renderIfDue(uint32_t now_ms);
+
+  DisplayDriver* _display;
+  Canvas _canvas;
+  AppletContext _ctx;
+
+  Applet* _stack[MAX_STACK];
+  int _depth;
+
+  InputSource* _sources[MAX_SOURCES];
+  int _nsources;
+
+  uint32_t _next_render_at;
+  bool _has_rendered;
+  bool _dirty;
+};
+
+}  // namespace mishmesh
