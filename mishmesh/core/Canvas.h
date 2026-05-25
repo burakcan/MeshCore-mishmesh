@@ -3,7 +3,11 @@
 #include <stdint.h>
 #include <helpers/ui/DisplayDriver.h>
 
+struct mf_font_s;
+
 namespace mishmesh {
+
+enum class TextAlign { Left, Center, Right };
 
 // A clipped drawing surface over a DisplayDriver: a value type carrying an
 // origin offset, clip bounds, and the current frame time.
@@ -43,6 +47,20 @@ public:
   void textCentered(int cx, int y, const char* str, DisplayDriver::Color c);
 
   int textWidth(const char* str) const;
+
+  // mcufont glyph text. (x,y) is the top-left of the target area; for Center/
+  // Right alignment x is the centre / right edge. Returns the advance width.
+  int textWidth(const mf_font_s* font, const char* str) const;
+  int lineHeight(const mf_font_s* font) const;   // line advance
+  int fontHeight(const mf_font_s* font) const;   // bounding-box height, for centering
+  void drawText(const mf_font_s* font, int x, int y, const char* str,
+                DisplayDriver::Color c, TextAlign align = TextAlign::Left);
+  // Word-wraps within w; returns the y just below the last line.
+  int drawTextWrapped(const mf_font_s* font, int x, int y, int w,
+                      const char* str, DisplayDriver::Color c);
+  // Renders a single glyph (used for icon fonts) at (x,y).
+  void drawGlyph(const mf_font_s* font, int x, int y, uint16_t codepoint,
+                 DisplayDriver::Color c);
 };
 
 }  // namespace mishmesh

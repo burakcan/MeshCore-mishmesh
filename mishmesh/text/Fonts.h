@@ -1,0 +1,39 @@
+#pragma once
+
+#include <stdint.h>
+
+struct mf_font_s;
+
+namespace mishmesh {
+
+// mcufont font handle. Fonts are generated bw atlases (see text/fonts/*.c).
+typedef struct ::mf_font_s Font;
+
+const Font* fontBody();    // Nokia Cellphone FC size 8 — lists, status bar, body
+const Font* fontTitle();   // Nokia Cellphone FC size 16 — screen titles, names
+const Font* fontNum();     // Nokia Cellphone FC size 24, digits/':'/'.' — clock
+const Font* iconFont();    // Pixelarticons 12px - see Icon
+
+// Pixelarticons glyphs in iconFont(). Codepoints assigned by build_icons.py.
+enum class Icon : uint16_t {
+  Home        = 0xE000,
+  Settings    = 0xE001,
+  Clock       = 0xE002,
+  Menu        = 0xE003,
+  User        = 0xE004,
+  Users       = 0xE005,
+  Mail        = 0xE006,
+  Message     = 0xE007,
+  Bell        = 0xE008,
+  Wifi        = 0xE009,
+  BatteryFull = 0xE00A,
+  BatteryLow  = 0xE00B,
+  Warning     = 0xE00C,
+  Back        = 0xE00D,
+  ArrowLeft   = 0xE00E,
+  Reload      = 0xE00F,
+  Power       = 0xE010,
+  Gps         = 0xE011,
+};
+
+}  // namespace mishmesh

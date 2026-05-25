@@ -1,6 +1,7 @@
 #include <mishmesh/applets/HomeApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 
 namespace mishmesh {
@@ -18,15 +19,21 @@ int HomeApplet::onRender(Canvas& c) {
     _bar.setTitle(_app->nodeName());
     _bar.setBattery(_app->batteryMillivolts());
   }
-  _bar.draw(c, 0, 0, w, 12);
+  const int barH = c.fontHeight(fontBody()) + 3;
+  _bar.draw(c, 0, 0, w, barH);
 
   uint32_t t = _app ? _app->epochSeconds() : 0;
   char clock[6];
   snprintf(clock, sizeof(clock), "%02u:%02u",
            (unsigned)((t / 3600) % 24), (unsigned)((t / 60) % 60));
-  c.textCentered(w / 2, h / 2 - 4, clock, DisplayDriver::LIGHT);
+  int ch = c.fontHeight(fontNum());
+  int hintH = _menu ? c.fontHeight(fontBody()) + 2 : 0;
+  c.drawText(fontNum(), w / 2, barH + (h - barH - hintH - ch) / 2, clock,
+             DisplayDriver::LIGHT, TextAlign::Center);
 
-  if (_menu) c.textCentered(w / 2, h - 10, "Select: apps", DisplayDriver::LIGHT);
+  if (_menu)
+    c.drawText(fontBody(), w / 2, h - hintH, "Select for apps",
+               DisplayDriver::LIGHT, TextAlign::Center);
   return 1000;
 }
 

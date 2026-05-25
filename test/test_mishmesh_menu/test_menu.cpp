@@ -20,9 +20,9 @@ LeafApplet alpha("alpha"), beta("beta");
 // Registry is a shared global; each test rebuilds it deterministically.
 void registerTwo() {
   resetRegistry();
-  static AppletRegistration rb{&beta, "Beta", nullptr, Placement::AppMenu, 20, nullptr};
-  static AppletRegistration ra{&alpha, "Alpha", nullptr, Placement::AppMenu, 10, nullptr};
-  static AppletRegistration rhidden{&beta, "Hidden", nullptr, Placement::LaunchOnly, 0, nullptr};
+  static AppletRegistration rb{&beta, "Beta", 0, Placement::AppMenu, 20, nullptr};
+  static AppletRegistration ra{&alpha, "Alpha", 0, Placement::AppMenu, 10, nullptr};
+  static AppletRegistration rhidden{&beta, "Hidden", 0, Placement::LaunchOnly, 0, nullptr};
   registerApplet(&rb);
   registerApplet(&ra);
   registerApplet(&rhidden);

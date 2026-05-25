@@ -9,8 +9,8 @@ static Applet* const A2 = reinterpret_cast<Applet*>(0x2);
 
 TEST(Registry, RegistersAndWalksList) {
   resetRegistry();
-  static AppletRegistration r1{A1, "one", nullptr, Placement::AppMenu, 0, nullptr};
-  static AppletRegistration r2{A2, "two", nullptr, Placement::LaunchOnly, 0, nullptr};
+  static AppletRegistration r1{A1, "one", 0, Placement::AppMenu, 0, nullptr};
+  static AppletRegistration r2{A2, "two", 0, Placement::LaunchOnly, 0, nullptr};
   registerApplet(&r1);
   registerApplet(&r2);
 
@@ -21,8 +21,8 @@ TEST(Registry, RegistersAndWalksList) {
 
 TEST(Registry, CanFilterByPlacement) {
   resetRegistry();
-  static AppletRegistration r1{A1, "menu", nullptr, Placement::AppMenu, 5, nullptr};
-  static AppletRegistration r2{A2, "hidden", nullptr, Placement::LaunchOnly, 0, nullptr};
+  static AppletRegistration r1{A1, "menu", 0, Placement::AppMenu, 5, nullptr};
+  static AppletRegistration r2{A2, "hidden", 0, Placement::LaunchOnly, 0, nullptr};
   registerApplet(&r1);
   registerApplet(&r2);
 

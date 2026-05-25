@@ -1,5 +1,6 @@
 #include <mishmesh/widgets/StatusBar.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 
 namespace mishmesh {
@@ -21,11 +22,14 @@ void StatusBar::measure(int& w, int& h) const {
 void StatusBar::draw(Canvas& c, int x, int y, int w, int h) {
   Canvas bar = c.region(x, y, w, h);
   bar.fillRect(0, h - 1, w, 1, DisplayDriver::LIGHT);   // baseline divider
-  bar.text(0, 0, _title, DisplayDriver::LIGHT);
+
+  int ty = (h - 1 - bar.fontHeight(fontBody())) / 2;
+  if (ty < 0) ty = 0;
+  bar.drawText(fontBody(), 0, ty, _title, DisplayDriver::LIGHT);
 
   char pct[8];
   snprintf(pct, sizeof(pct), "%d%%", batteryPercent(_millivolts));
-  bar.textRight(w, 0, pct, DisplayDriver::LIGHT);
+  bar.drawText(fontBody(), w, ty, pct, DisplayDriver::LIGHT, TextAlign::Right);
 }
 
 }  // namespace mishmesh

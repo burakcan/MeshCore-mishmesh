@@ -14,7 +14,7 @@ enum class Placement : uint8_t {
 struct AppletRegistration {
   Applet*             applet;
   const char*         label;
-  const uint8_t*      icon;       // optional XBM, may be null
+  uint16_t            icon;       // iconFont() codepoint, 0 = none
   Placement           placement;
   int16_t             order;
   AppletRegistration* next;
@@ -28,10 +28,14 @@ void resetRegistry();
 #define MISHMESH_CONCAT(a, b) MISHMESH_CONCAT_(a, b)
 
 // Statically registers an applet so menus can discover it without host wiring.
-#define MISHMESH_REGISTER_APPLET(applet_ptr, placement, label, order)            \
+#define MISHMESH_REGISTER_APPLET_ICON(applet_ptr, placement, label, order, icon) \
   static ::mishmesh::AppletRegistration MISHMESH_CONCAT(_mishmesh_reg_, __LINE__) \
-      = {(applet_ptr), (label), nullptr, (placement), (int16_t)(order), nullptr}; \
+      = {(applet_ptr), (label), (uint16_t)(icon), (placement),                    \
+         (int16_t)(order), nullptr};                                              \
   static const bool MISHMESH_CONCAT(_mishmesh_reg_done_, __LINE__) =              \
       (::mishmesh::registerApplet(&MISHMESH_CONCAT(_mishmesh_reg_, __LINE__)), true)
+
+#define MISHMESH_REGISTER_APPLET(applet_ptr, placement, label, order) \
+  MISHMESH_REGISTER_APPLET_ICON(applet_ptr, placement, label, order, 0)
 
 }  // namespace mishmesh

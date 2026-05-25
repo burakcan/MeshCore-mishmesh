@@ -1,6 +1,7 @@
 #include <mishmesh/applets/StopwatchApplet.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 
 namespace mishmesh {
@@ -26,9 +27,13 @@ int StopwatchApplet::onRender(Canvas& c) {
   snprintf(buf, sizeof(buf), "%02u:%02u.%u",
            (unsigned)(ms / 60000), (unsigned)((ms / 1000) % 60),
            (unsigned)((ms / 100) % 10));
-  c.textCentered(c.width() / 2, c.height() / 2 - 4, buf, DisplayDriver::LIGHT);
-  c.textCentered(c.width() / 2, c.height() - 10,
-                 _running ? "Select: stop" : "Select: start", DisplayDriver::LIGHT);
+  int nh = c.fontHeight(fontNum());
+  int hintH = c.fontHeight(fontBody()) + 2;
+  c.drawText(fontNum(), c.width() / 2, (c.height() - hintH - nh) / 2, buf,
+             DisplayDriver::LIGHT, TextAlign::Center);
+  c.drawText(fontBody(), c.width() / 2, c.height() - hintH,
+             _running ? "Select: stop" : "Select: start",
+             DisplayDriver::LIGHT, TextAlign::Center);
   return _running ? 50 : 60000;
 }
 
@@ -45,6 +50,7 @@ bool StopwatchApplet::onInput(InputEvent ev) {
 }
 
 static StopwatchApplet s_stopwatch;
-MISHMESH_REGISTER_APPLET(&s_stopwatch, ::mishmesh::Placement::AppMenu, "Stopwatch", 0);
+MISHMESH_REGISTER_APPLET_ICON(&s_stopwatch, ::mishmesh::Placement::AppMenu,
+                             "Stopwatch", 0, (uint16_t)::mishmesh::Icon::Clock);
 
 }  // namespace mishmesh

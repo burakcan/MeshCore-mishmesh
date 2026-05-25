@@ -23,6 +23,7 @@ public:
 
   int count() const override { return _count; }
   const char* label(int i) const override { return _entries[i]->label; }
+  uint16_t icon(int i) const override { return _entries[i]->icon; }
 };
 
 }  // namespace mishmesh

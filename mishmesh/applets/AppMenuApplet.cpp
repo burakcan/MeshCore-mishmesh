@@ -1,6 +1,7 @@
 #include <mishmesh/applets/AppMenuApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/text/Fonts.h>
 
 namespace mishmesh {
 
@@ -16,14 +17,18 @@ void AppMenuApplet::onStart(AppletContext& ctx) {
     }
     _entries[i] = r;
   }
+  _list.setRowHeight(14);
   _list.setModel(this);
 }
 
 int AppMenuApplet::onRender(Canvas& c) {
   int w = c.width();
-  c.text(2, 0, "Apps", DisplayDriver::LIGHT);
-  c.fillRect(0, 11, w, 1, DisplayDriver::LIGHT);
-  _list.draw(c, 0, 14, w, c.height() - 14);
+  const int headH = c.fontHeight(fontBody()) + 3;
+  int ty = (headH - 1 - c.fontHeight(fontBody())) / 2;
+  if (ty < 0) ty = 0;
+  c.drawText(fontBody(), 4, ty, "Apps", DisplayDriver::LIGHT);
+  c.fillRect(0, headH - 1, w, 1, DisplayDriver::LIGHT);
+  _list.draw(c, 0, headH, w, c.height() - headH);
   return 1000;
 }
 
