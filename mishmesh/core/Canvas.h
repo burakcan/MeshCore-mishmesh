@@ -36,6 +36,13 @@ public:
   // DisplayDriver can't clip glyphs: text is dropped only when its origin is
   // outside the canvas, so it may still overflow the right edge.
   void text(int x, int y, const char* str, DisplayDriver::Color c);
+
+  // Anchored text: x_right is the right edge, cx the horizontal centre. The
+  // resolved origin is still origin-clipped like text().
+  void textRight(int x_right, int y, const char* str, DisplayDriver::Color c);
+  void textCentered(int cx, int y, const char* str, DisplayDriver::Color c);
+
+  int textWidth(const char* str) const;
 };
 
 }  // namespace mishmesh

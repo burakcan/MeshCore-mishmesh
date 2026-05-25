@@ -50,4 +50,16 @@ void Canvas::text(int x, int y, const char* str, DisplayDriver::Color c) {
   _d->print(str);
 }
 
+int Canvas::textWidth(const char* str) const {
+  return (_d && str) ? _d->getTextWidth(str) : 0;
+}
+
+void Canvas::textRight(int x_right, int y, const char* str, DisplayDriver::Color c) {
+  text(x_right - textWidth(str), y, str, c);
+}
+
+void Canvas::textCentered(int cx, int y, const char* str, DisplayDriver::Color c) {
+  text(cx - textWidth(str) / 2, y, str, c);
+}
+
 }  // namespace mishmesh

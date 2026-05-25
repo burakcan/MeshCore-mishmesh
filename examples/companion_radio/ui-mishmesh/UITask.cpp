@@ -1,4 +1,19 @@
 #include "UITask.h"
+#include "target.h"   // rtc_clock
+
+uint32_t UITask::epochSeconds() const {
+  return rtc_clock.getCurrentTime();
+}
+
+uint16_t UITask::batteryMillivolts() const {
+  uint32_t now = millis();
+  if (_batt_mv == 0 || now - _batt_sampled_at >= 8000) {
+    uint16_t mv = getBattMilliVolts();
+    _batt_mv = _batt_mv ? (uint16_t)((_batt_mv * 3 + mv) / 4) : mv;
+    _batt_sampled_at = now;
+  }
+  return _batt_mv;
+}
 
 void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs) {
   _display = display;
@@ -8,7 +23,13 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   if (_display == nullptr) return;   // headless build
 
   mishmesh::AppletContext ctx;
+  ctx.app = this;
   _host = new mishmesh::AppletHost(_display, ctx);
+
+  _menu = new mishmesh::AppMenuApplet();
+  _home = new mishmesh::HomeApplet();
+  _home->setMenu(_menu);
+  _host->setRoot(_home);
 
 #ifdef UI_HAS_JOYSTICK
   // Wio Tracker L1 buttons are active-low (pull-up), hence reverse=true.
@@ -33,10 +54,6 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _userBtn->begin();
   _host->addSource(_userBtn);
 #endif
-
-  // No applets registered yet: blank the screen so the boot text doesn't linger.
-  _display->startFrame();
-  _display->endFrame();
 }
 
 void UITask::msgRead(int /*msgcount*/) {

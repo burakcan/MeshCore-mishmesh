@@ -165,6 +165,78 @@ TEST(AppletHost, RenderWrapsInStartAndEndFrame) {
   EXPECT_EQ("endFrame", d.calls.back());
 }
 
+TEST(AppletHost, SetRootTurnsDisplayOn) {
+  FakeDisplayDriver d;
+  d.turnOff();              // panels boot off; only turnOn() lights them
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setRoot(&root);
+  EXPECT_TRUE(d.isOn());
+}
+
+TEST(AppletHost, TurnsDisplayOffAfterInactivity) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setAutoOffMillis(1000);
+  host.setRoot(&root);
+  host.loop(0);            // first activity timestamp
+  EXPECT_TRUE(d.isOn());
+  host.loop(1001);
+  EXPECT_FALSE(d.isOn());
+}
+
+TEST(AppletHost, DoesNotRenderWhileDisplayOff) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  root.renderDelay = 10;
+  host.setAutoOffMillis(1000);
+  host.setRoot(&root);
+  host.loop(0);
+  host.loop(1001);         // sleeps
+  int rendered = root.rendered;
+  host.loop(2000);         // would be render-due, but display is off
+  EXPECT_EQ(rendered, root.rendered);
+}
+
+TEST(AppletHost, InputWakesDisplayAndIsSwallowed) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setAutoOffMillis(1000);
+  host.setRoot(&root);
+  host.loop(0);
+  host.loop(1001);         // sleeps
+  ASSERT_FALSE(d.isOn());
+
+  QueueSource src;
+  src.queue.push_back(InputEvent::Select);
+  host.addSource(&src);
+  host.loop(1002);
+  EXPECT_TRUE(d.isOn());                          // woke
+  EXPECT_EQ(InputEvent::None, root.lastInput);    // wake event not delivered
+}
+
+TEST(AppletHost, InputWhileOnIsDeliveredAndExtendsTimer) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setAutoOffMillis(1000);
+  host.setRoot(&root);
+  host.loop(0);
+
+  QueueSource src;
+  src.queue.push_back(InputEvent::NavDown);
+  host.addSource(&src);
+  host.loop(900);          // input delivered, deadline now extends from 900
+  EXPECT_EQ(InputEvent::NavDown, root.lastInput);
+  host.loop(1500);
+  EXPECT_TRUE(d.isOn());    // 1500-900 < 1000
+  host.loop(2000);
+  EXPECT_FALSE(d.isOn());   // 2000-900 > 1000
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

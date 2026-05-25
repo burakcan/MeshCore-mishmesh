@@ -19,6 +19,10 @@ public:
 
   void addSource(InputSource* src);
 
+  // Blank the panel after this many ms without input (0 disables). OLED-safe:
+  // rendering does not extend the deadline, only input does.
+  void setAutoOffMillis(uint32_t ms) { _auto_off_ms = ms; }
+
   void setRoot(Applet* root);
   void push(Applet* a);
   void pop();
@@ -45,6 +49,10 @@ private:
   uint32_t _next_render_at;
   bool _has_rendered;
   bool _dirty;
+
+  uint32_t _auto_off_ms;
+  uint32_t _last_activity;
+  bool _activity_init;
 };
 
 }  // namespace mishmesh

@@ -7,7 +7,8 @@ namespace mishmesh {
 AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
     : _display(display), _canvas(display), _ctx(ctx),
       _depth(0), _nsources(0),
-      _next_render_at(0), _has_rendered(false), _dirty(true) {
+      _next_render_at(0), _has_rendered(false), _dirty(true),
+      _auto_off_ms(30000), _last_activity(0), _activity_init(false) {
   for (int i = 0; i < MAX_STACK; i++) _stack[i] = nullptr;
   for (int i = 0; i < MAX_SOURCES; i++) _sources[i] = nullptr;
   _ctx.host = this;
@@ -24,6 +25,7 @@ Applet* AppletHost::foreground() const {
 
 void AppletHost::setRoot(Applet* root) {
   if (root == nullptr || _depth != 0) return;
+  if (_display != nullptr && !_display->isOn()) _display->turnOn();  // panels boot off
   _stack[0] = root;
   _depth = 1;
   root->onStart(_ctx);
@@ -63,18 +65,35 @@ void AppletHost::dispatch(InputEvent ev) {
 }
 
 void AppletHost::loop(uint32_t now_ms) {
+  if (!_activity_init) {
+    _last_activity = now_ms;
+    _activity_init = true;
+  }
+
   for (int i = 0; i < _nsources; i++) {
     InputReport rep;
     while (_sources[i] != nullptr && _sources[i]->poll(rep)) {
-      dispatch(rep.event);
+      _last_activity = now_ms;
+      if (_display != nullptr && !_display->isOn()) {
+        _display->turnOn();   // first press only wakes; it isn't delivered
+        _dirty = true;
+      } else {
+        dispatch(rep.event);
+      }
     }
   }
+
+  if (_auto_off_ms > 0 && _display != nullptr && _display->isOn() &&
+      now_ms - _last_activity > _auto_off_ms) {
+    _display->turnOff();
+  }
+
   renderIfDue(now_ms);
 }
 
 void AppletHost::renderIfDue(uint32_t now_ms) {
   Applet* fg = foreground();
-  if (fg == nullptr || _display == nullptr) return;
+  if (fg == nullptr || _display == nullptr || !_display->isOn()) return;
 
   bool due = _dirty || !_has_rendered || now_ms >= _next_render_at;
   if (!due) return;
