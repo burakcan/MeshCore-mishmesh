@@ -61,6 +61,13 @@ public:
   // Renders a single glyph (used for icon fonts) at (x,y).
   void drawGlyph(const mf_font_s* font, int x, int y, uint16_t codepoint,
                  DisplayDriver::Color c);
+  // Single-line text truncated with "..." when it would exceed maxWidth.
+  void drawTextEllipsized(const mf_font_s* font, int x, int y, int maxWidth,
+                          const char* str, DisplayDriver::Color c,
+                          TextAlign align = TextAlign::Left);
+  // 50% checkerboard fill (modal scrim / dithered shadow). Per-pixel on mono;
+  // use for small regions or a scrim, not large solid fills.
+  void fillStipple(int x, int y, int w, int h, DisplayDriver::Color c);
 };
 
 }  // namespace mishmesh

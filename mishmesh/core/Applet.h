@@ -7,6 +7,7 @@ namespace mishmesh {
 
 class Canvas;
 class AppletHost;
+struct ContactsService;   // mishmesh/core/ContactsService.h
 
 // Live app/device state applets read. Implemented by the adapter and queried on
 // demand, since battery/time/connection change over an applet's lifetime. Keeps
@@ -20,8 +21,9 @@ struct AppServices {
 
 // Handle through which an applet reaches host/app services. Grows as features land.
 struct AppletContext {
-  AppletHost*  host = nullptr;
-  AppServices* app = nullptr;
+  AppletHost*      host = nullptr;
+  AppServices*     app = nullptr;
+  ContactsService* contacts = nullptr;   // [new] contacts/mesh seam
 };
 
 class Applet {

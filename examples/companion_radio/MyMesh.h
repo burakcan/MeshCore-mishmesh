@@ -102,6 +102,29 @@ public:
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
 
+  // [mishmesh] on-device UI hooks. Additive + grouped for clean upstream merges.
+  struct TelemetryLatch {
+    uint8_t  pubkey[PUB_KEY_SIZE];
+    uint8_t  lpp[MAX_PACKET_PAYLOAD];
+    uint8_t  len;
+    uint32_t seq;
+  };
+  struct PingLatch {
+    uint8_t  pubkey[PUB_KEY_SIZE];
+    uint32_t sentAt;
+    uint32_t rttMs;
+    uint32_t seq;
+    bool     replied;
+  };
+  const TelemetryLatch& uiLastTelemetry() const { return _ui_telemetry; }
+  const PingLatch& uiLastPing() const { return _ui_ping; }
+  bool uiRequestTelemetry(const uint8_t* pubkey);
+  bool uiPing(const uint8_t* pubkey);          // status request, round-trip latched
+  bool uiDeleteContact(const uint8_t* pubkey);
+  bool uiClearConversation(const uint8_t* pubkey);
+  void uiPersistContacts();
+  // [/mishmesh]
+
 protected:
   float getAirtimeBudgetFactor() const override;
   int getInterferenceThreshold() const override;
@@ -224,6 +247,15 @@ private:
   uint8_t *sign_data;
   uint32_t sign_data_len;
   unsigned long dirty_contacts_expiry;
+
+  // [mishmesh]
+  TelemetryLatch _ui_telemetry = {};
+  PingLatch _ui_ping = {};
+  // Shared by the CMD_* serial handlers and the UI hooks (DRY - see MyMesh.cpp).
+  int  startContactRequest(ContactInfo& contact, uint8_t req_type, uint32_t& tag, uint32_t& est_timeout);
+  bool removeContactAndBlob(ContactInfo& contact);
+  void markContactsDirty();
+  // [/mishmesh]
 
   TransportKey send_scope;
 

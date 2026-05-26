@@ -131,4 +131,30 @@ void Canvas::drawGlyph(const mf_font_s* font, int x, int y, uint16_t codepoint,
   mf_render_character(font, x, y, (mf_char)codepoint, mm_pixel, &st);
 }
 
+void Canvas::drawTextEllipsized(const mf_font_s* font, int x, int y, int maxWidth,
+                                const char* str, DisplayDriver::Color c, TextAlign align) {
+  if (!font || !str) return;
+  if (textWidth(font, str) <= maxWidth) {
+    drawText(font, x, y, str, c, align);
+    return;
+  }
+  char buf[64];
+  int ellw = textWidth(font, "...");
+  int len = 0;
+  for (const char* p = str; *p && len < 60; ++p) {
+    buf[len] = *p;
+    buf[len + 1] = 0;
+    if (textWidth(font, buf) + ellw > maxWidth) { buf[len] = 0; break; }
+    len++;
+  }
+  buf[len] = '.'; buf[len + 1] = '.'; buf[len + 2] = '.'; buf[len + 3] = 0;
+  drawText(font, x, y, buf, c, align);
+}
+
+void Canvas::fillStipple(int x, int y, int w, int h, DisplayDriver::Color c) {
+  for (int j = 0; j < h; j++)
+    for (int i = 0; i < w; i++)
+      if (((i + j) & 1) == 0) fillRect(x + i, y + j, 1, 1, c);
+}
+
 }  // namespace mishmesh

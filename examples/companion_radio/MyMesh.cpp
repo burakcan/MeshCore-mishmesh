@@ -136,14 +136,7 @@
 
 #define MAX_SIGN_DATA_LEN               (8 * 1024) // 8K
 
-// Auto-add config bitmask
-// Bit 0: If set, overwrite oldest non-favourite contact when contacts file is full
-// Bits 1-4: these indicate which contact types to auto-add when manual_contact_mode = 0x01
-#define AUTO_ADD_OVERWRITE_OLDEST (1 << 0)  // 0x01 - overwrite oldest non-favourite when full
-#define AUTO_ADD_CHAT             (1 << 1)  // 0x02 - auto-add Chat (Companion) (ADV_TYPE_CHAT)
-#define AUTO_ADD_REPEATER         (1 << 2)  // 0x04 - auto-add Repeater (ADV_TYPE_REPEATER)
-#define AUTO_ADD_ROOM_SERVER      (1 << 3)  // 0x08 - auto-add Room Server (ADV_TYPE_ROOM)
-#define AUTO_ADD_SENSOR           (1 << 4)  // 0x10 - auto-add Sensor (ADV_TYPE_SENSOR)
+// AUTO_ADD_* bitmask values are defined in NodePrefs.h (shared with the UI adapter).
 
 void MyMesh::writeOKFrame() {
   uint8_t buf[1];
@@ -714,6 +707,13 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     memcpy(&out_frame[i], &data[4], len - 4);
     i += (len - 4);
     _serial->writeFrame(out_frame, i);
+    // [mishmesh] latch the round-trip for the on-device ping
+    if (memcmp(_ui_ping.pubkey, contact.id.pub_key, PUB_KEY_SIZE) == 0) {
+      _ui_ping.rttMs = _ms->getMillis() - _ui_ping.sentAt;
+      _ui_ping.replied = true;
+      _ui_ping.seq++;
+    }
+    // [/mishmesh]
   } else if (len > 4 && tag == pending_telemetry) {  // check for matching response tag
     pending_telemetry = 0;
 
@@ -725,6 +725,16 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     memcpy(&out_frame[i], &data[4], len - 4);
     i += (len - 4);
     _serial->writeFrame(out_frame, i);
+    // [mishmesh] latch decoded-raw telemetry for the on-device UI
+    {
+      uint8_t n = len - 4;
+      if (n > sizeof(_ui_telemetry.lpp)) n = sizeof(_ui_telemetry.lpp);
+      memcpy(_ui_telemetry.pubkey, contact.id.pub_key, PUB_KEY_SIZE);
+      memcpy(_ui_telemetry.lpp, &data[4], n);
+      _ui_telemetry.len = n;
+      _ui_telemetry.seq++;
+    }
+    // [/mishmesh]
   } else if (len > 4 && tag == pending_req) {  // check for matching response tag
     pending_req = 0;
 
@@ -738,6 +748,72 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     _serial->writeFrame(out_frame, i);
   }
 }
+
+// [mishmesh] Shared request/remove/persist helpers + on-device UI hooks. The
+// helpers below are also called by the CMD_* serial handlers in handleCmdFrame()
+// so the lookup/sendRequest/pending-marker glue isn't duplicated.
+
+// Sends a typed request to a contact and arms the matching pending-response
+// marker. Returns the MSG_SEND_* result; fills tag/est_timeout.
+int MyMesh::startContactRequest(ContactInfo& contact, uint8_t req_type, uint32_t& tag, uint32_t& est_timeout) {
+  int result = sendRequest(contact, req_type, tag, est_timeout);
+  if (result != MSG_SEND_FAILED) {
+    clearPendingReqs();
+    if (req_type == REQ_TYPE_GET_TELEMETRY_DATA) pending_telemetry = tag;       // match in onContactResponse()
+    else if (req_type == REQ_TYPE_GET_STATUS)    memcpy(&pending_status, contact.id.pub_key, 4);  // legacy matching scheme
+  }
+  return result;
+}
+
+// Removes a contact, deletes its stored blob, and schedules the lazy flash write.
+bool MyMesh::removeContactAndBlob(ContactInfo& contact) {
+  uint8_t full[PUB_KEY_SIZE];
+  memcpy(full, contact.id.pub_key, PUB_KEY_SIZE);  // capture before removeContact invalidates contact
+  if (!removeContact(contact)) return false;
+  _store->deleteBlobByKey(full, PUB_KEY_SIZE);
+  markContactsDirty();
+  return true;
+}
+
+void MyMesh::markContactsDirty() {
+  dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
+}
+
+bool MyMesh::uiRequestTelemetry(const uint8_t* pubkey) {
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);  // UI handle is a 6-byte prefix
+  if (!c) return false;
+  uint32_t tag = 0, est_timeout = 0;
+  return startContactRequest(*c, REQ_TYPE_GET_TELEMETRY_DATA, tag, est_timeout) != MSG_SEND_FAILED;
+}
+
+bool MyMesh::uiPing(const uint8_t* pubkey) {
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);
+  if (!c) return false;
+  uint32_t tag = 0, est_timeout = 0;
+  if (startContactRequest(*c, REQ_TYPE_GET_STATUS, tag, est_timeout) == MSG_SEND_FAILED) return false;
+  memcpy(_ui_ping.pubkey, c->id.pub_key, PUB_KEY_SIZE);
+  _ui_ping.sentAt = _ms->getMillis();
+  _ui_ping.rttMs = 0;
+  _ui_ping.replied = false;
+  return true;
+}
+
+bool MyMesh::uiClearConversation(const uint8_t* pubkey) {
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);
+  if (!c) return false;
+  return _store->deleteBlobByKey(c->id.pub_key, PUB_KEY_SIZE);  // blob keyed by FULL key
+}
+
+bool MyMesh::uiDeleteContact(const uint8_t* pubkey) {
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);
+  if (!c) return false;
+  return removeContactAndBlob(*c);
+}
+
+void MyMesh::uiPersistContacts() {
+  markContactsDirty();
+}
+// [/mishmesh]
 
 bool MyMesh::onContactPathRecv(ContactInfo& contact, uint8_t* in_path, uint8_t in_path_len, uint8_t* out_path, uint8_t out_path_len, uint8_t extra_type, uint8_t* extra, uint8_t extra_len) {
   if (extra_type == PAYLOAD_TYPE_RESPONSE && extra_len > 4) {
@@ -1288,9 +1364,7 @@ void MyMesh::handleCmdFrame(size_t len) {
   } else if (cmd_frame[0] == CMD_REMOVE_CONTACT) {
     uint8_t *pub_key = &cmd_frame[1];
     ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
-    if (recipient && removeContact(*recipient)) {
-      _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE);
-      dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
+    if (recipient && removeContactAndBlob(*recipient)) {  // [mishmesh] shared helper
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // not found, or unable to remove
@@ -1568,13 +1642,10 @@ void MyMesh::handleCmdFrame(size_t len) {
     ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
     if (recipient) {
       uint32_t tag, est_timeout;
-      int result = sendRequest(*recipient, REQ_TYPE_GET_STATUS, tag, est_timeout);
+      int result = startContactRequest(*recipient, REQ_TYPE_GET_STATUS, tag, est_timeout);  // [mishmesh] shared helper
       if (result == MSG_SEND_FAILED) {
         writeErrFrame(ERR_CODE_TABLE_FULL);
       } else {
-        clearPendingReqs();
-        // FUTURE:  pending_status = tag;  // match this in onContactResponse()
-        memcpy(&pending_status, recipient->id.pub_key, 4); // legacy matching scheme
         out_frame[0] = RESP_CODE_SENT;
         out_frame[1] = (result == MSG_SEND_SENT_FLOOD) ? 1 : 0;
         memcpy(&out_frame[2], &tag, 4);
@@ -1618,12 +1689,10 @@ void MyMesh::handleCmdFrame(size_t len) {
     ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
     if (recipient) {
       uint32_t tag, est_timeout;
-      int result = sendRequest(*recipient, REQ_TYPE_GET_TELEMETRY_DATA, tag, est_timeout);
+      int result = startContactRequest(*recipient, REQ_TYPE_GET_TELEMETRY_DATA, tag, est_timeout);  // [mishmesh] shared helper
       if (result == MSG_SEND_FAILED) {
         writeErrFrame(ERR_CODE_TABLE_FULL);
       } else {
-        clearPendingReqs();
-        pending_telemetry = tag; // match this in onContactResponse()
         out_frame[0] = RESP_CODE_SENT;
         out_frame[1] = (result == MSG_SEND_SENT_FLOOD) ? 1 : 0;
         memcpy(&out_frame[2], &tag, 4);

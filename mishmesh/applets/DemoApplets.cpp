@@ -21,14 +21,12 @@ public:
 };
 
 static PlaceholderApplet s_messages("Messages");
-static PlaceholderApplet s_contacts("Contacts");
 static PlaceholderApplet s_settings("Settings");
 static PlaceholderApplet s_gps("GPS");
 static PlaceholderApplet s_node("Node Info");
 
 MISHMESH_REGISTER_APPLET_ICON(&s_messages, Placement::AppMenu, "Messages", 1, (uint16_t)Icon::Message);
-MISHMESH_REGISTER_APPLET_ICON(&s_contacts, Placement::AppMenu, "Contacts", 2, (uint16_t)Icon::Users);
-MISHMESH_REGISTER_APPLET_ICON(&s_settings, Placement::AppMenu, "Settings", 3, (uint16_t)Icon::Settings);
+MISHMESH_REGISTER_APPLET_ICON(&s_settings, Placement::AppMenu, "Settings", 3, (uint16_t)Icon::Menu);  // Icon::Settings (cog) renders poorly at 12px
 MISHMESH_REGISTER_APPLET_ICON(&s_gps,      Placement::AppMenu, "GPS",      4, (uint16_t)Icon::Gps);
 MISHMESH_REGISTER_APPLET_ICON(&s_node,     Placement::AppMenu, "Node Info", 5, (uint16_t)Icon::Home);
 

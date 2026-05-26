@@ -8,6 +8,14 @@
 #define ADVERT_LOC_NONE       0
 #define ADVERT_LOC_SHARE      1
 
+// autoadd_config bitmask. Bit 0: overwrite oldest non-favourite when full;
+// bits 1-4: which contact types to auto-add when manual_add_contacts = 0x01.
+#define AUTO_ADD_OVERWRITE_OLDEST (1 << 0)  // 0x01
+#define AUTO_ADD_CHAT             (1 << 1)  // 0x02 - ADV_TYPE_CHAT
+#define AUTO_ADD_REPEATER         (1 << 2)  // 0x04 - ADV_TYPE_REPEATER
+#define AUTO_ADD_ROOM_SERVER      (1 << 3)  // 0x08 - ADV_TYPE_ROOM
+#define AUTO_ADD_SENSOR           (1 << 4)  // 0x10 - ADV_TYPE_SENSOR
+
 struct NodePrefs {  // persisted to file
   float airtime_factor;
   char node_name[32];
