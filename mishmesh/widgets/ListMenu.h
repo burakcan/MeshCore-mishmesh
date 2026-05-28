@@ -1,6 +1,8 @@
 #pragma once
 
+#include <stdint.h>
 #include <mishmesh/widgets/Widget.h>
+#include <mishmesh/widgets/Marquee.h>
 
 namespace mishmesh {
 
@@ -18,27 +20,32 @@ struct ListModel {
   virtual bool toggleState(int index) const { return false; }
 };
 
-// NavUp/NavDown move the selection; Select is left for the owning applet.
-// The selected row's overflowing label marquees, so the owner should re-render
-// quickly while needsAnimation() is true.
+// NavUp/NavDown move the selection (wrapping); Select is left for the owning
+// applet. An optional header widget scrolls together with the rows. The selected
+// row's overflowing label marquees, so re-render quickly while needsAnimation().
 class ListMenu : public Widget {
   const ListModel* _model;
   int _selected;
   int _rowH;
-  mutable bool _animating;     // selected label is currently marqueeing
-  mutable int _lastSel;        // selection at last draw, to detect a change
-  mutable uint32_t _selStart;  // frame time the current row became selected (marquee phase origin)
-  mutable uint32_t _lastDraw;  // frame time of the last draw, to detect re-entry
+  int _lastSel;
+  Marquee _marquee;
+  Widget* _header;
+  int _headerH;
+  int _scrollPx;
+
+  void drawRow(Canvas& view, int i, int ry, int cw, uint32_t now);
 public:
-  ListMenu() : _model(nullptr), _selected(0), _rowH(12), _animating(false),
-               _lastSel(-1), _selStart(0), _lastDraw(0) {}
+  ListMenu()
+      : _model(nullptr), _selected(0), _rowH(12), _lastSel(-1),
+        _header(nullptr), _headerH(0), _scrollPx(0) {}
 
   void setModel(const ListModel* m);     // resets selection to the top
   int selected() const { return _selected; }
   void setRowHeight(int h) { _rowH = h; }
   int rowHeight() const { return _rowH; }
   int firstVisibleRow(int box_height) const;   // scroll offset for the selection
-  bool needsAnimation() const { return _animating; }
+  void setHeader(Widget* hdr, int height) { _header = hdr; _headerH = height; }
+  bool needsAnimation() const { return _marquee.active(); }
 
   bool onInput(InputEvent ev) override;
   void measure(int& w, int& h) const override;

@@ -84,29 +84,26 @@ TEST(StatusBar, DrawsTitleAndBatteryAsPixels) {
 
 // ---- ListMenu --------------------------------------------------------------
 
-TEST(ListMenu, NavDownMovesAndClamps) {
+TEST(ListMenu, NavDownMovesAndWraps) {
   VecModel m; m.items = {"a", "b", "c"};
   ListMenu list;
   list.setModel(&m);
   EXPECT_EQ(0, list.selected());
   EXPECT_TRUE(list.onInput(InputEvent::NavDown));
   EXPECT_EQ(1, list.selected());
-  list.onInput(InputEvent::NavDown);
-  list.onInput(InputEvent::NavDown);   // clamped at last
-  EXPECT_EQ(2, list.selected());
+  list.onInput(InputEvent::NavDown);   // -> 2 (last)
+  list.onInput(InputEvent::NavDown);   // wraps to the top
+  EXPECT_EQ(0, list.selected());
 }
 
-TEST(ListMenu, NavUpMovesAndClamps) {
+TEST(ListMenu, NavUpMovesAndWraps) {
   VecModel m; m.items = {"a", "b", "c"};
   ListMenu list;
   list.setModel(&m);
-  list.onInput(InputEvent::NavDown);
-  list.onInput(InputEvent::NavDown);
+  EXPECT_TRUE(list.onInput(InputEvent::NavUp));   // wraps from top to bottom
   EXPECT_EQ(2, list.selected());
-  EXPECT_TRUE(list.onInput(InputEvent::NavUp));
-  list.onInput(InputEvent::NavUp);
-  list.onInput(InputEvent::NavUp);     // clamped at first
-  EXPECT_EQ(0, list.selected());
+  list.onInput(InputEvent::NavUp);                // -> 1
+  EXPECT_EQ(1, list.selected());
 }
 
 TEST(ListMenu, IgnoresNonNavInput) {

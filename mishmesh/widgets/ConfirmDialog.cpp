@@ -1,4 +1,5 @@
 #include <mishmesh/widgets/ConfirmDialog.h>
+#include <mishmesh/widgets/Modal.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
 
@@ -16,15 +17,8 @@ bool ConfirmDialog::onInput(InputEvent ev) {
 
 void ConfirmDialog::draw(Canvas& c, int x, int y, int w, int h) {
   Canvas view = c.region(x, y, w, h);
-  view.fillStipple(0, 0, w, h, DisplayDriver::DARK);   // scrim dims content behind
-
-  int bw = w - 16, bh = h - 16;
-  int bx = (w - bw) / 2, by = (h - bh) / 2;
-  view.fillStipple(bx + 2, by + 2, bw, bh, DisplayDriver::DARK);  // dithered drop shadow, behind the box
-
-  Canvas box = view.region(bx, by, bw, bh);
-  box.fillRect(0, 0, bw, bh, DisplayDriver::DARK);
-  box.drawRect(0, 0, bw, bh, DisplayDriver::LIGHT);
+  Canvas box = drawModalChrome(view);
+  int bw = box.width(), bh = box.height();
 
   int pad = 4;
   box.drawTextWrapped(fontBody(), pad, pad + 2, bw - 2 * pad, _msg, DisplayDriver::LIGHT);

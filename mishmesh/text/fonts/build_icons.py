@@ -13,7 +13,7 @@ SIZE = 12                 # output glyph size (24-grid downscales 2:1)
 # (enum name, pixelarticons svg, codepoint)
 ICONS = [
     ("Home",        "home",          0xE000),
-    ("Settings",    "settings-cog",  0xE001),
+    ("Settings",    "settings-2",    0xE001),
     ("Clock",       "clock",         0xE002),
     ("Menu",        "menu",          0xE003),
     ("User",        "user",          0xE004),
@@ -30,6 +30,10 @@ ICONS = [
     ("Reload",      "reload",        0xE00F),
     ("Power",       "power",         0xE010),
     ("Gps",         "gps",           0xE011),
+    ("Radio",       "radio",         0xE012),
+    ("Comment",     "comment",       0xE013),
+    ("Chip",        "cpu",           0xE014),
+    ("Star",        "star",          0xE015),
 ]
 
 NUM = re.compile(r'[-+]?\d*\.?\d+')
@@ -91,8 +95,10 @@ glyphs = []
 for nm, svg, cp in ICONS:
     url = f"https://github.com/halfmage/pixelarticons/raw/master/svg/{svg}.svg"
     data = urllib.request.urlopen(url).read().decode()
-    m = re.search(r'd="([^"]+)"', data)
-    img = raster(m.group(1))
+    # Pixelarticons may split a glyph across several <path> elements; render all
+    # of them (each path starts with an absolute M, so the d strings concatenate).
+    ds = re.findall(r'd="([^"]+)"', data)
+    img = raster(" ".join(ds))
     g = bdf_glyph(nm, cp, img)
     glyphs.append(g)
     if nm in ("Home", "Clock"):

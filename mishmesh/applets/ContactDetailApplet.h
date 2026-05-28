@@ -3,39 +3,57 @@
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/core/ContactsService.h>
 #include <mishmesh/widgets/ListMenu.h>
-#include <mishmesh/widgets/Label.h>
 #include <mishmesh/widgets/ConfirmDialog.h>
-#include <mishmesh/widgets/Toast.h>
+#include <mishmesh/widgets/PingDialog.h>
+#include <mishmesh/widgets/TelemetryDialog.h>
+#include <mishmesh/widgets/ScrollText.h>
+#include <mishmesh/widgets/Card.h>
 
 namespace mishmesh {
 
 class ContactDetailApplet : public Applet, public ListModel {
 public:
-  enum Action { View, Telemetry, Ping, ResetPath, ClearConvo, Delete, ACTION_KINDS };
+  enum Action { View, Favourite, Telemetry, Ping, ResetPath, ClearConvo, Delete, ACTION_KINDS };
 private:
   AppletHost*      _host;
   ContactsService* _svc;
   AppServices*     _app;
   uint8_t          _pubkey[6];
+  uint8_t          _fullKey[PUBKEY_LEN];
   char             _name[32];
+  char             _displayName[44];         // name, with a key prefix for repeaters
+  char             _infoLine[48];            // "Type · distance · last heard"
   uint8_t          _type;
   bool             _hasPath;
+  uint8_t          _hops;
   bool             _favourite;
   uint32_t         _lastAdvert;
-  uint8_t          _actions[ACTION_KINDS];   // action ids present for this contact type
+  bool             _hasLoc;
+  int32_t          _gpsLat, _gpsLon;
+  float            _distKm;                  // -1 if unknown
+  uint8_t          _actions[ACTION_KINDS];
   int              _actionCount;
-  Label            _header;
   ListMenu         _list;
   ConfirmDialog    _confirm;
-  Toast            _toast;
-  const char*      _pendingToast;            // latched in onInput, shown in onRender
+  PingDialog       _ping;
+  TelemetryDialog  _telem;
+  Card             _card;                    // header card (name + info)
+  ScrollText       _details;                 // the view-details panel
   bool             _confirming;
-  bool             _viewing;                 // showing the details panel
-  int              _pendingAction;           // action id awaiting confirm
+  bool             _viewing;
+  bool             _pinging;
+  bool             _pingDone;
+  uint32_t         _pingStartSeq;
+  uint32_t         _pingStartMs;
+  bool             _telemActive;
+  bool             _telemDone;
+  uint32_t         _telemStartSeq;
+  uint32_t         _telemStartMs;
+  int              _pendingAction;
 
-  void refresh();        // pull current contact into the detail fields
+  void refresh();        // pull current contact into the detail fields + cards
   void buildActions();   // fill _actions from _type
-  void drawDetails(Canvas& c, int x, int y, int w, int h);
+  void buildInfo();      // build _displayName / _infoLine / _details from the fields
 public:
   ContactDetailApplet();
   void setTarget(const uint8_t* pubKey);

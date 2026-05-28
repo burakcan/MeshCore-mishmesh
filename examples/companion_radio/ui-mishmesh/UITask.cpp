@@ -87,24 +87,58 @@ int UITask::countByKind(mishmesh::ContactKind k) const {
   return count;
 }
 
+void UITask::fillView(const ContactInfo& c, mishmesh::ContactView& out) {
+  out.name = c.name;
+  out.type = c.type;
+  out.isFavourite = (c.flags & 0x01) != 0;
+  out.hasPath = c.out_path_len != OUT_PATH_UNKNOWN;
+  out.hops = out.hasPath ? c.out_path_len : 0;
+  out.lastAdvert = c.last_advert_timestamp;
+  out.pubKey = c.id.pub_key;
+  out.hasLocation = (c.gps_lat != 0 || c.gps_lon != 0);
+  out.gpsLat = c.gps_lat;
+  out.gpsLon = c.gps_lon;
+}
+
 bool UITask::getByKind(mishmesh::ContactKind k, int index, mishmesh::ContactView& out) const {
   int n = the_mesh.getNumContacts();
   int seen = 0;
   for (int i = 0; i < n; i++) {
     if (the_mesh.getContactByIdx(i, _scratch) && _scratch.type == (uint8_t)k) {
-      if (seen == index) {
-        out.name = _scratch.name;
-        out.type = _scratch.type;
-        out.isFavourite = (_scratch.flags & 0x01) != 0;
-        out.hasPath = _scratch.out_path_len != OUT_PATH_UNKNOWN;
-        out.lastAdvert = _scratch.last_advert_timestamp;
-        out.pubKey = _scratch.id.pub_key;
-        return true;
-      }
+      if (seen == index) { fillView(_scratch, out); return true; }
       seen++;
     }
   }
   return false;
+}
+
+int UITask::countFavourites() const {
+  int n = the_mesh.getNumContacts();
+  int count = 0;
+  for (int i = 0; i < n; i++)
+    if (the_mesh.getContactByIdx(i, _scratch) && (_scratch.flags & 0x01)) count++;
+  return count;
+}
+
+bool UITask::getFavourite(int index, mishmesh::ContactView& out) const {
+  int n = the_mesh.getNumContacts();
+  int seen = 0;
+  for (int i = 0; i < n; i++) {
+    if (the_mesh.getContactByIdx(i, _scratch) && (_scratch.flags & 0x01)) {
+      if (seen == index) { fillView(_scratch, out); return true; }
+      seen++;
+    }
+  }
+  return false;
+}
+
+bool UITask::setFavourite(const uint8_t* pk, bool fav) { return the_mesh.uiSetFavourite(pk, fav); }
+
+bool UITask::selfLocation(int32_t& lat, int32_t& lon) const {
+  if (!_sensors) return false;
+  lat = (int32_t)(_sensors->node_lat * 1e6);
+  lon = (int32_t)(_sensors->node_lon * 1e6);
+  return lat != 0 || lon != 0;
 }
 
 bool UITask::requestTelemetry(const uint8_t* pk) { return the_mesh.uiRequestTelemetry(pk); }
@@ -130,8 +164,8 @@ bool UITask::ping(const uint8_t* pk) { return the_mesh.uiPing(pk); }
 uint32_t UITask::pingSeq() const { return the_mesh.uiLastPing().seq; }
 bool UITask::latestPing(const uint8_t* pk, mishmesh::PingView& out) const {
   const MyMesh::PingLatch& l = the_mesh.uiLastPing();
-  if (memcmp(l.pubkey, pk, 6) != 0) { out.replied = false; out.rttMs = 0; return false; }
-  out.replied = l.replied; out.rttMs = l.rttMs;
+  if (memcmp(l.pubkey, pk, 6) != 0) { out.replied = false; out.rttMs = 0; out.hops = 0; out.snrUs = 0; out.snrThem = 0; return false; }
+  out.replied = l.replied; out.rttMs = l.rttMs; out.hops = l.hops; out.snrUs = l.snrUs; out.snrThem = l.snrThem;
   return true;
 }
 

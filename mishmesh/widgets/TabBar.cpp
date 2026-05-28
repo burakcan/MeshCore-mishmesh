@@ -15,22 +15,50 @@ void TabBar::measure(int& w, int& h) const {
   h = 13;
 }
 
+// Tabs are icon-only when collapsed and icon+label when active. The strip is
+// laid out at its natural width and scrolled so the (wider) active tab stays
+// centred; tabs scrolled past an edge clip, which hints there are more.
 void TabBar::draw(Canvas& c, int x, int y, int w, int h) {
   Canvas view = c.region(x, y, w, h);
   if (_count == 0) return;
-  int cell = w / _count;
+
+  const int ICON_W = 12, PAD = 4, GAP = 3;
+  int iconH = view.fontHeight(iconFont());
+  int bodyH = view.fontHeight(fontBody());
+
+  int tabW[MAX_TABS];
+  int total = 0;
   for (int i = 0; i < _count; i++) {
-    int cx = i * cell;
+    if (i == _sel) tabW[i] = PAD + ICON_W + GAP + view.textWidth(fontBody(), _labels[i]) + PAD;
+    else           tabW[i] = ICON_W + PAD + 2;
+    total += tabW[i];
+  }
+
+  int offset;
+  if (total <= w) {
+    offset = -(w - total) / 2;            // centre the whole strip when it fits
+  } else {
+    int activeX = 0;
+    for (int i = 0; i < _sel; i++) activeX += tabW[i];
+    offset = activeX + tabW[_sel] / 2 - w / 2;   // centre the active tab
+    if (offset < 0) offset = 0;
+    if (offset > total - w) offset = total - w;
+  }
+
+  int tx = 0;
+  for (int i = 0; i < _count; i++) {
+    int sx = tx - offset, tw = tabW[i];
+    tx += tw;
+    if (sx + tw <= 0 || sx >= w) continue;   // fully off-screen
     bool sel = (i == _sel);
-    if (sel) view.fillRect(cx, 0, cell, h, DisplayDriver::LIGHT);
     DisplayDriver::Color col = sel ? DisplayDriver::DARK : DisplayDriver::LIGHT;
-    int ty = (h - view.fontHeight(fontBody())) / 2; if (ty < 0) ty = 0;
-    if (_icons[i]) {
-      int ih = view.fontHeight(iconFont());
-      view.drawGlyph(iconFont(), cx + (cell - ih) / 2, (h - ih) / 2, _icons[i], col);
-    } else {
-      Canvas cellv = view.region(cx, 0, cell, h);
-      cellv.drawTextEllipsized(fontBody(), cell / 2, ty, cell - 2, _labels[i], col, TextAlign::Center);
+    if (sel) view.fillRect(sx, 1, tw, h - 3, DisplayDriver::LIGHT);
+
+    int iconX = sel ? sx + PAD : sx + (tw - ICON_W) / 2;
+    view.drawGlyph(iconFont(), iconX, (h - iconH) / 2, _icons[i], col);
+    if (sel) {
+      int lx = sx + PAD + ICON_W + GAP;
+      view.drawTextEllipsized(fontBody(), lx, (h - bodyH) / 2, sx + tw - PAD - lx, _labels[i], col);
     }
   }
   view.fillRect(0, h - 1, w, 1, DisplayDriver::LIGHT);

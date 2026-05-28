@@ -1,29 +1,10 @@
 #include <gtest/gtest.h>
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/Toggle.h>
-#include <mishmesh/widgets/Toast.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
 #include "FakeDisplayDriver.h"
 using namespace mishmesh;
-
-TEST(Toast, ActiveWhileWithinDurationThenExpires) {
-  Toast t;
-  EXPECT_FALSE(t.active(0));
-  t.show("Path reset", 1000, 1400);
-  EXPECT_TRUE(t.active(1000));
-  EXPECT_TRUE(t.active(2399));
-  EXPECT_FALSE(t.active(2400));   // expired at now >= until
-}
-
-TEST(Toast, DrawsBar) {
-  FakeDisplayDriver d;
-  Canvas c(&d);
-  Toast t;
-  t.show("Cleared", 0);
-  t.draw(c, 0, 50, 128, 14);
-  EXPECT_GT(d.fills.size(), 0u);
-}
 
 namespace {
 struct ValModel : ListModel {

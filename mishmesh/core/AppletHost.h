@@ -33,6 +33,10 @@ public:
   void dispatch(InputEvent ev);
   void loop(uint32_t now_ms);
 
+  // Transient feedback drawn over the foreground for ~1.4s. Outlives applet
+  // pops (e.g. "Contact deleted" shown after a detail screen closes itself).
+  void postToast(const char* msg);
+
 private:
   void renderIfDue(uint32_t now_ms);
 
@@ -53,6 +57,10 @@ private:
   uint32_t _auto_off_ms;
   uint32_t _last_activity;
   bool _activity_init;
+
+  char _toast_msg[28];
+  uint32_t _toast_until;
+  bool _toast_pending;
 };
 
 }  // namespace mishmesh

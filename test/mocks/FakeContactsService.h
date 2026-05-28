@@ -8,8 +8,10 @@
 // per kind and records action calls.
 class FakeContactsService : public mishmesh::ContactsService {
 public:
-  struct Row { std::string name; uint8_t pubkey[6]; bool favourite=false; bool hasPath=true; uint32_t lastAdvert=0; };
+  struct Row { std::string name; uint8_t pubkey[6]; bool favourite=false; bool hasPath=true; uint32_t lastAdvert=0;
+               bool hasLocation=false; int32_t gpsLat=0, gpsLon=0; };
   std::vector<Row> chats, repeaters, rooms, sensors;
+  bool hasSelfLoc=false; int32_t selfLat=0, selfLon=0;
 
   mishmesh::AutoAddConfig cfg{true,false,false,false,false,3};
   uint32_t telemSeq = 0;
@@ -37,9 +39,37 @@ public:
     if (i < 0 || i >= (int)l.size()) return false;
     const Row& r = l[i];
     out.name = r.name.c_str(); out.type = (uint8_t)k; out.isFavourite = r.favourite;
-    out.hasPath = r.hasPath; out.lastAdvert = r.lastAdvert; out.pubKey = r.pubkey;
+    out.hasPath = r.hasPath; out.hops = r.hasPath ? 1 : 0; out.lastAdvert = r.lastAdvert; out.pubKey = r.pubkey;
+    out.hasLocation = r.hasLocation; out.gpsLat = r.gpsLat; out.gpsLon = r.gpsLon;
     return true;
   }
+  int countFavourites() const override {
+    int n = 0;
+    for (auto* l : {&chats, &repeaters, &rooms, &sensors})
+      for (const Row& r : *l) if (r.favourite) n++;
+    return n;
+  }
+  bool getFavourite(int index, mishmesh::ContactView& out) const override {
+    int seen = 0;
+    const mishmesh::ContactKind kinds[4] = {mishmesh::ContactKind::Chat, mishmesh::ContactKind::Repeater,
+                                            mishmesh::ContactKind::Room, mishmesh::ContactKind::Sensor};
+    for (mishmesh::ContactKind k : kinds) {
+      const auto& l = list(k);
+      for (int i = 0; i < (int)l.size(); i++) {
+        if (!l[i].favourite) continue;
+        if (seen == index) return getByKind(k, i, out);
+        seen++;
+      }
+    }
+    return false;
+  }
+  bool setFavourite(const uint8_t* pk, bool fav) override {
+    for (auto* l : {&chats, &repeaters, &rooms, &sensors})
+      for (Row& r : *const_cast<std::vector<Row>*>(l))
+        if (keyStr(r.pubkey) == keyStr(pk)) { r.favourite = fav; calls.push_back("setfav"); return true; }
+    return false;
+  }
+  bool selfLocation(int32_t& lat, int32_t& lon) const override { lat = selfLat; lon = selfLon; return hasSelfLoc; }
   bool requestTelemetry(const uint8_t* pk) override { calls.push_back("telem"); lastTelemetryReq = keyStr(pk); return true; }
   bool resetPath(const uint8_t* pk) override { calls.push_back("resetpath"); lastResetPath = keyStr(pk); return true; }
   bool clearConversation(const uint8_t* pk) override { calls.push_back("clear"); lastCleared = keyStr(pk); return true; }

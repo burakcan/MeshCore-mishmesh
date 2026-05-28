@@ -111,17 +111,22 @@ public:
   };
   struct PingLatch {
     uint8_t  pubkey[PUB_KEY_SIZE];
+    uint32_t tag;        // trace tag == send time; matched in onTraceRecv
     uint32_t sentAt;
     uint32_t rttMs;
+    uint8_t  hops;
+    float    snrUs;      // SNR we received the reply at (their signal to us), dB
+    float    snrThem;    // SNR the peer received our ping at (our signal to them), dB
     uint32_t seq;
     bool     replied;
   };
   const TelemetryLatch& uiLastTelemetry() const { return _ui_telemetry; }
   const PingLatch& uiLastPing() const { return _ui_ping; }
   bool uiRequestTelemetry(const uint8_t* pubkey);
-  bool uiPing(const uint8_t* pubkey);          // status request, round-trip latched
+  bool uiPing(const uint8_t* pubkey);          // 0-hop trace ("ping"), round-trip latched
   bool uiDeleteContact(const uint8_t* pubkey);
   bool uiClearConversation(const uint8_t* pubkey);
+  bool uiSetFavourite(const uint8_t* pubkey, bool fav);   // flags bit0 = favourite
   void uiPersistContacts();
   // [/mishmesh]
 
@@ -253,6 +258,7 @@ private:
   PingLatch _ui_ping = {};
   // Shared by the CMD_* serial handlers and the UI hooks (DRY - see MyMesh.cpp).
   int  startContactRequest(ContactInfo& contact, uint8_t req_type, uint32_t& tag, uint32_t& est_timeout);
+  mesh::Packet* startTrace(uint32_t tag, uint32_t auth, uint8_t flags, const uint8_t* path, uint8_t path_len);
   bool removeContactAndBlob(ContactInfo& contact);
   void markContactsDirty();
   // [/mishmesh]

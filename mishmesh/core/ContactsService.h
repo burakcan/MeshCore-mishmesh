@@ -6,13 +6,19 @@ namespace mishmesh {
 
 enum class ContactKind : uint8_t { Chat = 1, Repeater = 2, Room = 3, Sensor = 4 };  // == ADV_TYPE_*
 
+static const int PUBKEY_LEN = 32;   // ContactView::pubKey points to this many bytes
+
 struct ContactView {
   const char*    name;        // valid until the next service call
   uint8_t        type;        // ADV_TYPE_*
   bool           isFavourite;
   bool           hasPath;     // true = direct path known; false = flood
+  uint8_t        hops;        // path length when direct (0 = flood/unknown)
   uint32_t       lastAdvert;  // their clock, UNIX seconds
-  const uint8_t* pubKey;      // stable handle for actions
+  const uint8_t* pubKey;      // full PUB_KEY_SIZE key, stable until next call
+  bool           hasLocation;
+  int32_t        gpsLat;      // degrees * 1e6
+  int32_t        gpsLon;
 };
 
 struct AutoAddConfig {
@@ -35,10 +41,13 @@ struct TelemetryView {
   TelemetryField fields[MAX_TELEM_FIELDS];
 };
 
-// Round-trip result of a ping (status request) to a contact.
+// Round-trip result of a 0-hop ping (trace) to a contact.
 struct PingView {
   bool     replied;
   uint32_t rttMs;
+  uint8_t  hops;
+  float    snrUs;    // SNR we received the reply at, dB
+  float    snrThem;  // SNR the peer received our ping at, dB
 };
 
 // The only seam through which applets reach contacts/mesh state. Implemented by
@@ -48,6 +57,14 @@ struct ContactsService {
 
   virtual int  countByKind(ContactKind k) const = 0;
   virtual bool getByKind(ContactKind k, int index, ContactView& out) const = 0;
+
+  // Favourites span all kinds (flags bit0). The tab is shown only when count > 0.
+  virtual int  countFavourites() const = 0;
+  virtual bool getFavourite(int index, ContactView& out) const = 0;
+  virtual bool setFavourite(const uint8_t* pubKey, bool fav) = 0;
+
+  // Our own location (degrees * 1e6); false if unknown.
+  virtual bool selfLocation(int32_t& lat1e6, int32_t& lon1e6) const = 0;
 
   virtual bool requestTelemetry(const uint8_t* pubKey) = 0;
   virtual bool resetPath(const uint8_t* pubKey) = 0;

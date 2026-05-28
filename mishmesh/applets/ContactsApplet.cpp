@@ -3,6 +3,7 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/text/Fonts.h>
+#include <stdio.h>
 
 namespace mishmesh {
 
@@ -12,16 +13,44 @@ namespace mishmesh {
 static uint16_t kindIcon(ContactKind k) {
   switch (k) {
     case ContactKind::Chat:     return (uint16_t)Icon::User;
-    case ContactKind::Repeater: return (uint16_t)Icon::Wifi;
-    case ContactKind::Room:     return (uint16_t)Icon::Message;
-    default:                    return (uint16_t)Icon::Bell;
+    case ContactKind::Repeater: return (uint16_t)Icon::Radio;
+    case ContactKind::Room:     return (uint16_t)Icon::Comment;
+    default:                    return (uint16_t)Icon::Chip;
   }
+}
+
+// Tab-bar icon for a kind (plural "Users" for the contacts tab vs the per-row User).
+static uint16_t tabIcon(ContactKind k) {
+  return k == ContactKind::Chat ? (uint16_t)Icon::Users : kindIcon(k);
+}
+
+// Row label shared by the per-kind and favourites lists: repeaters get a 2-hex
+// key prefix (they often share generic names); everything else is just the name.
+static const char* contactLabel(const ContactView& v, char* buf, int n) {
+  if (v.type == (uint8_t)ContactKind::Repeater && v.pubKey) {
+    snprintf(buf, n, "%02X %s", v.pubKey[0], v.name);
+    return buf;
+  }
+  return v.name;
 }
 
 const char* ContactListModel::label(int i) const {
   static ContactView v;
-  if (_svc && _svc->getByKind(_kind, i, v)) return v.name;
-  return "";
+  static char buf[44];
+  if (!_svc || !_svc->getByKind(_kind, i, v)) return "";
+  return contactLabel(v, buf, sizeof(buf));
+}
+
+const char* FavouritesListModel::label(int i) const {
+  static ContactView v;
+  static char buf[44];
+  if (!_svc || !_svc->getFavourite(i, v)) return "";
+  return contactLabel(v, buf, sizeof(buf));
+}
+uint16_t FavouritesListModel::icon(int i) const {
+  static ContactView v;
+  if (!_svc || !_svc->getFavourite(i, v)) return 0;
+  return kindIcon((ContactKind)v.type);
 }
 
 static const char* SETTINGS_LABELS[ContactsSettingsModel::ROW_COUNT] = {
@@ -48,36 +77,68 @@ ContactsApplet::ContactsApplet()
     : Applet("Contacts"), _host(nullptr), _svc(nullptr),
       _confirming(false), _pendingAction(-1) {}
 
-ContactKind ContactsApplet::currentKind() const {
-  static const ContactKind kinds[4] = {
-    ContactKind::Chat, ContactKind::Repeater, ContactKind::Room, ContactKind::Sensor };
-  int t = _tabs.selected();
-  return kinds[t < 4 ? t : 0];
+void ContactsApplet::syncListToTab() {
+  const TabSlot& s = currentSlot();
+  switch (s.kind) {
+    case TabKind::Favourites: _list.setModel(&_favs); break;
+    case TabKind::Settings:   _list.setModel(&_settings); break;
+    default:                  _list.setModel(&_models[(int)s.contactKind - 1]); break;  // kinds are 1-based
+  }
 }
 
-void ContactsApplet::syncListToTab() {
-  if (settingsTab()) { _list.setModel(&_settings); }
-  else { _list.setModel(&_models[_tabs.selected()]); }
+void ContactsApplet::rebuildTabs() {
+  // Preserve what the user was viewing - the Favourites tab can appear or vanish
+  // between visits, shifting indices.
+  TabKind prevKind = TabKind::Kind; ContactKind prevContact = ContactKind::Chat;
+  if (_slotCount > 0) { const TabSlot& s = currentSlot(); prevKind = s.kind; prevContact = s.contactKind; }
+
+  _tabs.clear();   // resets selection to 0
+  _slotCount = 0;
+  if (_svc && _svc->countFavourites() > 0) {
+    _tabs.addTab("Favorites", (uint16_t)Icon::Star);
+    _slots[_slotCount++] = {TabKind::Favourites, ContactKind::Chat};
+  }
+  static const ContactKind KINDS[4] = {
+    ContactKind::Chat, ContactKind::Repeater, ContactKind::Room, ContactKind::Sensor };
+  static const char* KIND_LABELS[4] = { "Contacts", "Repeaters", "Rooms", "Sensors" };
+  for (int i = 0; i < 4; i++) {
+    _tabs.addTab(KIND_LABELS[i], tabIcon(KINDS[i]));
+    _slots[_slotCount++] = {TabKind::Kind, KINDS[i]};
+  }
+  _tabs.addTab("Settings", (uint16_t)Icon::Settings);
+  _slots[_slotCount++] = {TabKind::Settings, ContactKind::Chat};
+
+  for (int i = 0; i < _slotCount; i++) {
+    if (_slots[i].kind != prevKind) continue;
+    if (prevKind == TabKind::Kind && _slots[i].contactKind != prevContact) continue;
+    _tabs.setSelected(i); break;
+  }
+  syncListToTab();
 }
 
 void ContactsApplet::onStart(AppletContext& ctx) {
   _host = ctx.host;
   _svc = ctx.contacts;
-  _tabs.clear();
-  _tabs.addTab("Cont", (uint16_t)Icon::Users);
-  _tabs.addTab("Rep");
-  _tabs.addTab("Room");
-  _tabs.addTab("Sens");
-  _tabs.addTab("Set");   // settings (cog glyph renders poorly at 12px; use text)
   _models[0].bind(_svc, ContactKind::Chat, kindIcon(ContactKind::Chat));
   _models[1].bind(_svc, ContactKind::Repeater, kindIcon(ContactKind::Repeater));
   _models[2].bind(_svc, ContactKind::Room, kindIcon(ContactKind::Room));
   _models[3].bind(_svc, ContactKind::Sensor, kindIcon(ContactKind::Sensor));
+  _favs.bind(_svc);
   _settings.bind(_svc);
   _list.setRowHeight(14);
-  syncListToTab();
   _confirming = false; _pendingAction = -1;
+  _slotCount = 0;        // fresh build: no selection to preserve
+  rebuildTabs();
+  // On a fresh open, land on the Favourites tab when it exists (always slot 0).
+  if (_slotCount > 0 && _slots[0].kind == TabKind::Favourites) {
+    _tabs.setSelected(0);
+    syncListToTab();
+  }
 }
+
+// Favourites can change while a contact detail is open; refresh the tab set when
+// we become the top applet again.
+void ContactsApplet::onForeground() { rebuildTabs(); }
 
 int ContactsApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
@@ -131,10 +192,13 @@ bool ContactsApplet::onInput(InputEvent ev) {
       }
       return true;
     }
-    // Contact tab: drill into detail.
+    // Favourites or a kind tab: drill into detail.
     if (_svc) {
+      const TabSlot& s = currentSlot();
       ContactView v;
-      if (_svc->getByKind(currentKind(), _list.selected(), v)) {
+      bool ok = (s.kind == TabKind::Favourites) ? _svc->getFavourite(_list.selected(), v)
+                                                : _svc->getByKind(s.contactKind, _list.selected(), v);
+      if (ok) {
         contactDetailApplet().setTarget(v.pubKey);
         if (_host) _host->push(&contactDetailApplet());
       }

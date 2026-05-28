@@ -29,6 +29,8 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
 
   mutable ContactInfo _scratch;     // backs the ContactView returned by getByKind
 
+  static void fillView(const ContactInfo& c, mishmesh::ContactView& out);
+
 #ifdef UI_HAS_JOYSTICK
   mishmesh::DirectionalSource* _joystick;
   mishmesh::ButtonGestureSource* _backBtn;
@@ -60,6 +62,10 @@ public:
   // mishmesh::ContactsService
   int  countByKind(mishmesh::ContactKind k) const override;
   bool getByKind(mishmesh::ContactKind k, int index, mishmesh::ContactView& out) const override;
+  int  countFavourites() const override;
+  bool getFavourite(int index, mishmesh::ContactView& out) const override;
+  bool setFavourite(const uint8_t* pubKey, bool fav) override;
+  bool selfLocation(int32_t& lat1e6, int32_t& lon1e6) const override;
   bool requestTelemetry(const uint8_t* pubKey) override;
   bool resetPath(const uint8_t* pubKey) override;
   bool clearConversation(const uint8_t* pubKey) override;

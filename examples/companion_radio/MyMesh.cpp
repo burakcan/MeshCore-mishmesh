@@ -707,13 +707,6 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     memcpy(&out_frame[i], &data[4], len - 4);
     i += (len - 4);
     _serial->writeFrame(out_frame, i);
-    // [mishmesh] latch the round-trip for the on-device ping
-    if (memcmp(_ui_ping.pubkey, contact.id.pub_key, PUB_KEY_SIZE) == 0) {
-      _ui_ping.rttMs = _ms->getMillis() - _ui_ping.sentAt;
-      _ui_ping.replied = true;
-      _ui_ping.seq++;
-    }
-    // [/mishmesh]
   } else if (len > 4 && tag == pending_telemetry) {  // check for matching response tag
     pending_telemetry = 0;
 
@@ -765,6 +758,16 @@ int MyMesh::startContactRequest(ContactInfo& contact, uint8_t req_type, uint32_t
   return result;
 }
 
+// Sends a trace ("ping") packet directly along the given path. Shared by
+// CMD_SEND_TRACE_PATH and the on-device 0-hop ping; the round-trip comes back
+// via onTraceRecv(), matched by tag. Returns the packet (for the caller's
+// timeout calc) or null if the outbound queue is full.
+mesh::Packet* MyMesh::startTrace(uint32_t tag, uint32_t auth, uint8_t flags, const uint8_t* path, uint8_t path_len) {
+  auto pkt = createTrace(tag, auth, flags);
+  if (pkt) sendDirect(pkt, (uint8_t*)path, path_len);
+  return pkt;
+}
+
 // Removes a contact, deletes its stored blob, and schedules the lazy flash write.
 bool MyMesh::removeContactAndBlob(ContactInfo& contact) {
   uint8_t full[PUB_KEY_SIZE];
@@ -789,11 +792,16 @@ bool MyMesh::uiRequestTelemetry(const uint8_t* pubkey) {
 bool MyMesh::uiPing(const uint8_t* pubkey) {
   ContactInfo* c = lookupContactByPubKey(pubkey, 6);
   if (!c) return false;
-  uint32_t tag = 0, est_timeout = 0;
-  if (startContactRequest(*c, REQ_TYPE_GET_STATUS, tag, est_timeout) == MSG_SEND_FAILED) return false;
+  uint32_t tag = _ms->getMillis();              // tag doubles as the send time
+  uint8_t path[1] = { c->id.pub_key[0] };       // 0-hop: trace directly to the target
+  if (!startTrace(tag, 0, 0, path, 1)) return false;
   memcpy(_ui_ping.pubkey, c->id.pub_key, PUB_KEY_SIZE);
-  _ui_ping.sentAt = _ms->getMillis();
+  _ui_ping.tag = tag;
+  _ui_ping.sentAt = tag;
   _ui_ping.rttMs = 0;
+  _ui_ping.hops = 0;
+  _ui_ping.snrUs = 0;
+  _ui_ping.snrThem = 0;
   _ui_ping.replied = false;
   return true;
 }
@@ -808,6 +816,14 @@ bool MyMesh::uiDeleteContact(const uint8_t* pubkey) {
   ContactInfo* c = lookupContactByPubKey(pubkey, 6);
   if (!c) return false;
   return removeContactAndBlob(*c);
+}
+
+bool MyMesh::uiSetFavourite(const uint8_t* pubkey, bool fav) {
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);
+  if (!c) return false;
+  if (fav) c->flags |= 0x01; else c->flags &= ~0x01;   // bit0 only; upper bits hold path policy
+  saveContacts();   // persist immediately so a favourite survives a reboot
+  return true;
 }
 
 void MyMesh::uiPersistContacts() {
@@ -914,6 +930,17 @@ void MyMesh::onTraceRecv(mesh::Packet *packet, uint32_t tag, uint32_t auth_code,
   } else {
     MESH_DEBUG_PRINTLN("onTraceRecv(), data received while app offline");
   }
+
+  // [mishmesh] latch the on-device ping (0-hop trace) round-trip, matched by tag
+  if (_ui_ping.tag != 0 && tag == _ui_ping.tag && !_ui_ping.replied) {
+    _ui_ping.rttMs = _ms->getMillis() - _ui_ping.sentAt;
+    _ui_ping.hops = path_len;
+    _ui_ping.snrUs = packet->getSNR();                                  // we heard them
+    _ui_ping.snrThem = (path_len >= 1) ? ((int8_t)path_snrs[0]) / 4.0f : 0;  // they heard us
+    _ui_ping.replied = true;
+    _ui_ping.seq++;
+  }
+  // [/mishmesh]
 }
 
 uint32_t MyMesh::calcFloodTimeoutMillisFor(uint32_t pkt_airtime_millis) const {
@@ -1820,10 +1847,8 @@ void MyMesh::handleCmdFrame(size_t len) {
       uint32_t tag, auth;
       memcpy(&tag, &cmd_frame[1], 4);
       memcpy(&auth, &cmd_frame[5], 4);
-      auto pkt = createTrace(tag, auth, flags);
+      auto pkt = startTrace(tag, auth, flags, &cmd_frame[10], path_len);  // [mishmesh] shared helper
       if (pkt) {
-        sendDirect(pkt, &cmd_frame[10], path_len);
-
         uint32_t t = _radio->getEstAirtimeFor(pkt->payload_len + pkt->path_len + 2);
         uint32_t est_timeout = calcDirectTimeoutMillisFor(t, path_len >> path_sz);
 
