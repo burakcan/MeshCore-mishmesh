@@ -18,6 +18,7 @@ public:
   void setResult(const TelemetryView& v);
   void setTimeout();
   int  lineCount() const { return _text.count(); }
+  bool needsAnimation() const { return _text.needsAnimation(); }
   bool onInput(InputEvent ev) override { return _text.onInput(ev); }
   void draw(Canvas& c, int x, int y, int w, int h) override;
 };

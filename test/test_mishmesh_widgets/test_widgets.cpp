@@ -2,6 +2,7 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/widgets/StatusBar.h>
 #include <mishmesh/widgets/ListMenu.h>
+#include <mishmesh/widgets/ScrollText.h>
 #include "FakeDisplayDriver.h"
 
 #include <string>
@@ -54,6 +55,37 @@ TEST(CanvasText, AnchoredTextRespectsRegionOffset) {
   Canvas sub = c.region(10, 0, 100, 64);
   sub.textRight(50, 0, "AB", DisplayDriver::LIGHT);   // local 50-12=38 -> device 48
   EXPECT_EQ(48, d.cursorX);
+}
+
+// ---- Canvas clipping -------------------------------------------------------
+
+// A nested region at a negative offset (e.g. a list row scrolled partly above
+// the body) must not let its draws escape above the parent's clip top - this is
+// the bug where toggle pills overlapped the tab bar.
+TEST(CanvasClip, NestedNegativeOffsetRegionStaysWithinParent) {
+  FakeDisplayDriver d;
+  Canvas c(&d);
+  Canvas body = c.region(0, 14, 128, 50);     // list body, tabs occupy y 0..13
+  Canvas pill = body.region(100, -5, 28, 12); // toggle scrolled 5px above body top
+  pill.fillRect(0, 0, 28, 12, DisplayDriver::LIGHT);
+  ASSERT_FALSE(d.fills.empty());
+  for (const auto& f : d.fills) {
+    EXPECT_GE(f.y, 14) << "fill escaped above the parent clip onto the tab bar";
+    EXPECT_LE(f.y + f.h, 64);
+  }
+}
+
+// The same draw must still produce its visible (below-the-fold) portion.
+TEST(CanvasClip, NestedNegativeOffsetRegionKeepsVisiblePart) {
+  FakeDisplayDriver d;
+  Canvas c(&d);
+  Canvas body = c.region(0, 14, 128, 50);
+  Canvas pill = body.region(100, -5, 28, 12);
+  pill.fillRect(0, 0, 28, 12, DisplayDriver::LIGHT);
+  ASSERT_EQ(1u, d.fills.size());
+  EXPECT_EQ(14, d.fills[0].y);     // clipped to the body top
+  EXPECT_EQ(7, d.fills[0].h);      // 12 - 5 px clipped away
+  EXPECT_EQ(100, d.fills[0].x);
 }
 
 // ---- Battery ---------------------------------------------------------------
@@ -138,6 +170,16 @@ TEST(ListMenu, EmptyModelDoesNothing) {
   EXPECT_EQ(0, list.selected());
 }
 
+TEST(ListMenu, EmptyModelDrawsNoSelectionBar) {
+  VecModel m;   // no rows
+  ListMenu list; list.setModel(&m); list.setRowHeight(12);
+  list.setEmptyText("No items");
+  FakeDisplayDriver d; Canvas c(&d);
+  list.draw(c, 0, 0, 128, 60);
+  for (auto& f : d.fills) EXPECT_NE(12, f.h);   // no row-height highlight bar
+  EXPECT_FALSE(list.needsAnimation());
+}
+
 TEST(ListMenu, HighlightsSelectedRow) {
   VecModel m; m.items = {"a", "b", "c"};
   ListMenu list;
@@ -160,6 +202,53 @@ TEST(ListMenu, ScrollsToKeepSelectionVisible) {
   EXPECT_EQ(0, list.firstVisibleRow(36));         // 3 rows fit, no scroll yet
   for (int i = 0; i < 4; i++) list.onInput(InputEvent::NavDown);  // select "e"
   EXPECT_EQ(2, list.firstVisibleRow(36));         // window shifts to show c,d,e
+}
+
+TEST(ListMenu, AnimatesSelectionThenSettlesOnRow) {
+  VecModel m; m.items = {"a", "b", "c", "d"};
+  ListMenu list; list.setModel(&m); list.setRowHeight(12);
+  FakeDisplayDriver d; Canvas c(&d);
+  list.draw(c, 0, 0, 128, 60);            // first draw snaps to the top
+  EXPECT_FALSE(list.needsAnimation());
+
+  list.onInput(InputEvent::NavDown);       // -> row 1: should glide, not jump
+  list.draw(c, 0, 0, 128, 60);
+  EXPECT_TRUE(list.needsAnimation());      // mid-slide
+
+  for (int i = 0; i < 30 && list.needsAnimation(); i++) list.draw(c, 0, 0, 128, 60);
+  EXPECT_FALSE(list.needsAnimation());     // settled
+
+  d.fills.clear();
+  list.draw(c, 0, 0, 128, 60);
+  bool barAtRow1 = false;
+  for (auto& f : d.fills) if (f.y == 12 && f.h == 12) barAtRow1 = true;
+  EXPECT_TRUE(barAtRow1);
+}
+
+TEST(ListMenu, WrappingSnapsInsteadOfSlidingAcrossList) {
+  VecModel m; m.items = {"a", "b", "c"};
+  ListMenu list; list.setModel(&m); list.setRowHeight(12);
+  FakeDisplayDriver d; Canvas c(&d);
+  list.draw(c, 0, 0, 128, 60);
+  list.onInput(InputEvent::NavUp);         // wrap 0 -> 2
+  list.draw(c, 0, 0, 128, 60);
+  EXPECT_EQ(2, list.selected());
+  EXPECT_FALSE(list.needsAnimation());     // snapped, no long slide
+}
+
+TEST(ScrollText, AnimatesScrollThenSettles) {
+  ScrollText st;
+  for (int i = 0; i < 20; i++) st.addf("line %d", i);   // overflows a short view
+  FakeDisplayDriver d; Canvas c(&d);
+  st.draw(c, 0, 0, 128, 40);            // first draw snaps to the top
+  EXPECT_FALSE(st.needsAnimation());
+
+  st.onInput(InputEvent::NavDown);       // scroll down a line: should glide
+  st.draw(c, 0, 0, 128, 40);
+  EXPECT_TRUE(st.needsAnimation());
+
+  for (int i = 0; i < 30 && st.needsAnimation(); i++) st.draw(c, 0, 0, 128, 40);
+  EXPECT_FALSE(st.needsAnimation());     // settled
 }
 
 int main(int argc, char** argv) {

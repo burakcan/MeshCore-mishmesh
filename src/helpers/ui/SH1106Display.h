@@ -20,10 +20,19 @@ class SH1106Display : public DisplayDriver
   bool _isOn;
   uint8_t _color;
 
+  // [mishmesh] frame-skip: a copy of the buffer last actually flushed to the panel.
+  // endFrame() compares against it and skips the blocking ~25ms I2C transfer when the
+  // composed frame is unchanged - a static screen (e.g. a confirm modal) otherwise
+  // flushes every frame, and that blocking window starves input polling.
+  static const int FB_SIZE = 128 * 8;   // 128x64 mono: 1 byte = 8 vertical pixels
+  uint8_t _shadow[FB_SIZE];
+  bool _shadowValid;
+  // [/mishmesh]
+
   bool i2c_probe(TwoWire &wire, uint8_t addr);
 
 public:
-  SH1106Display() : DisplayDriver(128, 64), display(128, 64, &Wire, PIN_OLED_RESET) { _isOn = false; }
+  SH1106Display() : DisplayDriver(128, 64), display(128, 64, &Wire, PIN_OLED_RESET) { _isOn = false; _shadowValid = false; }
   bool begin();
 
   bool isOn() override { return _isOn; }

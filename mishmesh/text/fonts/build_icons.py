@@ -34,6 +34,7 @@ ICONS = [
     ("Comment",     "comment",       0xE013),
     ("Chip",        "cpu",           0xE014),
     ("Star",        "star",          0xE015),
+    ("Search",      "search",        0xE016),
 ]
 
 NUM = re.compile(r'[-+]?\d*\.?\d+')

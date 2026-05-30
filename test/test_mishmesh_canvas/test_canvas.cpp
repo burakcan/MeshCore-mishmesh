@@ -96,6 +96,22 @@ TEST(CanvasStipple, FillsCheckerboard) {
   }
 }
 
+TEST(CanvasStipple, ParityStaysStableWhenClipped) {
+  // A stipple that overruns the clip must keep the same device-pixel checkerboard
+  // phase as if it were fully drawn - the fast path computes a phase offset for the
+  // portion the clip trimmed away. Region (1,1) makes the local origin odd.
+  FakeDisplayDriver d(8, 8);
+  mishmesh::Canvas c(&d);
+  mishmesh::Canvas sub = c.region(1, 1, 6, 6);
+  sub.fillStipple(-1, -1, 8, 8, DisplayDriver::LIGHT);  // overruns top-left of the region
+  ASSERT_FALSE(d.fills.empty());
+  for (auto& r : d.fills) {
+    EXPECT_EQ(1, r.w);
+    EXPECT_EQ(1, r.h);
+    EXPECT_EQ(0, (r.x + r.y) & 1);   // same parity in device space, despite the clip
+  }
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

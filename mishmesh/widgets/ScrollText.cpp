@@ -1,5 +1,6 @@
 #include <mishmesh/widgets/ScrollText.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Anim.h>
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -26,8 +27,9 @@ bool ScrollText::onInput(InputEvent ev) {
   int bodyTop = _headerH + (_header && _headerH > 0 ? 2 : 0);
   int contentH = bodyTop + _count * _lineH;
   int maxScroll = contentH > _viewH ? contentH - _viewH : 0;
-  if (ev == InputEvent::NavDown) { _scrollPx += _lineH; if (_scrollPx > maxScroll) _scrollPx = maxScroll; return true; }
-  if (ev == InputEvent::NavUp)   { _scrollPx -= _lineH; if (_scrollPx < 0) _scrollPx = 0; return true; }
+  // Move the target a line; draw() eases _scrollPx toward it.
+  if (ev == InputEvent::NavDown) { _scrollTarget += _lineH; if (_scrollTarget > maxScroll) _scrollTarget = maxScroll; return true; }
+  if (ev == InputEvent::NavUp)   { _scrollTarget -= _lineH; if (_scrollTarget < 0) _scrollTarget = 0; return true; }
   return false;
 }
 
@@ -39,8 +41,11 @@ void ScrollText::draw(Canvas& c, int x, int y, int w, int h) {
   int bodyTop = _headerH + (_header && _headerH > 0 ? 2 : 0);   // gap below the header
   int contentH = bodyTop + _count * lh;
   int maxScroll = contentH > h ? contentH - h : 0;
-  if (_scrollPx > maxScroll) _scrollPx = maxScroll;
-  if (_scrollPx < 0) _scrollPx = 0;
+  if (_scrollTarget > maxScroll) _scrollTarget = maxScroll;
+  if (_scrollTarget < 0) _scrollTarget = 0;
+  if (!_animReady) { _scrollPx = _scrollTarget; _animReady = true; }   // opened: snap, don't slide in
+  else { int minStep = lh / 2; if (minStep < 3) minStep = 3; _scrollPx = approach(_scrollPx, _scrollTarget, minStep); }
+  _animating = (_scrollPx != _scrollTarget);
   bool scroll = contentH > h;
   int cw = scroll ? w - 4 : w;
 

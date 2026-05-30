@@ -29,7 +29,7 @@ int AppMenuApplet::onRender(Canvas& c) {
   c.drawText(fontBody(), 4, ty, "Apps", DisplayDriver::LIGHT);
   c.fillRect(0, headH - 1, w, 1, DisplayDriver::LIGHT);
   _list.draw(c, 0, headH, w, c.height() - headH);
-  return 1000;
+  return _list.needsAnimation() ? ListMenu::TICK_MS : 1000;
 }
 
 bool AppMenuApplet::onInput(InputEvent ev) {

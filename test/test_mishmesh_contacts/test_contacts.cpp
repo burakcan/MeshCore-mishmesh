@@ -43,8 +43,8 @@ TEST(ContactsApplet, SettingsToggleCallsService) {
   mishmesh::AppletContext ctx; ctx.contacts = &svc;
   mishmesh::AppletHost host(&d, ctx);
   host.setRoot(&mishmesh::contactsApplet());
-  // Move to settings tab (index 4): NavRight x4.
-  for (int i = 0; i < 4; i++) host.dispatch(mishmesh::InputEvent::NavRight);
+  // Tabs: Contacts,Repeaters,Rooms,Sensors,Discover,Settings -> Settings is index 5.
+  for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavRight);
   // Select first settings row (Users toggle).
   host.dispatch(mishmesh::InputEvent::Select);
   bool called = false;
@@ -246,6 +246,58 @@ TEST(ContactsApplet, KeepsListPositionAfterDrillInAndBack) {
   host.dispatch(mishmesh::InputEvent::NavRight);  // Confirm
   host.dispatch(mishmesh::InputEvent::Select);
   EXPECT_EQ("BBB000", svc.lastDeleted);
+}
+
+TEST(ContactsApplet, RemoveNonFavouritesCleanupKeepsOnlyFavourites) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); a.favourite = true; svc.chats.push_back(a);
+  FakeContactsService::Row b; b.name = "Bob";   memcpy(b.pubkey, "BOBBBB", 6); svc.chats.push_back(b);
+  FakeContactsService::Row r; r.name = "Rep1";  memcpy(r.pubkey, "REP001", 6); svc.repeaters.push_back(r);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  // Tabs: Favorites,Contacts,Repeaters,Rooms,Sensors,Discover,Settings -> Settings is index 6.
+  for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavRight);  // -> Settings
+  for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavDown);   // -> "Remove non-favourites"
+  host.dispatch(mishmesh::InputEvent::Select);     // confirm dialog
+  host.dispatch(mishmesh::InputEvent::NavRight);   // Confirm
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(1u, svc.chats.size());                 // only Alice (favourite) remains
+  EXPECT_TRUE(svc.chats[0].favourite);
+  EXPECT_EQ(0u, svc.repeaters.size());             // non-favourite repeater removed
+}
+
+// ---- Discover -------------------------------------------------------------
+
+TEST(Discover, ServiceAddPromotesToContacts) {
+  FakeContactsService svc;
+  FakeContactsService::Row d; d.name = "NewRep"; memcpy(d.pubkey, "DISC01", 6); d.type = 2 /*repeater*/;
+  svc.discovered.push_back(d);
+  EXPECT_EQ(1, svc.countDiscovered());
+  EXPECT_EQ(0, svc.countByKind(mishmesh::ContactKind::Repeater));
+  EXPECT_TRUE(svc.addDiscovered((const uint8_t*)"DISC01"));
+  EXPECT_EQ(0, svc.countDiscovered());                                  // left the discovery list
+  EXPECT_EQ(1, svc.countByKind(mishmesh::ContactKind::Repeater));       // now a contact
+}
+
+TEST(ContactsApplet, DiscoverTabAddsSelectedNode) {
+  FakeContactsService svc;
+  FakeContactsService::Row d; d.name = "NewNode"; memcpy(d.pubkey, "DISC01", 6); d.type = 1 /*chat*/;
+  svc.discovered.push_back(d);
+  FakeDisplayDriver d2;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d2, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  // No favourites: tabs are Contacts,Repeaters,Rooms,Sensors,Discover,Settings -> Discover is index 4.
+  for (int i = 0; i < 4; i++) host.dispatch(mishmesh::InputEvent::NavRight);
+  host.dispatch(mishmesh::InputEvent::Select);     // open the discovery detail
+  EXPECT_EQ(2, host.depth());
+  // Detail actions: "Add to contacts" (index 0) is preselected.
+  host.dispatch(mishmesh::InputEvent::Select);     // add as contact
+  EXPECT_EQ(0, svc.countDiscovered());
+  EXPECT_EQ(1, svc.countByKind(mishmesh::ContactKind::Chat));
+  EXPECT_EQ(1, host.depth());                       // detail popped back to the list
 }
 
 int main(int argc, char** argv) {

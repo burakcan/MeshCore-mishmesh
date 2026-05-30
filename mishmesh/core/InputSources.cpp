@@ -31,14 +31,29 @@ bool DirectionalSource::poll(InputReport& out) {
     {&_right, Direction::Right},
     {&_press, Direction::Press},
   };
-  for (Item& it : items) {
-    if (it.btn->check() == BUTTON_EVENT_CLICK) {
-      InputEvent ev = mapDirection(_map, it.dir);
-      if (ev != InputEvent::None) {
-        out.event = ev;
-        out.ch = 0;
-        return true;
+  uint32_t now = millis();
+  for (int i = 0; i < 5; i++) {
+    Item& it = items[i];
+    // Debounce: accept a level change only after it has held steady, so contact
+    // bounce on press/release can't fire a spurious second step.
+    bool raw = it.btn->isPressed();
+    if (raw != _rawPressed[i]) { _rawPressed[i] = raw; _rawSince[i] = now; }
+    bool pressed = _wasPressed[i];
+    if ((uint32_t)(now - _rawSince[i]) >= DEBOUNCE_MS) pressed = _rawPressed[i];
+
+    InputEvent ev = mapDirection(_map, it.dir);
+    if (pressed && !_wasPressed[i]) {              // press edge: fire immediately, arm repeat
+      _wasPressed[i] = true;
+      _nextRepeat[i] = now + REPEAT_DELAY_MS;
+      if (ev != InputEvent::None) { out.event = ev; out.ch = 0; return true; }
+    } else if (pressed) {                          // held: Up/Down auto-repeat (fast scroll)
+      bool repeats = (it.dir == Direction::Up || it.dir == Direction::Down);
+      if (repeats && (int32_t)(now - _nextRepeat[i]) >= 0) {
+        _nextRepeat[i] = now + REPEAT_INTERVAL_MS;
+        if (ev != InputEvent::None) { out.event = ev; out.ch = 0; return true; }
       }
+    } else {
+      _wasPressed[i] = false;                      // released
     }
   }
   return false;

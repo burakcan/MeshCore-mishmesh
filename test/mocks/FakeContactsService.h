@@ -9,8 +9,8 @@
 class FakeContactsService : public mishmesh::ContactsService {
 public:
   struct Row { std::string name; uint8_t pubkey[6]; bool favourite=false; bool hasPath=true; uint32_t lastAdvert=0;
-               bool hasLocation=false; int32_t gpsLat=0, gpsLon=0; };
-  std::vector<Row> chats, repeaters, rooms, sensors;
+               bool hasLocation=false; int32_t gpsLat=0, gpsLon=0; uint8_t type=1; };
+  std::vector<Row> chats, repeaters, rooms, sensors, discovered;
   bool hasSelfLoc=false; int32_t selfLat=0, selfLon=0;
 
   mishmesh::AutoAddConfig cfg{true,false,false,false,false,3};
@@ -69,6 +69,31 @@ public:
         if (keyStr(r.pubkey) == keyStr(pk)) { r.favourite = fav; calls.push_back("setfav"); return true; }
     return false;
   }
+  int countDiscovered() const override { return (int)discovered.size(); }
+  bool getDiscovered(int index, mishmesh::ContactView& out) const override {
+    if (index < 0 || index >= (int)discovered.size()) return false;
+    const Row& r = discovered[index];
+    out.name = r.name.c_str(); out.type = r.type; out.isFavourite = false;
+    out.hasPath = r.hasPath; out.hops = r.hasPath ? 1 : 0; out.lastAdvert = r.lastAdvert; out.pubKey = r.pubkey;
+    out.hasLocation = r.hasLocation; out.gpsLat = r.gpsLat; out.gpsLon = r.gpsLon;
+    return true;
+  }
+  bool addDiscovered(const uint8_t* pk) override {
+    for (size_t i = 0; i < discovered.size(); i++) {
+      if (keyStr(discovered[i].pubkey) != keyStr(pk)) continue;
+      Row r = discovered[i];
+      discovered.erase(discovered.begin() + i);
+      switch ((mishmesh::ContactKind)r.type) {
+        case mishmesh::ContactKind::Repeater: repeaters.push_back(r); break;
+        case mishmesh::ContactKind::Room:     rooms.push_back(r); break;
+        case mishmesh::ContactKind::Sensor:   sensors.push_back(r); break;
+        default:                              chats.push_back(r); break;
+      }
+      calls.push_back("adddiscovered");
+      return true;
+    }
+    return false;
+  }
   bool selfLocation(int32_t& lat, int32_t& lon) const override { lat = selfLat; lon = selfLon; return hasSelfLoc; }
   bool requestTelemetry(const uint8_t* pk) override { calls.push_back("telem"); lastTelemetryReq = keyStr(pk); return true; }
   bool resetPath(const uint8_t* pk) override { calls.push_back("resetpath"); lastResetPath = keyStr(pk); return true; }
@@ -82,5 +107,13 @@ public:
   mishmesh::AutoAddConfig getAutoAdd() const override { return cfg; }
   void setAutoAdd(const mishmesh::AutoAddConfig& c) override { cfg = c; calls.push_back("setautoadd"); }
   int removeNonChat() override { calls.push_back("removenonchat"); int n=(int)(repeaters.size()+rooms.size()+sensors.size()); repeaters.clear();rooms.clear();sensors.clear(); return n; }
+  int removeNonFavourites() override {
+    calls.push_back("removenonfav");
+    int removed = 0;
+    for (auto* l : {&chats, &repeaters, &rooms, &sensors})
+      for (size_t i = 0; i < l->size(); )
+        if (!(*l)[i].favourite) { l->erase(l->begin() + i); removed++; } else i++;
+    return removed;
+  }
   int removeAll() override { calls.push_back("removeall"); int n=(int)(chats.size()+repeaters.size()+rooms.size()+sensors.size()); chats.clear();repeaters.clear();rooms.clear();sensors.clear(); return n; }
 };

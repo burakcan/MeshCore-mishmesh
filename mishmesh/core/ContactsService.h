@@ -63,6 +63,11 @@ struct ContactsService {
   virtual bool getFavourite(int index, ContactView& out) const = 0;
   virtual bool setFavourite(const uint8_t* pubKey, bool fav) = 0;
 
+  // Discovered nodes: adverts seen but not added as contacts (e.g. auto-add off).
+  virtual int  countDiscovered() const = 0;
+  virtual bool getDiscovered(int index, ContactView& out) const = 0;
+  virtual bool addDiscovered(const uint8_t* pubKey) = 0;   // promote to a real contact
+
   // Our own location (degrees * 1e6); false if unknown.
   virtual bool selfLocation(int32_t& lat1e6, int32_t& lon1e6) const = 0;
 
@@ -82,6 +87,7 @@ struct ContactsService {
   virtual void          setAutoAdd(const AutoAddConfig& cfg) = 0;
 
   virtual int removeNonChat() = 0;
+  virtual int removeNonFavourites() = 0;
   virtual int removeAll() = 0;
 };
 

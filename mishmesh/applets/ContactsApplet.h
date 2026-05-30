@@ -33,11 +33,22 @@ public:
   uint16_t icon(int i) const override;
 };
 
+// Discovered (seen-but-not-added) nodes, with a per-row contact-type icon.
+class DiscoverListModel : public ListModel {
+  ContactsService* _svc;
+public:
+  DiscoverListModel() : _svc(nullptr) {}
+  void bind(ContactsService* svc) { _svc = svc; }
+  int count() const override { return _svc ? _svc->countDiscovered() : 0; }
+  const char* label(int i) const override;
+  uint16_t icon(int i) const override;
+};
+
 // Fixed settings rows (4 auto-add toggles + overwrite + 2 cleanup actions).
 class ContactsSettingsModel : public ListModel {
   ContactsService* _svc;
 public:
-  enum Row { Users, Repeaters, Rooms, Sensors, Overwrite, RemoveNonUsers, RemoveAll, ROW_COUNT };
+  enum Row { Users, Repeaters, Rooms, Sensors, Overwrite, RemoveNonUsers, RemoveNonFavourites, RemoveAll, ROW_COUNT };
   ContactsSettingsModel() : _svc(nullptr) {}
   void bind(ContactsService* svc) { _svc = svc; }
   int count() const override { return ROW_COUNT; }
@@ -49,7 +60,7 @@ public:
 class ContactsApplet : public Applet {
   // What a given tab shows. The Favourites tab exists only when there are
   // favourites, so tab indices shift; a slot per tab records its meaning.
-  enum class TabKind : uint8_t { Favourites, Kind, Settings };
+  enum class TabKind : uint8_t { Favourites, Kind, Discovered, Settings };
   struct TabSlot { TabKind kind; ContactKind contactKind; };
 
   AppletHost*           _host;
@@ -58,9 +69,10 @@ class ContactsApplet : public Applet {
   ListMenu              _list;
   ContactListModel      _models[4];     // Chat/Repeater/Room/Sensor
   FavouritesListModel   _favs;
+  DiscoverListModel     _discover;
   ContactsSettingsModel _settings;
   ConfirmDialog         _confirm;
-  TabSlot               _slots[6];      // parallel to the tabs
+  TabSlot               _slots[8];      // parallel to the tabs
   int                   _slotCount;
   bool                  _confirming;
   int                   _pendingAction; // ContactsSettingsModel::Row for cleanup confirm

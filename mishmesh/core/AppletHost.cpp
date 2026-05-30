@@ -78,12 +78,7 @@ void AppletHost::dispatch(InputEvent ev) {
   _dirty = true;
 }
 
-void AppletHost::loop(uint32_t now_ms) {
-  if (!_activity_init) {
-    _last_activity = now_ms;
-    _activity_init = true;
-  }
-
+void AppletHost::pumpInput(uint32_t now_ms) {
   for (int i = 0; i < _nsources; i++) {
     InputReport rep;
     while (_sources[i] != nullptr && _sources[i]->poll(rep)) {
@@ -99,6 +94,15 @@ void AppletHost::loop(uint32_t now_ms) {
       }
     }
   }
+}
+
+void AppletHost::loop(uint32_t now_ms) {
+  if (!_activity_init) {
+    _last_activity = now_ms;
+    _activity_init = true;
+  }
+
+  pumpInput(now_ms);
 
   if (_toast_pending) {            // applet posted during input dispatch; stamp it now
     _toast_until = now_ms + TOAST_MS;
@@ -112,6 +116,15 @@ void AppletHost::loop(uint32_t now_ms) {
   }
 
   renderIfDue(now_ms);
+
+  // Rendering is synchronous and a frame can take many ms to compose and flush to
+  // the panel (a full-screen modal scrim is the worst case). Polling once more right
+  // after the frame keeps that render time from becoming an input-blind gap wider
+  // than the button debounce window, which would silently drop short taps. This is
+  // framework-wide: any applet/modal, however heavy its draw, stays responsive
+  // without needing per-screen tuning. Idle cost is nil - sources just report no
+  // change. Events caught here paint on the next loop (_dirty), one frame later.
+  pumpInput(now_ms);
 }
 
 void AppletHost::renderIfDue(uint32_t now_ms) {

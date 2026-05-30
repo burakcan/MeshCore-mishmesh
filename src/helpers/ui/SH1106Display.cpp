@@ -1,6 +1,7 @@
 #include "SH1106Display.h"
 #include <Adafruit_GrayOLED.h>
 #include "Adafruit_SH110X.h"
+#include <string.h>
 
 bool SH1106Display::i2c_probe(TwoWire &wire, uint8_t addr)
 {
@@ -18,6 +19,7 @@ void SH1106Display::turnOn()
 {
   display.oled_command(SH110X_DISPLAYON);
   _isOn = true;
+  _shadowValid = false;   // [mishmesh] force a full flush on the first frame after wake
 }
 
 void SH1106Display::turnOff()
@@ -30,6 +32,7 @@ void SH1106Display::clear()
 {
   display.clearDisplay();
   display.display();
+  _shadowValid = false;   // [mishmesh] panel cleared outside the frame loop
 }
 
 void SH1106Display::startFrame(Color bkg)
@@ -87,5 +90,12 @@ uint16_t SH1106Display::getTextWidth(const char *str)
 
 void SH1106Display::endFrame()
 {
+  // [mishmesh] Skip the blocking ~25ms I2C flush when the composed frame is byte-for-
+  // byte what the panel already shows. The compare is a 1KB memcmp (tens of us); the
+  // flush it avoids is three orders of magnitude slower and, while it runs, no input
+  // is polled. Animations still flush - only genuinely identical frames are skipped.
+  uint8_t* buf = display.getBuffer();
+  if (buf != nullptr && _shadowValid && memcmp(buf, _shadow, FB_SIZE) == 0) return;
   display.display();
+  if (buf != nullptr) { memcpy(_shadow, buf, FB_SIZE); _shadowValid = true; }
 }

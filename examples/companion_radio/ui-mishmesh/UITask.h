@@ -65,6 +65,9 @@ public:
   int  countFavourites() const override;
   bool getFavourite(int index, mishmesh::ContactView& out) const override;
   bool setFavourite(const uint8_t* pubKey, bool fav) override;
+  int  countDiscovered() const override;
+  bool getDiscovered(int index, mishmesh::ContactView& out) const override;
+  bool addDiscovered(const uint8_t* pubKey) override;
   bool selfLocation(int32_t& lat1e6, int32_t& lon1e6) const override;
   bool requestTelemetry(const uint8_t* pubKey) override;
   bool resetPath(const uint8_t* pubKey) override;
@@ -78,6 +81,7 @@ public:
   mishmesh::AutoAddConfig getAutoAdd() const override;
   void setAutoAdd(const mishmesh::AutoAddConfig& cfg) override;
   int removeNonChat() override;
+  int removeNonFavourites() override;
   int removeAll() override;
 
   // AbstractUITask

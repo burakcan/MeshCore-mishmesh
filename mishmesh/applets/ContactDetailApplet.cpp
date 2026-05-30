@@ -1,6 +1,7 @@
 #include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/ContactsService.h>
+#include <mishmesh/core/ContactFormat.h>
 #include <mishmesh/core/Geo.h>
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
@@ -16,23 +17,8 @@ static const char* ACTION_LABELS[ContactDetailApplet::ACTION_KINDS] = {
   "View details", "", "Telemetry", "Ping (0 hop)", "Reset path", "Clear conversation", "Delete contact",
 };
 
-static const char* typeName(uint8_t t) {
-  switch (t) {
-    case (uint8_t)ContactKind::Chat:     return "User";
-    case (uint8_t)ContactKind::Repeater: return "Repeater";
-    case (uint8_t)ContactKind::Room:     return "Room";
-    case (uint8_t)ContactKind::Sensor:   return "Sensor";
-    default:                             return "Contact";
-  }
-}
-
-// Compact relative age, e.g. "now", "5m", "2h", "3d".
-static void formatAge(uint32_t secs, char* buf, int n) {
-  if (secs < 60)        snprintf(buf, n, "%us", secs);
-  else if (secs < 3600) snprintf(buf, n, "%um", secs / 60);
-  else if (secs < 86400)snprintf(buf, n, "%uh", secs / 3600);
-  else                  snprintf(buf, n, "%ud", secs / 86400);
-}
+static const char* typeName(uint8_t t) { return contactTypeName(t); }
+static void formatAge(uint32_t s, char* b, int n) { contactFormatAge(s, b, n); }
 
 ContactDetailApplet::ContactDetailApplet()
     : Applet("Contact"), _host(nullptr), _svc(nullptr), _app(nullptr), _type(0),
@@ -169,6 +155,7 @@ int ContactDetailApplet::onRender(Canvas& c) {
       }
     }
     _ping.draw(c, 0, 0, w, h);
+    if (_ping.needsAnimation()) return ListMenu::TICK_MS;
     return _pingDone ? 500 : 200;
   }
 
@@ -184,10 +171,11 @@ int ContactDetailApplet::onRender(Canvas& c) {
       }
     }
     _telem.draw(c, 0, 0, w, h);
+    if (_telem.needsAnimation()) return ListMenu::TICK_MS;
     return _telemDone ? 500 : 200;
   }
-  bool anim = _card.needsAnimation() || (!_viewing && _list.needsAnimation());
-  return anim ? 90 : 500;
+  bool anim = _card.needsAnimation() || (_viewing ? _details.needsAnimation() : _list.needsAnimation());
+  return anim ? ListMenu::TICK_MS : 500;
 }
 
 bool ContactDetailApplet::onInput(InputEvent ev) {

@@ -128,6 +128,12 @@ public:
   bool uiClearConversation(const uint8_t* pubkey);
   bool uiSetFavourite(const uint8_t* pubkey, bool fav);   // flags bit0 = favourite
   void uiPersistContacts();
+
+  // Discovery: adverts seen but not auto-added, so the UI can add them manually.
+  static const int UI_MAX_DISCOVERIES = 16;
+  int  uiDiscoveryCount();                                // entries not already contacts
+  bool uiGetDiscovery(int index, ContactInfo& out);
+  bool uiAddDiscovery(const uint8_t* pubkey);             // promote a discovery to a contact
   // [/mishmesh]
 
 protected:
@@ -256,6 +262,9 @@ private:
   // [mishmesh]
   TelemetryLatch _ui_telemetry = {};
   PingLatch _ui_ping = {};
+  ContactInfo _ui_discoveries[UI_MAX_DISCOVERIES];
+  int _ui_discovery_count = 0;
+  void uiNoteDiscovery(const ContactInfo& ci);   // called from onDiscoveredContact
   // Shared by the CMD_* serial handlers and the UI hooks (DRY - see MyMesh.cpp).
   int  startContactRequest(ContactInfo& contact, uint8_t req_type, uint32_t& tag, uint32_t& est_timeout);
   mesh::Packet* startTrace(uint32_t tag, uint32_t auth, uint8_t flags, const uint8_t* path, uint8_t path_len);

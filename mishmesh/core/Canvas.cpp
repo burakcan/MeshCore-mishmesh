@@ -3,15 +3,17 @@
 
 namespace mishmesh {
 
-// Intersect a local rect with (0,0,bw,bh); false if nothing remains visible.
-static bool clipLocal(int& x, int& y, int& w, int& h, int bw, int bh) {
+// Intersect a local rect with the clip window [cl,cr) x [ct,cb); false if
+// nothing remains visible.
+static bool clipLocal(int& x, int& y, int& w, int& h,
+                      int cl, int ct, int cr, int cb) {
   if (w <= 0 || h <= 0) return false;
   int x2 = x + w;
   int y2 = y + h;
-  if (x < 0) x = 0;
-  if (y < 0) y = 0;
-  if (x2 > bw) x2 = bw;
-  if (y2 > bh) y2 = bh;
+  if (x < cl) x = cl;
+  if (y < ct) y = ct;
+  if (x2 > cr) x2 = cr;
+  if (y2 > cb) y2 = cb;
   w = x2 - x;
   h = y2 - y;
   return w > 0 && h > 0;
@@ -24,11 +26,20 @@ Canvas Canvas::region(int x, int y, int w, int h) const {
   if (y + ch > _h) ch = _h - y;
   if (cw < 0) cw = 0;
   if (ch < 0) ch = 0;
-  return Canvas(_d, _ox + x, _oy + y, cw, ch, _now);
+  // Carry the parent's clip into the child's local frame (shift by -x,-y) and
+  // intersect with the child's own [0,cw) x [0,ch) bounds, so a negative offset
+  // clips the overflow away instead of letting draws escape the parent.
+  int cl = _cl - x; if (cl < 0) cl = 0;
+  int ct = _ct - y; if (ct < 0) ct = 0;
+  int cr = _cr - x; if (cr > cw) cr = cw;
+  int cb = _cb - y; if (cb > ch) cb = ch;
+  if (cr < cl) cr = cl;
+  if (cb < ct) cb = ct;
+  return Canvas(_d, _ox + x, _oy + y, cw, ch, cl, ct, cr, cb, _now);
 }
 
 void Canvas::fillRect(int x, int y, int w, int h, DisplayDriver::Color c) {
-  if (!clipLocal(x, y, w, h, _w, _h)) return;
+  if (!clipLocal(x, y, w, h, _cl, _ct, _cr, _cb)) return;
   if (_d) {
     _d->setColor(c);
     _d->fillRect(_ox + x, _oy + y, w, h);
@@ -36,7 +47,7 @@ void Canvas::fillRect(int x, int y, int w, int h, DisplayDriver::Color c) {
 }
 
 void Canvas::drawRect(int x, int y, int w, int h, DisplayDriver::Color c) {
-  if (!clipLocal(x, y, w, h, _w, _h)) return;
+  if (!clipLocal(x, y, w, h, _cl, _ct, _cr, _cb)) return;
   if (_d) {
     _d->setColor(c);
     _d->drawRect(_ox + x, _oy + y, w, h);
@@ -45,7 +56,7 @@ void Canvas::drawRect(int x, int y, int w, int h, DisplayDriver::Color c) {
 
 void Canvas::text(int x, int y, const char* str, DisplayDriver::Color c) {
   if (!_d || str == nullptr) return;
-  if (x < 0 || y < 0 || x >= _w || y >= _h) return;
+  if (x < _cl || y < _ct || x >= _cr || y >= _cb) return;
   _d->setColor(c);
   _d->setCursor(_ox + x, _oy + y);
   _d->print(str);
@@ -152,9 +163,18 @@ void Canvas::drawTextEllipsized(const mf_font_s* font, int x, int y, int maxWidt
 }
 
 void Canvas::fillStipple(int x, int y, int w, int h, DisplayDriver::Color c) {
+  // Checkerboard fill (every other pixel). Hot path: a full-screen modal scrim is
+  // thousands of pixels, so clip and set the colour ONCE up front and step the inner
+  // loop by 2 - instead of routing every pixel through fillRect() (which re-clips and
+  // re-sets the colour each call). Same pixels, a fraction of the per-pixel overhead.
+  int px = x, py = y;                                 // pre-clip origin: parity reference
+  if (!clipLocal(x, y, w, h, _cl, _ct, _cr, _cb)) return;
+  if (_d == nullptr) return;
+  _d->setColor(c);
+  int phase = (x - px) + (y - py);                    // keep the dither stable if clipped
   for (int j = 0; j < h; j++)
-    for (int i = 0; i < w; i++)
-      if (((i + j) & 1) == 0) fillRect(x + i, y + j, 1, 1, c);
+    for (int i = ((phase + j) & 1); i < w; i += 2)
+      _d->fillRect(_ox + x + i, _oy + y + j, 1, 1);
 }
 
 }  // namespace mishmesh

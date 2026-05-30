@@ -9,21 +9,30 @@ namespace mishmesh {
 
 enum class TextAlign { Left, Center, Right };
 
-// A clipped drawing surface over a DisplayDriver: a value type carrying an
-// origin offset, clip bounds, and the current frame time.
+// A clipped drawing surface over a DisplayDriver: a value type carrying a
+// drawing origin, a clip window, and the current frame time. The origin and the
+// clip are tracked separately so a sub-region requested at a negative offset
+// (e.g. a list row scrolled partly above the viewport) keeps its coordinate
+// mapping while still being clipped to its parent's bounds - its overflow is
+// discarded, not drawn outside the parent.
 class Canvas {
   DisplayDriver* _d;
-  int _ox, _oy;     // origin in device coordinates
-  int _w, _h;       // clip bounds
-  uint32_t _now;    // frame time in ms, for animation
+  int _ox, _oy;             // origin in device coordinates (local 0,0 maps here)
+  int _w, _h;               // logical size, reported by width()/height()
+  int _cl, _ct, _cr, _cb;   // clip window in local coords (left/top/right/bottom)
+  uint32_t _now;            // frame time in ms, for animation
 
-  Canvas(DisplayDriver* d, int ox, int oy, int w, int h, uint32_t now)
-      : _d(d), _ox(ox), _oy(oy), _w(w), _h(h), _now(now) {}
+  Canvas(DisplayDriver* d, int ox, int oy, int w, int h,
+         int cl, int ct, int cr, int cb, uint32_t now)
+      : _d(d), _ox(ox), _oy(oy), _w(w), _h(h),
+        _cl(cl), _ct(ct), _cr(cr), _cb(cb), _now(now) {}
 
 public:
   explicit Canvas(DisplayDriver* d, uint32_t now = 0)
       : _d(d), _ox(0), _oy(0),
-        _w(d ? d->width() : 0), _h(d ? d->height() : 0), _now(now) {}
+        _w(d ? d->width() : 0), _h(d ? d->height() : 0),
+        _cl(0), _ct(0), _cr(d ? d->width() : 0), _cb(d ? d->height() : 0),
+        _now(now) {}
 
   int width() const { return _w; }
   int height() const { return _h; }

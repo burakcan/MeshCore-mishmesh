@@ -7,7 +7,7 @@ namespace mishmesh {
 // Horizontal tabs. NavLeft/NavRight move the selection (clamped). Tab labels
 // point to caller-owned (static) storage; icons are iconFont() codepoints.
 class TabBar : public Widget {
-  static const int MAX_TABS = 6;
+  static const int MAX_TABS = 8;
   const char* _labels[MAX_TABS];
   uint16_t    _icons[MAX_TABS];
   int         _count;

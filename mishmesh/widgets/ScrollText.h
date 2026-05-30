@@ -15,16 +15,20 @@ class ScrollText : public Widget {
   int         _count;
   Widget*     _header;
   int         _headerH;
-  int         _scrollPx;
+  int         _scrollPx, _scrollTarget;   // animated offset eases toward the target
+  bool        _animReady;   // false => snap on the next draw (opened/cleared)
+  bool        _animating;
   mutable int _lineH;       // from the last draw, for input scrolling
   mutable int _viewH;
 public:
-  ScrollText() : _count(0), _header(nullptr), _headerH(0), _scrollPx(0), _lineH(9), _viewH(0) {}
-  void clear() { _count = 0; _scrollPx = 0; }
+  ScrollText() : _count(0), _header(nullptr), _headerH(0), _scrollPx(0), _scrollTarget(0),
+                 _animReady(false), _animating(false), _lineH(9), _viewH(0) {}
+  void clear() { _count = 0; _scrollPx = _scrollTarget = 0; _animReady = false; }
   void setHeader(Widget* hdr, int height) { _header = hdr; _headerH = height; }
   void addLine(const char* s);
   void addf(const char* fmt, ...);
   int  count() const { return _count; }
+  bool needsAnimation() const { return _animating; }
   bool onInput(InputEvent ev) override;     // NavUp/Down scroll; else false
   void draw(Canvas& c, int x, int y, int w, int h) override;
 };

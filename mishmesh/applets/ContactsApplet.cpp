@@ -1,5 +1,6 @@
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/ContactDetailApplet.h>
+#include <mishmesh/applets/DiscoverDetailApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/text/Fonts.h>
@@ -53,9 +54,21 @@ uint16_t FavouritesListModel::icon(int i) const {
   return kindIcon((ContactKind)v.type);
 }
 
+const char* DiscoverListModel::label(int i) const {
+  static ContactView v;
+  static char buf[44];
+  if (!_svc || !_svc->getDiscovered(i, v)) return "";
+  return contactLabel(v, buf, sizeof(buf));
+}
+uint16_t DiscoverListModel::icon(int i) const {
+  static ContactView v;
+  if (!_svc || !_svc->getDiscovered(i, v)) return 0;
+  return kindIcon((ContactKind)v.type);
+}
+
 static const char* SETTINGS_LABELS[ContactsSettingsModel::ROW_COUNT] = {
   "Auto-add Users", "Auto-add Repeaters", "Auto-add Rooms", "Auto-add Sensors",
-  "Overwrite oldest", "Remove non-users", "Remove all contacts",
+  "Overwrite oldest", "Remove non-users", "Remove non-favourites", "Remove all contacts",
 };
 const char* ContactsSettingsModel::label(int i) const {
   return (i >= 0 && i < ROW_COUNT) ? SETTINGS_LABELS[i] : "";
@@ -77,12 +90,23 @@ ContactsApplet::ContactsApplet()
     : Applet("Contacts"), _host(nullptr), _svc(nullptr),
       _confirming(false), _pendingAction(-1) {}
 
+static const char* emptyLabel(ContactKind k) {
+  switch (k) {
+    case ContactKind::Chat:     return "No contacts";
+    case ContactKind::Repeater: return "No repeaters";
+    case ContactKind::Room:     return "No rooms";
+    default:                    return "No sensors";
+  }
+}
+
 void ContactsApplet::syncListToTab() {
   const TabSlot& s = currentSlot();
   switch (s.kind) {
-    case TabKind::Favourites: _list.setModel(&_favs); break;
-    case TabKind::Settings:   _list.setModel(&_settings); break;
-    default:                  _list.setModel(&_models[(int)s.contactKind - 1]); break;  // kinds are 1-based
+    case TabKind::Favourites: _list.setModel(&_favs); _list.setEmptyText("No favourites"); break;
+    case TabKind::Discovered: _list.setModel(&_discover); _list.setEmptyText("No new devices"); break;
+    case TabKind::Settings:   _list.setModel(&_settings); _list.setEmptyText(nullptr); break;
+    default:                  _list.setModel(&_models[(int)s.contactKind - 1]);          // kinds are 1-based
+                              _list.setEmptyText(emptyLabel(s.contactKind)); break;
   }
 }
 
@@ -105,6 +129,8 @@ void ContactsApplet::rebuildTabs() {
     _tabs.addTab(KIND_LABELS[i], tabIcon(KINDS[i]));
     _slots[_slotCount++] = {TabKind::Kind, KINDS[i]};
   }
+  _tabs.addTab("Discover", (uint16_t)Icon::Search);   // seen-but-not-added nodes
+  _slots[_slotCount++] = {TabKind::Discovered, ContactKind::Chat};
   _tabs.addTab("Settings", (uint16_t)Icon::Settings);
   _slots[_slotCount++] = {TabKind::Settings, ContactKind::Chat};
 
@@ -124,6 +150,7 @@ void ContactsApplet::onStart(AppletContext& ctx) {
   _models[2].bind(_svc, ContactKind::Room, kindIcon(ContactKind::Room));
   _models[3].bind(_svc, ContactKind::Sensor, kindIcon(ContactKind::Sensor));
   _favs.bind(_svc);
+  _discover.bind(_svc);
   _settings.bind(_svc);
   _list.setRowHeight(14);
   _confirming = false; _pendingAction = -1;
@@ -150,7 +177,7 @@ int ContactsApplet::onRender(Canvas& c) {
   _list.draw(c, 0, bodyY, w, bodyH);   // contacts and settings share the one list widget
 
   if (_confirming) { _confirm.draw(c, 0, 0, w, h); return 100; }
-  return _list.needsAnimation() ? 90 : 500;
+  return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool ContactsApplet::onInput(InputEvent ev) {
@@ -159,8 +186,14 @@ bool ContactsApplet::onInput(InputEvent ev) {
       ConfirmResult r = _confirm.result();
       if (r != ConfirmResult::None) {
         if (r == ConfirmResult::Confirmed && _svc) {
-          if (_pendingAction == ContactsSettingsModel::RemoveNonUsers) _svc->removeNonChat();
-          else if (_pendingAction == ContactsSettingsModel::RemoveAll) _svc->removeAll();
+          int removed = -1;
+          if (_pendingAction == ContactsSettingsModel::RemoveNonUsers) removed = _svc->removeNonChat();
+          else if (_pendingAction == ContactsSettingsModel::RemoveNonFavourites) removed = _svc->removeNonFavourites();
+          else if (_pendingAction == ContactsSettingsModel::RemoveAll) removed = _svc->removeAll();
+          if (removed >= 0 && _host) {
+            char buf[20]; snprintf(buf, sizeof(buf), "Removed %d", removed);
+            _host->postToast(buf);
+          }
         }
         _confirming = false; _pendingAction = -1;
       }
@@ -187,16 +220,25 @@ bool ContactsApplet::onInput(InputEvent ev) {
         _svc->setAutoAdd(cfg);
       } else {
         _pendingAction = i;
-        _confirm.configure(i == ContactsSettingsModel::RemoveAll ? "Remove ALL contacts?"
-                                                                 : "Remove non-user contacts?");
+        const char* msg = "Remove non-user contacts?";
+        if (i == ContactsSettingsModel::RemoveAll) msg = "Remove ALL contacts?";
+        else if (i == ContactsSettingsModel::RemoveNonFavourites) msg = "Remove all non-favourites?";
+        _confirm.configure(msg);
         _confirming = true;
       }
       return true;
     }
-    // Favourites or a kind tab: drill into detail.
     if (_svc) {
       const TabSlot& s = currentSlot();
       ContactView v;
+      if (s.kind == TabKind::Discovered) {                 // open the discovery detail (add from there)
+        if (_svc->getDiscovered(_list.selected(), v)) {
+          discoverDetailApplet().setTarget(v);
+          if (_host) _host->push(&discoverDetailApplet());
+        }
+        return true;
+      }
+      // Favourites or a kind tab: drill into detail.
       bool ok = (s.kind == TabKind::Favourites) ? _svc->getFavourite(_list.selected(), v)
                                                 : _svc->getByKind(s.contactKind, _list.selected(), v);
       if (ok) {

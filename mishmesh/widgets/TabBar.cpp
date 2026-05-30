@@ -5,8 +5,9 @@
 namespace mishmesh {
 
 bool TabBar::onInput(InputEvent ev) {
-  if (ev == InputEvent::NavRight) { int prev = _sel; if (_sel < _count - 1) _sel++; return _sel != prev; }
-  if (ev == InputEvent::NavLeft)  { int prev = _sel; if (_sel > 0) _sel--;          return _sel != prev; }
+  if (_count <= 1) return false;
+  if (ev == InputEvent::NavRight) { _sel = (_sel + 1) % _count; return true; }            // wraps last -> first
+  if (ev == InputEvent::NavLeft)  { _sel = (_sel - 1 + _count) % _count; return true; }   // wraps first -> last
   return false;
 }
 

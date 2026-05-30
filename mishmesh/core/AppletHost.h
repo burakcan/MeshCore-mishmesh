@@ -39,6 +39,10 @@ public:
 
 private:
   void renderIfDue(uint32_t now_ms);
+  // Drain every input source once, dispatching (and bounce-coalescing) what they
+  // report. Called both before and after rendering each loop so a slow frame can't
+  // open an input-blind gap - see loop().
+  void pumpInput(uint32_t now_ms);
 
   DisplayDriver* _display;
   Canvas _canvas;

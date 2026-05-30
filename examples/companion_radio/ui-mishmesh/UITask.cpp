@@ -134,6 +134,14 @@ bool UITask::getFavourite(int index, mishmesh::ContactView& out) const {
 
 bool UITask::setFavourite(const uint8_t* pk, bool fav) { return the_mesh.uiSetFavourite(pk, fav); }
 
+int UITask::countDiscovered() const { return the_mesh.uiDiscoveryCount(); }
+bool UITask::getDiscovered(int index, mishmesh::ContactView& out) const {
+  if (!the_mesh.uiGetDiscovery(index, _scratch)) return false;
+  fillView(_scratch, out);
+  return true;
+}
+bool UITask::addDiscovered(const uint8_t* pk) { return the_mesh.uiAddDiscovery(pk); }
+
 bool UITask::selfLocation(int32_t& lat, int32_t& lon) const {
   if (!_sensors) return false;
   lat = (int32_t)(_sensors->node_lat * 1e6);
@@ -203,6 +211,24 @@ int UITask::removeNonChat() {
     int n = the_mesh.getNumContacts();
     for (int i = 0; i < n; i++) {
       if (the_mesh.getContactByIdx(i, _scratch) && _scratch.type != ADV_TYPE_CHAT) {
+        ContactInfo* c = the_mesh.lookupContactByPubKey(_scratch.id.pub_key, 6);
+        if (c && the_mesh.removeContact(*c)) { removed++; found = true; }
+        break;  // array shifted; restart scan
+      }
+    }
+  }
+  if (removed) the_mesh.uiPersistContacts();
+  return removed;
+}
+int UITask::removeNonFavourites() {
+  // Same unbounded rescan as removeNonChat, but keeps only favourites (flags bit0).
+  int removed = 0;
+  bool found = true;
+  while (found) {
+    found = false;
+    int n = the_mesh.getNumContacts();
+    for (int i = 0; i < n; i++) {
+      if (the_mesh.getContactByIdx(i, _scratch) && (_scratch.flags & 0x01) == 0) {
         ContactInfo* c = the_mesh.lookupContactByPubKey(_scratch.id.pub_key, 6);
         if (c && the_mesh.removeContact(*c)) { removed++; found = true; }
         break;  // array shifted; restart scan

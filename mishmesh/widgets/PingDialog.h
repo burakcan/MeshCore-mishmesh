@@ -16,6 +16,7 @@ public:
   void setWaiting();
   void setReplied(uint32_t rttMs, float snrUs, float snrThem);
   void setTimeout();
+  bool needsAnimation() const { return _text.needsAnimation(); }
   bool onInput(InputEvent ev) override { return _text.onInput(ev); }
   void draw(Canvas& c, int x, int y, int w, int h) override;
 };

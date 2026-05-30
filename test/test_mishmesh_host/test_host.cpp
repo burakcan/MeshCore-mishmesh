@@ -237,6 +237,38 @@ TEST(AppletHost, InputWhileOnIsDeliveredAndExtendsTimer) {
   EXPECT_FALSE(d.isOn());   // 2000-900 > 1000
 }
 
+// Input is polled both before and after the (synchronous, possibly slow) render so a
+// heavy frame can't open an input-blind gap. This source stays quiet on the first
+// poll of a loop() and only reports on the second - emulating a press that lands while
+// the frame is being composed. It must still be delivered within the same loop(),
+// which only happens if the host polls again after rendering.
+class SecondPollSource : public InputSource {
+public:
+  int polls = 0;
+  bool fired = false;
+  InputEvent ev;
+  explicit SecondPollSource(InputEvent e) : ev(e) {}
+  bool poll(InputReport& out) override {
+    polls++;
+    if (polls == 2 && !fired) { fired = true; out.event = ev; out.ch = 0; return true; }
+    return false;
+  }
+};
+
+TEST(AppletHost, InputIsPolledAgainAfterRender) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setRoot(&root);
+
+  SecondPollSource src(InputEvent::Select);
+  host.addSource(&src);
+  host.loop(10);
+  // Delivered in the post-render poll of this same loop(), not deferred to the next.
+  EXPECT_EQ(InputEvent::Select, root.lastInput);
+  EXPECT_GE(src.polls, 2);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

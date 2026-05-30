@@ -39,6 +39,7 @@ enum class Icon : uint16_t {
   Comment     = 0xE013,   // speech bubble (rooms)
   Chip        = 0xE014,   // cpu (sensors)
   Star        = 0xE015,   // favourite marker
+  Search      = 0xE016,   // discover tab
 };
 
 }  // namespace mishmesh

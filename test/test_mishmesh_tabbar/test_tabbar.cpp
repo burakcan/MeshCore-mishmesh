@@ -4,20 +4,25 @@
 #include "FakeDisplayDriver.h"
 using namespace mishmesh;
 
-TEST(TabBar, NavRightLeftMovesSelectionClamped) {
+TEST(TabBar, NavRightLeftMovesSelectionWrapping) {
   TabBar t;
   t.addTab("A"); t.addTab("B"); t.addTab("C");
   EXPECT_EQ(0, t.selected());
-  EXPECT_FALSE(t.onInput(InputEvent::NavLeft));  // clamped at first -> no move -> bubbles
-  EXPECT_EQ(0, t.selected());
-  EXPECT_TRUE(t.onInput(InputEvent::NavRight));  // a real move is consumed
-  EXPECT_EQ(1, t.selected());
-  t.onInput(InputEvent::NavRight); t.onInput(InputEvent::NavRight);
-  EXPECT_EQ(2, t.selected());           // clamped at last
-  EXPECT_FALSE(t.onInput(InputEvent::NavRight));  // clamped at last -> no move -> bubbles
+  EXPECT_TRUE(t.onInput(InputEvent::NavLeft));    // wraps first -> last
   EXPECT_EQ(2, t.selected());
-  t.onInput(InputEvent::NavLeft); t.onInput(InputEvent::NavLeft); t.onInput(InputEvent::NavLeft);
-  EXPECT_EQ(0, t.selected());           // clamped at first
+  EXPECT_TRUE(t.onInput(InputEvent::NavRight));   // wraps last -> first
+  EXPECT_EQ(0, t.selected());
+  t.onInput(InputEvent::NavRight); t.onInput(InputEvent::NavRight);
+  EXPECT_EQ(2, t.selected());           // moved to last
+  EXPECT_TRUE(t.onInput(InputEvent::NavRight));   // wraps to first
+  EXPECT_EQ(0, t.selected());
+}
+
+TEST(TabBar, SingleTabDoesNotConsumeNav) {
+  TabBar t; t.addTab("only");
+  EXPECT_FALSE(t.onInput(InputEvent::NavRight));   // nowhere to wrap to -> bubbles
+  EXPECT_FALSE(t.onInput(InputEvent::NavLeft));
+  EXPECT_EQ(0, t.selected());
 }
 
 TEST(TabBar, IgnoresNonHorizontalInput) {

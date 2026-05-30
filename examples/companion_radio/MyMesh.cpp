@@ -341,6 +341,9 @@ void MyMesh::onContactsFull() {
 }
 
 void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path) {
+  // [mishmesh] is_new == seen-but-not-added (no auto-add / hop limit / full); buffer it
+  if (is_new) uiNoteDiscovery(contact);
+  // [/mishmesh]
   if (_serial->isConnected()) {
     if (is_new) {
       writeContactRespFrame(PUSH_CODE_NEW_ADVERT, contact);
@@ -828,6 +831,57 @@ bool MyMesh::uiSetFavourite(const uint8_t* pubkey, bool fav) {
 
 void MyMesh::uiPersistContacts() {
   markContactsDirty();
+}
+
+void MyMesh::uiNoteDiscovery(const ContactInfo& ci) {
+  for (int i = 0; i < _ui_discovery_count; i++) {     // already known: refresh in place
+    if (memcmp(_ui_discoveries[i].id.pub_key, ci.id.pub_key, PUB_KEY_SIZE) == 0) {
+      _ui_discoveries[i] = ci;
+      return;
+    }
+  }
+  int slot;
+  if (_ui_discovery_count < UI_MAX_DISCOVERIES) {
+    slot = _ui_discovery_count++;
+  } else {
+    // Reuse a slot that has since become a real contact, else evict the oldest advert.
+    slot = 0;
+    uint32_t oldest = 0xFFFFFFFF;
+    for (int i = 0; i < UI_MAX_DISCOVERIES; i++) {
+      if (lookupContactByPubKey(_ui_discoveries[i].id.pub_key, PUB_KEY_SIZE) != NULL) { slot = i; break; }
+      if (_ui_discoveries[i].last_advert_timestamp < oldest) { oldest = _ui_discoveries[i].last_advert_timestamp; slot = i; }
+    }
+  }
+  _ui_discoveries[slot] = ci;
+}
+
+int MyMesh::uiDiscoveryCount() {
+  int n = 0;
+  for (int i = 0; i < _ui_discovery_count; i++)
+    if (lookupContactByPubKey(_ui_discoveries[i].id.pub_key, PUB_KEY_SIZE) == NULL) n++;  // not yet a contact
+  return n;
+}
+
+bool MyMesh::uiGetDiscovery(int index, ContactInfo& out) {
+  int seen = 0;
+  for (int i = 0; i < _ui_discovery_count; i++) {
+    if (lookupContactByPubKey(_ui_discoveries[i].id.pub_key, PUB_KEY_SIZE) != NULL) continue;
+    if (seen == index) { out = _ui_discoveries[i]; return true; }
+    seen++;
+  }
+  return false;
+}
+
+bool MyMesh::uiAddDiscovery(const uint8_t* pubkey) {
+  for (int i = 0; i < _ui_discovery_count; i++) {
+    if (memcmp(_ui_discoveries[i].id.pub_key, pubkey, 6) != 0) continue;
+    if (!addContact(_ui_discoveries[i])) return false;
+    for (int j = i; j < _ui_discovery_count - 1; j++) _ui_discoveries[j] = _ui_discoveries[j + 1];
+    _ui_discovery_count--;
+    saveContacts();
+    return true;
+  }
+  return false;
 }
 // [/mishmesh]
 
