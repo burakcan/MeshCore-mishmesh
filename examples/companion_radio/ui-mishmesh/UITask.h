@@ -26,6 +26,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
 
   mutable uint16_t _batt_mv;        // smoothed; raw ADC reads are noisy
   mutable uint32_t _batt_sampled_at;
+  mutable uint32_t _heap_min = 0;   // free-heap low watermark; nRF52 has no built-in one
 
   mutable ContactInfo _scratch;     // backs the ContactView returned by getByKind
 
@@ -58,6 +59,7 @@ public:
   const char* nodeName() const override { return _node_prefs ? _node_prefs->node_name : ""; }
   uint16_t batteryMillivolts() const override;
   uint32_t epochSeconds() const override;
+  bool systemStats(mishmesh::SystemStats& out) const override;
 
   // mishmesh::ContactsService
   int  countByKind(mishmesh::ContactKind k) const override;

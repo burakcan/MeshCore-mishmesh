@@ -200,6 +200,11 @@ protected:
 public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
 
+  // [mishmesh] storage stats for the on-device System screen
+  uint32_t getStorageUsedKb()  const { return _store->getStorageUsedKb(); }
+  uint32_t getStorageTotalKb() const { return _store->getStorageTotalKb(); }
+  // [/mishmesh]
+
 #if ENV_INCLUDE_GPS == 1
   void applyGpsPrefs() {
     sensors.setSettingValue("gps", _prefs.gps_enabled ? "1" : "0");

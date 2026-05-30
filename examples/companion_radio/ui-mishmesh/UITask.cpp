@@ -2,9 +2,67 @@
 #include "target.h"   // rtc_clock
 #include <mishmesh/core/TelemetryDecode.h>
 #include <helpers/AdvertDataHelpers.h>   // ADV_TYPE_CHAT
+#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  #include <malloc.h>
+#endif
+#if defined(NRF52_PLATFORM)
+  // Linker symbols bounding the heap. On the Adafruit nRF52 core new/malloc share
+  // one newlib arena grown via _sbrk, so the real free RAM is the headroom above
+  // the break plus freed chunks, i.e. total - currently-allocated. mallinfo()'s
+  // fordblks alone misses the un-sbrk'd headroom and reads ~0.
+  extern "C" {
+    extern unsigned char __HeapBase[];
+    extern unsigned char __HeapLimit[];
+  }
+#endif
+
+// Free and total heap in bytes, best-effort per platform; 0 where unavailable.
+static void platformHeap(uint32_t& freeBytes, uint32_t& totalBytes) {
+#if defined(ESP32)
+  freeBytes  = ESP.getFreeHeap();
+  totalBytes = ESP.getHeapSize();
+#elif defined(RP2040_PLATFORM)
+  freeBytes  = rp2040.getFreeHeap();
+  totalBytes = rp2040.getTotalHeap();
+#elif defined(NRF52_PLATFORM)
+  struct mallinfo mi = mallinfo();
+  totalBytes = (uint32_t)(__HeapLimit - __HeapBase);
+  uint32_t used = (uint32_t)mi.uordblks;
+  freeBytes = used <= totalBytes ? totalBytes - used : 0;
+#elif defined(STM32_PLATFORM)
+  struct mallinfo mi = mallinfo();
+  freeBytes  = (uint32_t)mi.fordblks;   // best-effort; total unknown
+  totalBytes = 0;
+#else
+  freeBytes  = 0;
+  totalBytes = 0;
+#endif
+}
 
 uint32_t UITask::epochSeconds() const {
   return rtc_clock.getCurrentTime();
+}
+
+bool UITask::systemStats(mishmesh::SystemStats& out) const {
+  uint32_t freeHeap = 0, totalHeap = 0;
+  platformHeap(freeHeap, totalHeap);
+  if (freeHeap && (_heap_min == 0 || freeHeap < _heap_min)) _heap_min = freeHeap;
+
+  out.heapFreeBytes    = freeHeap;
+  out.heapMinFreeBytes = _heap_min;
+  out.heapTotalBytes   = totalHeap;
+  out.contactsUsed     = (uint16_t)the_mesh.getNumContacts();
+  out.contactsMax      = (uint16_t)MAX_CONTACTS;
+  out.storageUsedKb    = the_mesh.getStorageUsedKb();
+  out.storageTotalKb   = the_mesh.getStorageTotalKb();
+  out.uptimeSecs       = millis() / 1000;
+  out.batteryMv        = batteryMillivolts();
+#ifdef FIRMWARE_VERSION
+  out.firmwareVersion  = FIRMWARE_VERSION;
+#else
+  out.firmwareVersion  = nullptr;
+#endif
+  return true;
 }
 
 uint16_t UITask::batteryMillivolts() const {

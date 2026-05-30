@@ -78,6 +78,24 @@ TEST(AppletHost, PopStopsTopAndForegroundsRevealed) {
   EXPECT_EQ(2, root.foreground);  // initial + revealed
 }
 
+TEST(AppletHost, ReplaceSwapsTopKeepingDepthAndUnderlyingApplet) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root"), first("first"), second("second");
+  host.setRoot(&root);
+  host.push(&first);
+  host.replace(&second);
+  EXPECT_EQ(2, host.depth());            // depth unchanged
+  EXPECT_EQ(&second, host.foreground());
+  EXPECT_EQ(1, first.stopped);           // replaced applet was stopped
+  EXPECT_EQ(1, second.started);
+  EXPECT_EQ(1, second.foreground);
+  // Back from the replacement returns to what was underneath, not to `first`.
+  host.pop();
+  EXPECT_EQ(&root, host.foreground());
+  EXPECT_EQ(1, second.stopped);
+}
+
 TEST(AppletHost, PopAtRootIsNoOp) {
   FakeDisplayDriver d;
   AppletHost host(&d, emptyCtx());

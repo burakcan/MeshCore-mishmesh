@@ -26,6 +26,11 @@ public:
   void setRoot(Applet* root);
   void push(Applet* a);
   void pop();
+  // Swap the foreground applet for another without changing stack depth: the current
+  // top is stopped and `a` takes its place, so a later Back pops to whatever was
+  // underneath (not back to the replaced applet). Used to hand off between sibling
+  // drill-ins, e.g. discovery-detail -> contact-detail after adding a contact.
+  void replace(Applet* a);
 
   Applet* foreground() const;
   int depth() const { return _depth; }

@@ -68,6 +68,17 @@ void AppletHost::pop() {
   _dirty = true;
 }
 
+void AppletHost::replace(Applet* a) {
+  if (a == nullptr || _depth == 0) return;
+  Applet* top = _stack[_depth - 1];
+  top->onBackground();
+  top->onStop();
+  _stack[_depth - 1] = a;
+  a->onStart(_ctx);
+  a->onForeground();
+  _dirty = true;
+}
+
 void AppletHost::dispatch(InputEvent ev) {
   Applet* fg = foreground();
   if (fg == nullptr) return;

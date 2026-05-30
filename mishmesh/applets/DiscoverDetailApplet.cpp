@@ -1,4 +1,5 @@
 #include <mishmesh/applets/DiscoverDetailApplet.h>
+#include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/ContactFormat.h>
 #include <mishmesh/core/Geo.h>
@@ -98,8 +99,16 @@ bool DiscoverDetailApplet::onInput(InputEvent ev) {
   if (_list.onInput(ev)) return true;
   if (ev == InputEvent::Select && _svc) {
     if (_list.selected() == View) { _viewing = true; return true; }
-    if (_svc->addDiscovered(_pubkey) && _host) _host->postToast("Added to contacts");
-    if (_host) _host->pop();      // leave the (now empty) discovery detail
+    if (_svc->addDiscovered(_pubkey)) {
+      // Hand off to the new contact's detail page in place of this one, so Back still
+      // returns to the Discover list rather than to this (now-stale) discovery screen.
+      if (_host) _host->postToast("Added to contacts");
+      contactDetailApplet().setTarget(_pubkey);
+      if (_host) _host->replace(&contactDetailApplet());
+    } else if (_host) {
+      _host->postToast("Couldn't add contact");
+      _host->pop();
+    }
     return true;
   }
   return false;   // Back -> pop to the Discover list

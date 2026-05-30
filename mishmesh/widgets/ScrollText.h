@@ -23,7 +23,12 @@ class ScrollText : public Widget {
 public:
   ScrollText() : _count(0), _header(nullptr), _headerH(0), _scrollPx(0), _scrollTarget(0),
                  _animReady(false), _animating(false), _lineH(9), _viewH(0) {}
-  void clear() { _count = 0; _scrollPx = _scrollTarget = 0; _animReady = false; }
+  // keepScroll retains the current scroll offset (for live content refreshes
+  // that shouldn't jump the user back to the top); default snaps to the top.
+  void clear(bool keepScroll = false) {
+    _count = 0;
+    if (!keepScroll) { _scrollPx = _scrollTarget = 0; _animReady = false; }
+  }
   void setHeader(Widget* hdr, int height) { _header = hdr; _headerH = height; }
   void addLine(const char* s);
   void addf(const char* fmt, ...);

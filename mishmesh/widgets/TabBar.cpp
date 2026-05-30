@@ -53,7 +53,9 @@ void TabBar::draw(Canvas& c, int x, int y, int w, int h) {
     if (sx + tw <= 0 || sx >= w) continue;   // fully off-screen
     bool sel = (i == _sel);
     DisplayDriver::Color col = sel ? DisplayDriver::DARK : DisplayDriver::LIGHT;
-    if (sel) view.fillRect(sx, 1, tw, h - 3, DisplayDriver::LIGHT);
+    // Highlight runs the full bar height (minus the bottom border row) so the
+    // centred 10px icon gets 1px of breathing room above and below it.
+    if (sel) view.fillRect(sx, 0, tw, h - 1, DisplayDriver::LIGHT);
 
     int iconX = sel ? sx + PAD : sx + (tw - ICON_W) / 2;
     view.drawGlyph(iconFont(), iconX, (h - iconH) / 2, _icons[i], col);

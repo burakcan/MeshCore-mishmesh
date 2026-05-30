@@ -9,6 +9,22 @@ class Canvas;
 class AppletHost;
 struct ContactsService;   // mishmesh/core/ContactsService.h
 
+// Snapshot of device health for the System stats screen. Plain integers so the
+// framework stays free of companion/platform types. 0 (or nullptr) means
+// "unknown/unreported" - the applet renders those as "--".
+struct SystemStats {
+  uint32_t    heapFreeBytes    = 0;
+  uint32_t    heapTotalBytes   = 0;   // 0 = unknown
+  uint32_t    heapMinFreeBytes = 0;   // low watermark since boot; 0 = unknown
+  uint16_t    contactsUsed     = 0;
+  uint16_t    contactsMax      = 0;
+  uint32_t    storageUsedKb    = 0;
+  uint32_t    storageTotalKb   = 0;   // 0 = unknown
+  uint32_t    uptimeSecs       = 0;
+  uint16_t    batteryMv        = 0;
+  const char* firmwareVersion  = nullptr;
+};
+
 // Live app/device state applets read. Implemented by the adapter and queried on
 // demand, since battery/time/connection change over an applet's lifetime. Keeps
 // the framework free of companion-specific types (NodePrefs, RTCClock, board).
@@ -17,6 +33,8 @@ struct AppServices {
   virtual const char* nodeName() const = 0;
   virtual uint16_t    batteryMillivolts() const = 0;
   virtual uint32_t    epochSeconds() const = 0;   // UNIX seconds; 0 if unknown
+  // Fill device-health stats; return false if unavailable. Default: no stats.
+  virtual bool systemStats(SystemStats& out) const { (void)out; return false; }
 };
 
 // Handle through which an applet reaches host/app services. Grows as features land.
