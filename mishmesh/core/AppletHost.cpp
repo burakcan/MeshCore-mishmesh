@@ -13,6 +13,7 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
       _depth(0), _nsources(0),
       _next_render_at(0), _has_rendered(false), _dirty(true),
       _auto_off_ms(30000), _last_activity(0), _activity_init(false),
+      _last_input_event(InputEvent::None), _last_input_ms(0), _input_seen(false),
       _toast_until(0), _toast_pending(false) {
   for (int i = 0; i < MAX_STACK; i++) _stack[i] = nullptr;
   for (int i = 0; i < MAX_SOURCES; i++) _sources[i] = nullptr;
@@ -91,7 +92,10 @@ void AppletHost::loop(uint32_t now_ms) {
         _display->turnOn();   // first press only wakes; it isn't delivered
         _dirty = true;
       } else {
-        dispatch(rep.event);
+        bool bounce = _input_seen && rep.event == _last_input_event &&
+                      now_ms - _last_input_ms < INPUT_DEBOUNCE_MS;
+        _last_input_event = rep.event; _last_input_ms = now_ms; _input_seen = true;
+        if (!bounce) dispatch(rep.event);
       }
     }
   }

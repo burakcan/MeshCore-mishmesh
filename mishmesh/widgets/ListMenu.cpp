@@ -6,6 +6,7 @@
 namespace mishmesh {
 
 void ListMenu::setModel(const ListModel* m) {
+  if (m == _model) return;   // re-binding the same list (e.g. returning from a drill-in) keeps position
   _model = m;
   _selected = 0;
   _scrollPx = 0;

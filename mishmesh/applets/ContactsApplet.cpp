@@ -134,6 +134,7 @@ void ContactsApplet::onStart(AppletContext& ctx) {
     _tabs.setSelected(0);
     syncListToTab();
   }
+  _list.resetSelection();   // fresh open starts at the top; onForeground (back) keeps position
 }
 
 // Favourites can change while a contact detail is open; refresh the tab set when

@@ -39,7 +39,8 @@ public:
       : _model(nullptr), _selected(0), _rowH(12), _lastSel(-1),
         _header(nullptr), _headerH(0), _scrollPx(0) {}
 
-  void setModel(const ListModel* m);     // resets selection to the top
+  void setModel(const ListModel* m);     // resets selection only when the model changes
+  void resetSelection() { _selected = 0; _scrollPx = 0; _lastSel = -1; }  // force back to the top
   int selected() const { return _selected; }
   void setRowHeight(int h) { _rowH = h; }
   int rowHeight() const { return _rowH; }

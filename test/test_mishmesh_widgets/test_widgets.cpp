@@ -115,12 +115,18 @@ TEST(ListMenu, IgnoresNonNavInput) {
   EXPECT_EQ(0, list.selected());
 }
 
-TEST(ListMenu, SetModelResetsSelection) {
-  VecModel m; m.items = {"a", "b", "c"};
+TEST(ListMenu, SwitchingModelResetsButRebindingSameKeepsSelection) {
+  VecModel a; a.items = {"a", "b", "c"};
+  VecModel b; b.items = {"x", "y", "z"};
   ListMenu list;
-  list.setModel(&m);
+  list.setModel(&a);
   list.onInput(InputEvent::NavDown);
-  list.setModel(&m);
+  EXPECT_EQ(1, list.selected());
+  // Re-binding the same model (e.g. returning from a drill-in) keeps position.
+  list.setModel(&a);
+  EXPECT_EQ(1, list.selected());
+  // Switching to a different model resets to the top.
+  list.setModel(&b);
   EXPECT_EQ(0, list.selected());
 }
 

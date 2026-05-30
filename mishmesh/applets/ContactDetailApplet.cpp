@@ -137,6 +137,7 @@ void ContactDetailApplet::onStart(AppletContext& ctx) {
   refresh();
   _list.setRowHeight(12);
   _list.setModel(this);
+  _list.resetSelection();   // shared static applet: always reopen at the first action
   _confirming = false; _viewing = false; _pinging = false; _pingDone = false;
   _telemActive = false; _telemDone = false;
   _pendingAction = -1;

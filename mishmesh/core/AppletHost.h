@@ -58,6 +58,14 @@ private:
   uint32_t _last_activity;
   bool _activity_init;
 
+  // Contact-bounce coalescing: a noisy joystick press can emit the same event
+  // twice within a few ms (multi-click debounce is off for snappy nav). Drop a
+  // repeat of the same event inside this window - far below the human repeat rate.
+  static const uint32_t INPUT_DEBOUNCE_MS = 60;
+  InputEvent _last_input_event;
+  uint32_t _last_input_ms;
+  bool _input_seen;
+
   char _toast_msg[28];
   uint32_t _toast_until;
   bool _toast_pending;

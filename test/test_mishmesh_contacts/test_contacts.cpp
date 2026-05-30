@@ -223,6 +223,31 @@ TEST(ContactsApplet, OpensOnFavouritesTabWhenFavouritesExist) {
   EXPECT_TRUE(detailHasAction("Remove from favorites"));
 }
 
+TEST(ContactsApplet, KeepsListPositionAfterDrillInAndBack) {
+  FakeContactsService svc;
+  const char* keys[3] = {"AAA000", "BBB000", "CCC000"};
+  for (int i = 0; i < 3; i++) {
+    FakeContactsService::Row r; r.name = keys[i]; memcpy(r.pubkey, keys[i], 6); svc.chats.push_back(r);
+  }
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+
+  host.dispatch(mishmesh::InputEvent::NavDown);   // select row 1 (BBB000)
+  host.dispatch(mishmesh::InputEvent::Select);    // drill in
+  host.dispatch(mishmesh::InputEvent::Back);      // back to list; position should be kept
+  EXPECT_EQ(1, host.depth());
+
+  // Re-open the selected row and delete it; the target reveals which row was kept.
+  host.dispatch(mishmesh::InputEvent::Select);
+  for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavDown);  // -> Delete contact
+  host.dispatch(mishmesh::InputEvent::Select);    // confirm dialog
+  host.dispatch(mishmesh::InputEvent::NavRight);  // Confirm
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ("BBB000", svc.lastDeleted);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
