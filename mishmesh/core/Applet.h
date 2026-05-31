@@ -42,6 +42,9 @@ struct AppletContext {
   AppletHost*      host = nullptr;
   AppServices*     app = nullptr;
   ContactsService* contacts = nullptr;   // [new] contacts/mesh seam
+  // [mishmesh]
+  struct MessagesService* messages = nullptr;
+  // [/mishmesh]
 };
 
 class Applet {

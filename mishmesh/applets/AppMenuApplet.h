@@ -14,6 +14,9 @@ class AppMenuApplet : public Applet, public ListModel {
   int _count;
   ListMenu _list;
   AppletHost* _host;
+  // [mishmesh] unread badge: pointer to messages service, set in onStart
+  struct MessagesService* _ctx_messages = nullptr;
+  // [/mishmesh]
 public:
   AppMenuApplet() : Applet("Apps"), _count(0), _host(nullptr) {}
 
@@ -24,6 +27,9 @@ public:
   int count() const override { return _count; }
   const char* label(int i) const override { return _entries[i]->label; }
   uint16_t icon(int i) const override { return _entries[i]->icon; }
+  // [mishmesh]
+  const char* value(int i) const override;
+  // [/mishmesh]
 };
 
 }  // namespace mishmesh

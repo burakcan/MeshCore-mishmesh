@@ -23,16 +23,20 @@ bool ButtonGestureSource::poll(InputReport& out) {
 }
 
 bool DirectionalSource::poll(InputReport& out) {
+  // The center press uses the gesture FSM so a hold can be distinguished from a
+  // tap (click -> Select, long-press -> SelectLong). check() must run every poll
+  // to advance that FSM; the 4 directions stay level-driven for snappy repeats.
+  Gesture pg = toGesture(_press.check());
+
   struct Item { MomentaryButton* btn; Direction dir; };
   Item items[] = {
     {&_up, Direction::Up},
     {&_down, Direction::Down},
     {&_left, Direction::Left},
     {&_right, Direction::Right},
-    {&_press, Direction::Press},
   };
   uint32_t now = millis();
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 4; i++) {
     Item& it = items[i];
     // Debounce: accept a level change only after it has held steady, so contact
     // bounce on press/release can't fire a spurious second step.
@@ -55,6 +59,12 @@ bool DirectionalSource::poll(InputReport& out) {
     } else {
       _wasPressed[i] = false;                      // released
     }
+  }
+  if (pg == Gesture::Click && _map.press != InputEvent::None) {
+    out.event = _map.press; out.ch = 0; return true;
+  }
+  if (pg == Gesture::LongPress && _map.pressLong != InputEvent::None) {
+    out.event = _map.pressLong; out.ch = 0; return true;
   }
   return false;
 }

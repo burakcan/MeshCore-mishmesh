@@ -37,7 +37,7 @@ void TabBar::draw(Canvas& c, int x, int y, int w, int h) {
 
   int offset;
   if (total <= w) {
-    offset = -(w - total) / 2;            // centre the whole strip when it fits
+    offset = 0;                           // left-align the strip when it fits
   } else {
     int activeX = 0;
     for (int i = 0; i < _sel; i++) activeX += tabW[i];

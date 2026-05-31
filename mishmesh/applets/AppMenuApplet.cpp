@@ -2,11 +2,19 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
+// [mishmesh]
+#include <mishmesh/core/MessagesService.h>
+#include <mishmesh/applets/MessagesApplet.h>
+#include <stdio.h>
+// [/mishmesh]
 
 namespace mishmesh {
 
 void AppMenuApplet::onStart(AppletContext& ctx) {
   _host = ctx.host;
+  // [mishmesh]
+  _ctx_messages = ctx.messages;
+  // [/mishmesh]
   _count = 0;
   for (const AppletRegistration* r = registeredApplets(); r; r = r->next) {
     if (r->placement != Placement::AppMenu || _count >= MAX_ENTRIES) continue;
@@ -40,5 +48,17 @@ bool AppMenuApplet::onInput(InputEvent ev) {
   }
   return false;
 }
+
+// [mishmesh] unread badge: return count string for the Messages row, nullptr otherwise
+const char* AppMenuApplet::value(int i) const {
+  if (!_ctx_messages || i < 0 || i >= _count) return nullptr;
+  if (_entries[i]->applet != &messagesApplet()) return nullptr;
+  uint16_t u = _ctx_messages->totalUnread();
+  if (!u) return nullptr;
+  static char buf[8];
+  snprintf(buf, sizeof(buf), "%u", u);
+  return buf;
+}
+// [/mishmesh]
 
 }  // namespace mishmesh

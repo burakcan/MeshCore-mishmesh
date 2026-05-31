@@ -387,6 +387,26 @@ void DataStore::saveChannels(DataStoreHost* host) {
   }
 }
 
+// [mishmesh]
+bool DataStore::saveMessages(const uint8_t* buf, size_t len) {
+  File f = openWrite(_fs, "/mishmsgs");
+  if (!f) return false;
+  size_t w = f.write(buf, len);
+  f.close();
+  return w == len;
+}
+
+bool DataStore::loadMessages(uint8_t* buf, size_t cap, size_t& outLen) {
+  outLen = 0;
+  File f = openRead(_fs, "/mishmsgs");
+  if (!f) return false;
+  size_t n = f.read(buf, cap);
+  f.close();
+  outLen = n;
+  return n > 0;
+}
+// [/mishmesh]
+
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
 
 #define MAX_ADVERT_PKT_LEN   (2 + 32 + PUB_KEY_SIZE + 4 + SIGNATURE_SIZE + MAX_ADVERT_DATA_SIZE)

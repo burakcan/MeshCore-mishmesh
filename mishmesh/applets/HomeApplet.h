@@ -12,6 +12,9 @@ class HomeApplet : public Applet {
   Applet* _menu;
   AppletHost* _host;
   AppServices* _app;
+  // [mishmesh] total-unread indicator
+  struct MessagesService* _msgs = nullptr;
+  // [/mishmesh]
 public:
   HomeApplet() : Applet("Home"), _menu(nullptr), _host(nullptr), _app(nullptr) {}
 

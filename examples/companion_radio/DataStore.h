@@ -50,6 +50,11 @@ public:
   uint32_t getStorageUsedKb() const;
   uint32_t getStorageTotalKb() const;
 
+  // [mishmesh]
+  bool loadMessages(uint8_t* buf, size_t cap, size_t& outLen);
+  bool saveMessages(const uint8_t* buf, size_t len);
+  // [/mishmesh]
+
 private:
   FILESYSTEM* _getContactsChannelsFS() const { if (_fsExtra) return _fsExtra; return _fs;};
 };

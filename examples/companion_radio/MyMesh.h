@@ -69,6 +69,9 @@
 
 #include <helpers/BaseChatMesh.h>
 #include <helpers/TransportKeyStore.h>
+// [mishmesh]
+#include <mishmesh/core/MessageStore.h>
+// [/mishmesh]
 
 /* -------------------------------------------------------------------------------------- */
 
@@ -134,6 +137,8 @@ public:
   int  uiDiscoveryCount();                                // entries not already contacts
   bool uiGetDiscovery(int index, ContactInfo& out);
   bool uiAddDiscovery(const uint8_t* pubkey);             // promote a discovery to a contact
+  void uiSetMessageStore(mishmesh::MessageStore* s) { _mm_store = s; }
+  DataStore* getStore() const { return _store; }
   // [/mishmesh]
 
 protected:
@@ -275,6 +280,8 @@ private:
   mesh::Packet* startTrace(uint32_t tag, uint32_t auth, uint8_t flags, const uint8_t* path, uint8_t path_len);
   bool removeContactAndBlob(ContactInfo& contact);
   void markContactsDirty();
+  mishmesh::MessageStore* _mm_store = nullptr;
+  void logRx(mesh::Packet* pkt, int len, float score) override;
   // [/mishmesh]
 
   TransportKey send_scope;

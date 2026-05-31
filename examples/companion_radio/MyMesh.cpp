@@ -413,6 +413,12 @@ ContactInfo*  MyMesh::processAck(const uint8_t *data) {
       uint32_t trip_time = _ms->getMillis() - expected_ack_table[i].msg_sent;
       memcpy(&out_frame[5], &trip_time, 4);
       _serial->writeFrame(out_frame, 9);
+      // [mishmesh]
+      if (_mm_store) {
+        uint16_t ms = (trip_time > 0xFFFFu) ? 0xFFFFu : (uint16_t)trip_time;
+        _mm_store->markDelivered(expected_ack_table[i].ack, ms);
+      }
+      // [/mishmesh]
 
       // NOTE: the same ACK can be received multiple times!
       expected_ack_table[i].ack = 0; // clear expected hash, now that we have received ACK
@@ -467,6 +473,22 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
     }
   }
 #endif
+  // [mishmesh]
+  // Same allowlist as should_display: never store raw CLI_DATA frames as DMs.
+  if (_mm_store && (txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN)) {
+    uint8_t hops = 0;
+    const uint8_t* pathPtr = nullptr;
+    if (pkt && pkt->isRouteFlood()) {
+      hops = pkt->getPathHashCount();
+      if (hops > mishmesh::MAX_PATH) hops = mishmesh::MAX_PATH;
+      pathPtr = pkt->path;
+    }
+    mishmesh::ConvoKey k = mishmesh::directKey(from.id.pub_key);
+    _mm_store->appendInbound(k, text, (uint16_t)strlen(text), sender_timestamp,
+                              getRTCClock()->getCurrentTime(),
+                              pkt ? pkt->_snr : 0, pathPtr, hops);
+  }
+  // [/mishmesh]
 }
 
 bool MyMesh::filterRecvFloodPacket(mesh::Packet* packet) {
@@ -580,6 +602,21 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   }
   if (_ui) _ui->newMsg(path_len, channel_name, text, offline_queue_len);
 #endif
+  // [mishmesh]
+  if (_mm_store) {
+    uint8_t hops = 0;
+    const uint8_t* pathPtr = nullptr;
+    if (pkt && pkt->isRouteFlood()) {
+      hops = pkt->getPathHashCount();
+      if (hops > mishmesh::MAX_PATH) hops = mishmesh::MAX_PATH;
+      pathPtr = pkt->path;
+    }
+    mishmesh::ConvoKey k = mishmesh::channelKey(channel_idx);
+    _mm_store->appendInbound(k, text, (uint16_t)strlen(text), timestamp,
+                              getRTCClock()->getCurrentTime(),
+                              pkt ? pkt->_snr : 0, pathPtr, hops);
+  }
+  // [/mishmesh]
 }
 
 void MyMesh::onChannelDataRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint16_t data_type,
@@ -1265,6 +1302,14 @@ void MyMesh::handleCmdFrame(size_t len) {
         memcpy(&out_frame[2], &expected_ack, 4);
         memcpy(&out_frame[6], &est_timeout, 4);
         _serial->writeFrame(out_frame, 10);
+        // [mishmesh]
+        if (_mm_store && txt_type == TXT_TYPE_PLAIN) {
+          _mm_store->appendOutboundDM(mishmesh::directKey(recipient->id.pub_key),
+                                      text, (uint16_t)strlen(text), msg_timestamp,
+                                      getRTCClock()->getCurrentTime(),
+                                      expected_ack, _ms->getMillis());
+        }
+        // [/mishmesh]
       }
     } else {
       writeErrFrame(recipient == NULL
@@ -1287,6 +1332,13 @@ void MyMesh::handleCmdFrame(size_t len) {
       bool success = getChannel(channel_idx, channel);
       if (success && sendGroupMessage(msg_timestamp, channel.channel, _prefs.node_name, text, len - i)) {
         writeOKFrame();
+        // [mishmesh]
+        if (_mm_store) {
+          _mm_store->appendOutboundChannel(mishmesh::channelKey(channel_idx),
+                                           text, (uint16_t)(len - i), msg_timestamp,
+                                           getRTCClock()->getCurrentTime());
+        }
+        // [/mishmesh]
       } else {
         writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
       }
@@ -2400,3 +2452,38 @@ bool MyMesh::advert() {
 bool MyMesh::hasPendingWork() const {
   return _mgr->getOutboundTotal() > 0 || dirty_contacts_expiry != 0;
 }
+
+// [mishmesh] Repeat-capture hook: detect when an outbound channel message is
+// relayed back over the air, so we can record which repeaters forwarded it.
+// logRx fires pre-dedup for every received packet; addRepeat no-ops unless a
+// tracked outbound channel send with that (channelKey, senderTime) exists.
+void MyMesh::logRx(mesh::Packet* pkt, int len, float score) {
+  BaseChatMesh::logRx(pkt, len, score);
+  if (!_mm_store || !pkt || !pkt->isRouteFlood()) return;
+  if (pkt->getPayloadType() != PAYLOAD_TYPE_GRP_TXT) return;
+  if (pkt->payload_len < 2) return;
+  const uint8_t* macAndData = &pkt->payload[1];  // skip leading channel_hash byte
+  int macAndDataLen = pkt->payload_len - 1;
+#ifdef MAX_GROUP_CHANNELS
+  uint8_t data[MAX_PACKET_PAYLOAD];
+  for (int ch = 0; ch < MAX_GROUP_CHANNELS; ch++) {
+    ChannelDetails cd;
+    if (!getChannel(ch, cd)) continue;
+    // skip uninitialized channel slots (zeroed-out secret)
+    bool empty = true;
+    for (int b = 0; b < PUB_KEY_SIZE; b++) {
+      if (cd.channel.secret[b] != 0) { empty = false; break; }
+    }
+    if (empty) continue;
+    int dl = mesh::Utils::MACThenDecrypt(cd.channel.secret, data, macAndData, macAndDataLen);
+    if (dl < 5) continue;  // need at minimum: 4-byte ts + type byte
+    uint32_t ts;
+    memcpy(&ts, data, 4);
+    uint8_t hops = pkt->getPathHashCount();
+    if (hops > mishmesh::MAX_PATH) hops = mishmesh::MAX_PATH;
+    _mm_store->addRepeat(mishmesh::channelKey(ch), ts, pkt->_snr, pkt->path, hops);
+    break;  // first matching channel wins
+  }
+#endif
+}
+// [/mishmesh]

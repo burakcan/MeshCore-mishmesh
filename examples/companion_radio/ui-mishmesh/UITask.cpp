@@ -16,6 +16,10 @@
   }
 #endif
 
+// [mishmesh] shared load/save scratch (definition of the class-level static)
+uint8_t UITask::_msgIoBuf[mishmesh::ARENA_BYTES + 2048];
+// [/mishmesh]
+
 // Free and total heap in bytes, best-effort per platform; 0 where unavailable.
 static void platformHeap(uint32_t& freeBytes, uint32_t& totalBytes) {
 #if defined(ESP32)
@@ -82,9 +86,23 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
   if (_display == nullptr) return;   // headless build
 
+  // [mishmesh] load persisted messages before wiring the store so that any
+  // inbound messages captured after uiSetMessageStore append to loaded history.
+  {
+    size_t n = 0;
+    DataStore* ds = the_mesh.getStore();
+    if (ds && ds->loadMessages(_msgIoBuf, sizeof(_msgIoBuf), n)) _msgStore.deserialize(_msgIoBuf, n);
+  }
+  _msgSvc.store = &_msgStore;
+  the_mesh.uiSetMessageStore(&_msgStore);
+  // [/mishmesh]
+
   mishmesh::AppletContext ctx;
   ctx.app = this;
   ctx.contacts = this;
+  // [mishmesh]
+  ctx.messages = &_msgSvc;
+  // [/mishmesh]
   _host = new mishmesh::AppletHost(_display, ctx);
 
   _menu = new mishmesh::AppMenuApplet();
@@ -122,12 +140,31 @@ void UITask::msgRead(int /*msgcount*/) {
 
 void UITask::newMsg(uint8_t /*path_len*/, const char* /*from_name*/,
                     const char* /*text*/, int /*msgcount*/) {
+  // [mishmesh] store capture already happened in MyMesh::queueMessage; just schedule
+  // a flush. Fired from inside a mesh recv callback, so don't drive the render
+  // pipeline here - the next UITask::loop() repaints naturally.
+  _msgFlushAt = millis() + 8000;
+  // [/mishmesh]
 }
 
 void UITask::notify(UIEventType /*t*/) {
 }
 
 void UITask::loop() {
+  // [mishmesh] debounced message-store persistence
+  if (_msgStore.seq() != _msgDirtySeq) {
+    _msgDirtySeq = _msgStore.seq();
+    _msgFlushAt  = millis() + 8000;
+  }
+  if (_msgFlushAt && millis() >= _msgFlushAt) {
+    _msgFlushAt = 0;
+    DataStore* ds = the_mesh.getStore();
+    if (ds) {
+      size_t n = _msgStore.serialize(_msgIoBuf, sizeof(_msgIoBuf));
+      if (n) ds->saveMessages(_msgIoBuf, n);
+    }
+  }
+  // [/mishmesh]
   if (_host != nullptr) {
     _host->loop(millis());
   }
@@ -306,3 +343,126 @@ int UITask::removeAll() {
   if (removed) the_mesh.uiPersistContacts();
   return removed;
 }
+
+// [mishmesh] --- MessagesService implementation ---
+
+const char* UITask::MsgSvc::nameFor(const mishmesh::ConvoKey& k) const {
+  static char buf[34];
+  if (k.type == 1) {
+    ChannelDetails cd;
+    if (the_mesh.getChannel(k.id[0], cd)) { snprintf(buf, sizeof(buf), "%s", cd.name); return buf; }
+    snprintf(buf, sizeof(buf), "#%u", (unsigned)k.id[0]); return buf;
+  }
+  ContactInfo* c = the_mesh.lookupContactByPubKey(k.id, 6);
+  if (c) { snprintf(buf, sizeof(buf), "%s", c->name); return buf; }
+  snprintf(buf, sizeof(buf), "%02X%02X", k.id[0], k.id[1]); return buf;
+}
+
+int UITask::MsgSvc::convoCount() const { return store->convoCount(); }
+
+bool UITask::MsgSvc::getConvo(int i, mishmesh::ConvoView& out) const {
+  mishmesh::ConvoSummary c;
+  if (!store->getConvo(i, c)) return false;
+  out.key       = c.key;
+  out.isChannel = c.key.type == 1;
+  out.name      = nameFor(c.key);
+  out.lastTime  = c.lastTime;
+  out.unread    = c.unread;
+  // preview: last message text, null-terminated, truncated to 47 chars
+  static char prevBuf[48];
+  prevBuf[0] = '\0';
+  int cnt = store->messageCount(c.key);
+  if (cnt > 0) {
+    mishmesh::MsgRecord r;
+    if (store->getMessage(c.key, cnt - 1, r)) {
+      uint16_t n = r.textLen < (uint16_t)(sizeof(prevBuf) - 1) ? r.textLen : (uint16_t)(sizeof(prevBuf) - 1);
+      memcpy(prevBuf, r.text, n);
+      prevBuf[n] = '\0';
+    }
+  }
+  out.preview = prevBuf;
+  return true;
+}
+
+uint16_t UITask::MsgSvc::totalUnread() const { return store->totalUnread(); }
+int  UITask::MsgSvc::messageCount(const mishmesh::ConvoKey& k) const { return store->messageCount(k); }
+
+bool UITask::MsgSvc::getMessage(const mishmesh::ConvoKey& k, int i, mishmesh::MessageView& out) const {
+  mishmesh::MsgRecord r;
+  if (!store->getMessage(k, i, r)) return false;
+  out.outbound    = r.kind != mishmesh::KIND_INBOUND;
+  out.isChannel   = k.type == 1;
+  out.kind        = r.kind;
+  out.senderTime  = r.senderTime;
+  out.localTime   = r.localTime;
+  out.status      = r.status;
+  out.tripTimeMs  = r.tripTimeMs;
+  out.heardCount  = r.heardCount;
+  out.snrx4       = r.snrx4;
+  out.hops        = r.hops;
+  out.path        = r.path;
+  out.pathLen     = r.pathLen;
+
+  // copy text to null-terminated buffer; for inbound channel split "name: body"
+  static char textBuf[mishmesh::MAX_TEXT + 1];
+  static char senderBuf[34];
+  uint16_t n = r.textLen < mishmesh::MAX_TEXT ? r.textLen : (uint16_t)mishmesh::MAX_TEXT;
+  memcpy(textBuf, r.text, n);
+  textBuf[n] = '\0';
+  out.senderName = "";
+  out.text       = textBuf;
+  if (k.type == 1 && r.kind == mishmesh::KIND_INBOUND) {
+    char* sep = strstr(textBuf, ": ");
+    if (sep) {
+      *sep = '\0';
+      snprintf(senderBuf, sizeof(senderBuf), "%s", textBuf);
+      out.senderName = senderBuf;
+      out.text       = sep + 2;
+    }
+  }
+  return true;
+}
+
+void UITask::MsgSvc::setActiveConvo(const mishmesh::ConvoKey& k) { store->setActiveConvo(k); }
+void UITask::MsgSvc::clearActiveConvo() { store->clearActiveConvo(); }
+int  UITask::MsgSvc::repeatCount(const mishmesh::ConvoKey& k, int m) const { return store->repeatCount(k, m); }
+
+bool UITask::MsgSvc::getRepeat(const mishmesh::ConvoKey& k, int m, int r, mishmesh::RepeatView& out) const {
+  mishmesh::RepeatRec rr;
+  if (!store->getRepeat(k, m, r, rr)) return false;
+  out.hops  = rr.hops;
+  out.snrx4 = rr.snrx4;
+  const char* rname; uint8_t kc;
+  if (rr.pathLen > 0 && resolveHop(rr.path[rr.pathLen - 1], rname, kc)) {
+    out.repeaterName = rname;
+    out.knownCount   = kc;
+  } else {
+    static char hexBuf[3];
+    if (rr.pathLen > 0) { snprintf(hexBuf, sizeof(hexBuf), "%02X", rr.path[rr.pathLen - 1]); out.repeaterName = hexBuf; }
+    else out.repeaterName = "";
+    out.knownCount = 0;
+  }
+  return true;
+}
+
+bool UITask::MsgSvc::resolveHop(uint8_t hashByte, const char*& name, uint8_t& knownCount) const {
+  static char buf[34]; knownCount = 0; name = "";
+  int n = the_mesh.getNumContacts();
+  bool hasFirst = false;
+  ContactInfo ci;
+  for (int i = 0; i < n; i++) {
+    if (!the_mesh.getContactByIdx(i, ci)) continue;
+    if (ci.id.pub_key[0] == hashByte) {
+      if (!hasFirst) { snprintf(buf, sizeof(buf), "%s", ci.name); hasFirst = true; }
+      knownCount++;
+    }
+  }
+  name = hasFirst ? buf : "";
+  return hasFirst;
+}
+
+void UITask::MsgSvc::deleteMessage(const mishmesh::ConvoKey& k, int i) { store->deleteMessage(k, i); }
+void UITask::MsgSvc::clearConvo(const mishmesh::ConvoKey& k) { store->clearConvo(k); }
+uint32_t UITask::MsgSvc::seq() const { return store->seq(); }
+
+// [/mishmesh]

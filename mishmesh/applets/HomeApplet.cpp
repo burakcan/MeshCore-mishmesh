@@ -3,12 +3,18 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
+// [mishmesh]
+#include <mishmesh/core/MessagesService.h>
+// [/mishmesh]
 
 namespace mishmesh {
 
 void HomeApplet::onStart(AppletContext& ctx) {
   _host = ctx.host;
   _app = ctx.app;
+  // [mishmesh]
+  _msgs = ctx.messages;
+  // [/mishmesh]
 }
 
 int HomeApplet::onRender(Canvas& c) {
@@ -34,6 +40,14 @@ int HomeApplet::onRender(Canvas& c) {
   if (_menu)
     c.drawText(fontBody(), w / 2, h - hintH, "Select for apps",
                DisplayDriver::LIGHT, TextAlign::Center);
+
+  // [mishmesh] total-unread indicator: mail glyph + count in bottom-left corner
+  if (_msgs && _msgs->totalUnread()) {
+    char b[8]; snprintf(b, sizeof(b), "%u", _msgs->totalUnread());
+    c.drawGlyph(iconFont(), 2, h - 14, (uint16_t)Icon::Mail, DisplayDriver::LIGHT);
+    c.drawText(fontBody(), 16, h - 14, b, DisplayDriver::LIGHT);
+  }
+  // [/mishmesh]
   return 1000;
 }
 

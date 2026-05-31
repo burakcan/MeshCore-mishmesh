@@ -297,7 +297,7 @@ TEST(ContactsApplet, DiscoverTabAddsSelectedNode) {
   host.dispatch(mishmesh::InputEvent::Select);     // add as contact
   EXPECT_EQ(0, svc.countDiscovered());
   EXPECT_EQ(1, svc.countByKind(mishmesh::ContactKind::Chat));
-  EXPECT_EQ(1, host.depth());                       // detail popped back to the list
+  EXPECT_EQ(2, host.depth());                       // replace()d with contact detail; Back returns to list
 }
 
 int main(int argc, char** argv) {

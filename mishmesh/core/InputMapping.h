@@ -39,7 +39,8 @@ struct DirectionalMap {
   InputEvent down = InputEvent::NavDown;
   InputEvent left = InputEvent::NavLeft;
   InputEvent right = InputEvent::NavRight;
-  InputEvent press = InputEvent::Select;
+  InputEvent press = InputEvent::Select;        // center click
+  InputEvent pressLong = InputEvent::SelectLong; // center long-press
 };
 
 inline InputEvent mapDirection(const DirectionalMap& m, Direction d) {

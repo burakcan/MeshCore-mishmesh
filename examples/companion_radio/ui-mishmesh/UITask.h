@@ -15,6 +15,9 @@
 #include <mishmesh/core/ContactsService.h>
 #include <mishmesh/applets/HomeApplet.h>
 #include <mishmesh/applets/AppMenuApplet.h>
+// [mishmesh]
+#include <mishmesh/core/MessagesService.h>
+// [/mishmesh]
 
 class UITask : public AbstractUITask, public mishmesh::AppServices, public mishmesh::ContactsService {
   DisplayDriver* _display;
@@ -31,6 +34,34 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   mutable ContactInfo _scratch;     // backs the ContactView returned by getByKind
 
   static void fillView(const ContactInfo& c, mishmesh::ContactView& out);
+
+  // [mishmesh]
+  mishmesh::MessageStore _msgStore;
+  uint32_t _msgDirtySeq = 0;
+  uint32_t _msgFlushAt  = 0;
+  // Shared load/save scratch — load runs once in begin(), save later in loop();
+  // never concurrent, so one BSS buffer serves both (saves ~8 KB vs. two).
+  static uint8_t _msgIoBuf[mishmesh::ARENA_BYTES + 2048];
+
+  struct MsgSvc : public mishmesh::MessagesService {
+    mishmesh::MessageStore* store = nullptr;
+
+    const char* nameFor(const mishmesh::ConvoKey& k) const;
+    int  convoCount() const override;
+    bool getConvo(int i, mishmesh::ConvoView& out) const override;
+    uint16_t totalUnread() const override;
+    int  messageCount(const mishmesh::ConvoKey& k) const override;
+    bool getMessage(const mishmesh::ConvoKey& k, int i, mishmesh::MessageView& out) const override;
+    void setActiveConvo(const mishmesh::ConvoKey& k) override;
+    void clearActiveConvo() override;
+    int  repeatCount(const mishmesh::ConvoKey& k, int m) const override;
+    bool getRepeat(const mishmesh::ConvoKey& k, int m, int r, mishmesh::RepeatView& out) const override;
+    bool resolveHop(uint8_t hashByte, const char*& name, uint8_t& knownCount) const override;
+    void deleteMessage(const mishmesh::ConvoKey& k, int i) override;
+    void clearConvo(const mishmesh::ConvoKey& k) override;
+    uint32_t seq() const override;
+  } _msgSvc;
+  // [/mishmesh]
 
 #ifdef UI_HAS_JOYSTICK
   mishmesh::DirectionalSource* _joystick;
