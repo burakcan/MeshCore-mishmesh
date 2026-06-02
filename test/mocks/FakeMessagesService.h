@@ -51,5 +51,7 @@ struct FakeMessagesService : mishmesh::MessagesService {
   bool resolveHop(uint8_t, const char*& name, uint8_t& kc) const override { name = "RPT"; kc = 1; return true; }
   void deleteMessage(const mishmesh::ConvoKey& k, int i) override { store.deleteMessage(k, i); deletes++; }
   void clearConvo(const mishmesh::ConvoKey& k) override { store.clearConvo(k); }
+  void deleteConvo(const mishmesh::ConvoKey& k) override { store.deleteConvo(k); }
+  void markUnread(const mishmesh::ConvoKey& k) override { store.markUnread(k); }
   uint32_t seq() const override { return store.seq(); }
 };

@@ -7,7 +7,7 @@ using namespace mishmesh;
 
 TEST(Fonts, AccessorsResolve) {
   EXPECT_NE(nullptr, fontBody());
-  EXPECT_NE(nullptr, fontTitle());
+  EXPECT_NE(nullptr, fontSubtitle());
   EXPECT_NE(nullptr, fontNum());
   EXPECT_NE(nullptr, iconFont());
 }

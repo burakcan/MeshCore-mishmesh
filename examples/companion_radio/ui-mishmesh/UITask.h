@@ -59,6 +59,8 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     bool resolveHop(uint8_t hashByte, const char*& name, uint8_t& knownCount) const override;
     void deleteMessage(const mishmesh::ConvoKey& k, int i) override;
     void clearConvo(const mishmesh::ConvoKey& k) override;
+    void deleteConvo(const mishmesh::ConvoKey& k) override;
+    void markUnread(const mishmesh::ConvoKey& k) override;
     uint32_t seq() const override;
   } _msgSvc;
   // [/mishmesh]

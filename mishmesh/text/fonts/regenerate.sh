@@ -19,9 +19,16 @@ gen_text() {  # role size filter...
   "$ENC" bwfont_export "$role.dat"
   rm -f "nokiafc22${sz}bw.dat" "$role.dat"
 }
-gen_text Body  8  0x20-0xFF        # lists, status bar, hints
-gen_text Title 16 0x20-0xFF        # screen titles
+gen_text Body  8  0x20-0xFF        # lists, status bar, hints, message body (default)
 gen_text Num   24 0x20 0x2E-0x3A   # clock/stopwatch: space . / 0-9 :
+
+# --- Caption: Tom Thumb 3x6 (CC0/public-domain), vendored tom-thumb.bdf - the
+#     recessive metadata tier (status, sender labels, View-Path rows). ---
+"$ENC" import_bdf tom-thumb.bdf            # -> tom-thumb.dat
+"$ENC" filter tom-thumb.dat 0x20-0x7E      # printable ASCII only (keeps it small)
+cp tom-thumb.dat Caption.dat
+"$ENC" bwfont_export Caption.dat           # -> Caption.c (mf_bwfont_Caption)
+rm -f tom-thumb.dat Caption.dat
 
 # --- Icons: Pixelarticons (MIT) rasterised to a 12px BDF, then mcufont ---
 python3 build_icons.py                # writes Icons16.bdf (downloads SVGs)
@@ -29,4 +36,4 @@ python3 build_icons.py                # writes Icons16.bdf (downloads SVGs)
 "$ENC" bwfont_export Icons16.dat
 rm -f Icons16.dat Icons16.bdf
 
-echo "Regenerated Body.c Title.c Num.c Icons16.c"
+echo "Regenerated Body.c Num.c Caption.c Icons16.c"

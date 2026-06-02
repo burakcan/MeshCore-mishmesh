@@ -213,13 +213,42 @@ TEST(MessageStore, DeleteMessageRemovesOne) {
   EXPECT_EQ(0, memcmp(r.text, "b", 1));
 }
 
-TEST(MessageStore, ClearConvoRemovesChat) {
+TEST(MessageStore, ClearConvoKeepsEmptyChat) {
   MessageStore s;
   s.appendInbound(dm("ALICE!"), "a", 1, 1, 1, 0, nullptr, 0);
   s.appendInbound(dm("BOBBBB"), "b", 1, 2, 2, 0, nullptr, 0);
   s.clearConvo(dm("ALICE!"));
-  EXPECT_EQ(1, s.convoCount());
+  EXPECT_EQ(2, s.convoCount());                 // chat stays in the list
+  EXPECT_EQ(0, s.messageCount(dm("ALICE!")));   // ...but emptied
+  EXPECT_EQ(1, s.messageCount(dm("BOBBBB")));   // other chat untouched
+}
+
+TEST(MessageStore, DeletingLastMessageKeepsChat) {
+  MessageStore s;
+  s.appendInbound(dm("ALICE!"), "a", 1, 1, 1, 0, nullptr, 0);
+  s.deleteMessage(dm("ALICE!"), 0);
+  EXPECT_EQ(1, s.convoCount());                 // chat persists even with no messages
   EXPECT_EQ(0, s.messageCount(dm("ALICE!")));
+}
+
+TEST(MessageStore, DeleteConvoRemovesChatEntirely) {
+  MessageStore s;
+  s.appendInbound(dm("ALICE!"), "a", 1, 1, 1, 0, nullptr, 0);
+  s.appendInbound(dm("BOBBBB"), "b", 1, 2, 2, 0, nullptr, 0);
+  s.deleteConvo(dm("ALICE!"));
+  EXPECT_EQ(1, s.convoCount());                 // ALICE gone from the list
+  EXPECT_EQ(0, s.messageCount(dm("ALICE!")));
+  EXPECT_EQ(1, s.messageCount(dm("BOBBBB")));   // other chat untouched
+}
+
+TEST(MessageStore, MarkUnreadSetsUnread) {
+  MessageStore s;
+  s.appendInbound(dm("ALICE!"), "a", 1, 1, 1, 0, nullptr, 0);
+  s.setActiveConvo(dm("ALICE!"));               // clears unread
+  EXPECT_EQ(0u, s.totalUnread());
+  s.clearActiveConvo();
+  s.markUnread(dm("ALICE!"));
+  EXPECT_GT(s.totalUnread(), 0u);
 }
 
 TEST(MessageStore, SerializeRoundTrip) {
@@ -278,7 +307,7 @@ TEST(MessageStore, DeserializeRecountsDeadBytes) {
   b.deleteMessage(dm("ALICE!"), 0);
   b.deleteMessage(dm("ALICE!"), 0);
   EXPECT_EQ(0, b.messageCount(dm("ALICE!")));
-  EXPECT_EQ(0, b.convoCount());
+  EXPECT_EQ(1, b.convoCount());   // chat kept even when emptied (only delete-chat removes it)
 }
 
 int main(int argc, char** argv) {

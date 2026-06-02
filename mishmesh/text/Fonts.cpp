@@ -6,7 +6,7 @@
 extern "C" {
 extern const struct mf_bwfont_s mf_bwfont_Body;
 extern const struct mf_bwfont_s mf_bwfont_Subtitle;
-extern const struct mf_bwfont_s mf_bwfont_Title;
+extern const struct mf_bwfont_s mf_bwfont_Caption;
 extern const struct mf_bwfont_s mf_bwfont_Num;
 extern const struct mf_bwfont_s mf_bwfont_Icons16;
 }
@@ -15,7 +15,7 @@ namespace mishmesh {
 
 const Font* fontBody()     { return (const Font*)&mf_bwfont_Body; }
 const Font* fontSubtitle() { return (const Font*)&mf_bwfont_Subtitle; }
-const Font* fontTitle()    { return (const Font*)&mf_bwfont_Title; }
+const Font* fontCaption()  { return (const Font*)&mf_bwfont_Caption; }
 const Font* fontNum()      { return (const Font*)&mf_bwfont_Num; }
 const Font* iconFont()     { return (const Font*)&mf_bwfont_Icons16; }
 

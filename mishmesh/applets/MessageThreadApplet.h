@@ -3,7 +3,8 @@
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/widgets/ListMenu.h>
-#include <mishmesh/widgets/StatusBar.h>
+#include <mishmesh/widgets/TabBar.h>
+#include <mishmesh/widgets/ChatMenu.h>
 
 namespace mishmesh {
 
@@ -18,8 +19,10 @@ public:
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
   int  focusedIndexForTest() const { return _focus; }
+  int  selectedTabForTest() const { return _tabs.selected(); }
 private:
   const char* resolveTitle() const;
+  bool onConversationInput(InputEvent ev);   // tab 0: message nav / per-message menu
   int  blockHeight(Canvas& body, const MessageView& m) const;
   void layoutFocus(Canvas& body, int n);   // sets _focusTop/_focusBot/_contentH
   void adjustScroll();                      // clamps _scrollY to keep focus visible
@@ -40,11 +43,13 @@ private:
   int              _contentH = 0;
   bool             _pinBottom = false;// on next render, scroll to the newest message
   uint32_t         _lastSeq = 0;
-  bool             _menuOpen = false;
-  bool             _chatMenu = false;
+  bool             _menuOpen = false; // per-message action menu overlay (Reply/Delete/Path)
+  char             _titleBuf[40] = {0};  // stable backing for the conversation tab label
+  char             _battBuf[8] = {0};    // stable backing for the battery decoration
 
-  StatusBar _status;
-  ListMenu  _menu;
+  TabBar    _tabs;       // [0] conversation, [1] Settings
+  ChatMenu  _chatMenu;   // shared chat-action menu, shown inline on the Settings tab
+  ListMenu  _menu;       // per-message action overlay
   struct MsgMenuModel : ListModel {
     bool hasPath = false;
     int count() const override { return hasPath ? 3 : 2; }
@@ -54,14 +59,6 @@ private:
       return "View Path";
     }
   } _msgMenu;
-  struct ChatMenuModel : ListModel {
-    int count() const override { return 3; }
-    const char* label(int i) const override {
-      if (i == 0) return "Clear chat";
-      if (i == 1) return "Mark unread";
-      return "New message";
-    }
-  } _chatMenuModel;
 };
 
 MessageThreadApplet& messageThreadApplet();

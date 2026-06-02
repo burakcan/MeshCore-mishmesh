@@ -61,7 +61,7 @@ void MessagesApplet::onStart(AppletContext& ctx) {
   _chats.svc = _svc;
   _tabs.clear();
   _tabs.addTab("Chats", (uint16_t)Icon::Message);
-  _tabs.addTab("New", (uint16_t)Icon::Menu);
+  _tabs.addTab("New", (uint16_t)Icon::Plus);
   _tab = 0;
   syncList();
 }
@@ -88,10 +88,32 @@ int MessagesApplet::onRender(Canvas& c) {
   int bodyY = barH + 1;
   int bodyH = h - bodyY;
   _list.draw(c, 0, bodyY, w, bodyH);
+
+  if (_menuOpen) {
+    Canvas body = c.region(0, bodyY, w, bodyH);
+    body.fillRect(0, 0, w, bodyH, DisplayDriver::DARK);   // opaque backdrop over the list
+    _chatMenu.draw(body, 4, 2, w - 8, bodyH - 4);
+    return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;
+  }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool MessagesApplet::onInput(InputEvent ev) {
+  // Long-press chat-action overlay swallows input until it closes.
+  if (_menuOpen) {
+    if (_chatMenu.onInput(ev)) return true;
+    if (ev == InputEvent::Select) {
+      const char* toast = nullptr;
+      ChatMenu::Result r = _chatMenu.activate(_svc, toast);
+      if (_host && toast) _host->postToast(toast);
+      if (r != ChatMenu::Result::None) syncList();   // chat cleared/removed -> refresh rows
+      _menuOpen = false;
+      return true;
+    }
+    if (ev == InputEvent::Back || ev == InputEvent::Cancel) { _menuOpen = false; return true; }
+    return true;
+  }
+
   if (_tabs.onInput(ev)) {
     _tab = _tabs.selected();
     syncList();
@@ -107,6 +129,15 @@ bool MessagesApplet::onInput(InputEvent ev) {
       }
     } else {
       if (_host) _host->postToast("Not available yet");
+    }
+    return true;
+  }
+  if (ev == InputEvent::SelectLong && _tab == 0) {
+    ConvoView v;
+    if (_svc && _svc->getConvo(_list.selected(), v)) {
+      _chatMenu.setTarget(v.key);
+      _chatMenu.reset();
+      _menuOpen = true;
     }
     return true;
   }

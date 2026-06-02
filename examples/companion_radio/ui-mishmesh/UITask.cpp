@@ -463,6 +463,8 @@ bool UITask::MsgSvc::resolveHop(uint8_t hashByte, const char*& name, uint8_t& kn
 
 void UITask::MsgSvc::deleteMessage(const mishmesh::ConvoKey& k, int i) { store->deleteMessage(k, i); }
 void UITask::MsgSvc::clearConvo(const mishmesh::ConvoKey& k) { store->clearConvo(k); }
+void UITask::MsgSvc::deleteConvo(const mishmesh::ConvoKey& k) { store->deleteConvo(k); }
+void UITask::MsgSvc::markUnread(const mishmesh::ConvoKey& k) { store->markUnread(k); }
 uint32_t UITask::MsgSvc::seq() const { return store->seq(); }
 
 // [/mishmesh]

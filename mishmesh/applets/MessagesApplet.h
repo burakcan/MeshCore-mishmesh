@@ -3,6 +3,7 @@
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/widgets/TabBar.h>
 #include <mishmesh/widgets/ListMenu.h>
+#include <mishmesh/widgets/ChatMenu.h>
 
 namespace mishmesh {
 
@@ -14,6 +15,7 @@ public:
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
   int  visibleRowCountForTest() const;   // test hook
+  bool menuOpenForTest() const { return _menuOpen; }
 
 private:
   void syncList();
@@ -22,6 +24,8 @@ private:
   MessagesService* _svc  = nullptr;
   TabBar           _tabs;
   ListMenu         _list;
+  ChatMenu         _chatMenu;            // long-press chat-action overlay
+  bool             _menuOpen = false;
   int              _tab = 0;             // 0 = Chats, 1 = New
 
   struct ChatsModel : ListModel {

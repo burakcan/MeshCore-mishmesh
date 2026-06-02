@@ -75,6 +75,44 @@ TEST(MessagesApplet, NewTabIsNoop) {
   SUCCEED();
 }
 
+// Long-pressing a chat row opens the chat-action overlay; "Delete chat" removes
+// it from the list (which shrinks by one row).
+TEST(MessagesApplet, LongPressDeletesChatFromList) {
+  FakeMessagesService svc;
+  svc.store.appendInbound(mishmesh::directKey((const uint8_t*)"ALICE!"), "a", 1, 1, 1, 0, nullptr, 0);
+  svc.store.appendInbound(mishmesh::directKey((const uint8_t*)"BOBBBB"), "b", 1, 2, 2, 0, nullptr, 0);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  host.loop(0);
+  EXPECT_EQ(2, mishmesh::messagesApplet().visibleRowCountForTest());
+  host.dispatch(mishmesh::InputEvent::SelectLong);   // open overlay on selected row
+  EXPECT_TRUE(mishmesh::messagesApplet().menuOpenForTest());
+  host.dispatch(mishmesh::InputEvent::NavDown);       // -> Mark unread
+  host.dispatch(mishmesh::InputEvent::NavDown);       // -> Delete chat
+  host.dispatch(mishmesh::InputEvent::Select);        // invoke Delete
+  EXPECT_FALSE(mishmesh::messagesApplet().menuOpenForTest());
+  EXPECT_EQ(1, svc.convoCount());
+  EXPECT_EQ(1, mishmesh::messagesApplet().visibleRowCountForTest());
+}
+
+// Back closes the overlay without acting.
+TEST(MessagesApplet, LongPressMenuBackCloses) {
+  FakeMessagesService svc;
+  svc.store.appendInbound(mishmesh::directKey((const uint8_t*)"ALICE!"), "a", 1, 1, 1, 0, nullptr, 0);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  host.loop(0);
+  host.dispatch(mishmesh::InputEvent::SelectLong);
+  EXPECT_TRUE(mishmesh::messagesApplet().menuOpenForTest());
+  host.dispatch(mishmesh::InputEvent::Back);
+  EXPECT_FALSE(mishmesh::messagesApplet().menuOpenForTest());
+  EXPECT_EQ(1, svc.convoCount());   // nothing deleted
+}
+
 TEST(MessageThread, OpensFocusedOnNewestAndClearsUnread) {
   FakeMessagesService svc;
   auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
@@ -124,6 +162,49 @@ TEST(MessageThread, SelectDeletesViaPerMessageMenu) {
   host.dispatch(mishmesh::InputEvent::Select);    // invoke Delete
   EXPECT_EQ(1u, svc.deletes);
   EXPECT_EQ(1, svc.messageCount(k));
+}
+
+// Settings tab: NavRight switches to it; selecting "Clear chat" empties the
+// conversation but keeps us in the thread, switched back to the conversation tab.
+TEST(MessageThread, SettingsTabClearKeepsThread) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  svc.store.appendInbound(k, "one", 3, 1, 1, 0, nullptr, 0);
+  svc.store.appendInbound(k, "two", 3, 2, 2, 0, nullptr, 0);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  int d0 = host.depth();
+  host.dispatch(mishmesh::InputEvent::NavRight);   // -> Settings tab
+  EXPECT_EQ(1, mishmesh::messageThreadApplet().selectedTabForTest());
+  host.dispatch(mishmesh::InputEvent::Select);     // "Clear chat" (first item)
+  EXPECT_EQ(0, svc.messageCount(k));               // emptied
+  EXPECT_EQ(1, svc.convoCount());                  // chat still exists
+  EXPECT_EQ(d0, host.depth());                     // still in the thread
+  EXPECT_EQ(0, mishmesh::messageThreadApplet().selectedTabForTest());  // back on conversation
+}
+
+// Selecting "Delete chat" removes the conversation and pops back to the list.
+TEST(MessageThread, SettingsTabDeletePopsToList) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  svc.store.appendInbound(k, "one", 3, 1, 1, 0, nullptr, 0);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  int d0 = host.depth();
+  host.dispatch(mishmesh::InputEvent::NavRight);   // -> Settings tab
+  host.dispatch(mishmesh::InputEvent::NavDown);    // -> Mark unread
+  host.dispatch(mishmesh::InputEvent::NavDown);    // -> Delete chat
+  host.dispatch(mishmesh::InputEvent::Select);     // invoke Delete
+  EXPECT_EQ(0, svc.convoCount());                  // chat removed
+  EXPECT_EQ(d0 - 1, host.depth());                 // popped back to the list
 }
 
 TEST(MessagePath, InboundShowsHops) {

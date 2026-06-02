@@ -88,7 +88,9 @@ public:
   bool getRepeat(const ConvoKey& key, int msgIndex, int r, RepeatRec& out) const;
 
   void deleteMessage(const ConvoKey& key, int index);
-  void clearConvo(const ConvoKey& key);
+  void clearConvo(const ConvoKey& key);    // empties messages, keeps the chat in the list
+  void deleteConvo(const ConvoKey& key);   // empties messages AND removes the chat
+  void markUnread(const ConvoKey& key);    // flags the chat unread if it isn't already
 
   uint32_t seq() const { return _seq; }
 

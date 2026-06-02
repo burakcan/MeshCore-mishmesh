@@ -48,6 +48,8 @@ struct MessagesService {
   virtual bool resolveHop(uint8_t hashByte, const char*& name, uint8_t& knownCount) const = 0;
   virtual void deleteMessage(const ConvoKey& k, int i) = 0;
   virtual void clearConvo(const ConvoKey& k) = 0;
+  virtual void deleteConvo(const ConvoKey& k) = 0;
+  virtual void markUnread(const ConvoKey& k) = 0;
   // v1 no-ops (no on-device input)
   virtual void newMessage() {}
   virtual void newGroup() {}

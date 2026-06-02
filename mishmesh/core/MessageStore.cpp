@@ -212,7 +212,9 @@ void MessageStore::deleteMessage(const ConvoKey& key, int index) {
         if (n == index) {
           r[0] |= 0x04; _deadBytes += sz;
           int ci = findConvo(key);
-          if (ci >= 0) { _convos[ci].count--; dropConvoIfEmpty(ci); }
+          // Keep the convo summary even when its last message is deleted; a
+          // chat only leaves the list via an explicit chat-delete (or eviction).
+          if (ci >= 0) _convos[ci].count--;
           _seq++; return;
         }
         n++;
@@ -224,7 +226,35 @@ void MessageStore::deleteMessage(const ConvoKey& key, int index) {
 
 void MessageStore::clearConvo(const ConvoKey& key) {
   int ci = findConvo(key);
-  while (ci >= 0 && _convos[ci].count > 0) { tombstoneOldestOf(key); ci = findConvo(key); }
+  if (ci < 0) return;
+  // Tombstone every message but keep the convo summary so the chat stays in
+  // the list (emptied, not deleted). Don't route through tombstoneOldestOf:
+  // it drops the slot once count hits 0. Eviction paths still want that drop.
+  for (uint32_t off = 0; off < _used; ) {
+    uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
+    if (!recDead(r)) {
+      ConvoKey k; rdKey(r, k);
+      if (k.equals(key)) { r[0] |= 0x04; _deadBytes += sz; }
+    }
+    off += sz;
+  }
+  _convos[ci].count = 0;
+  _convos[ci].unread = 0;   // keep lastTime -> chat holds its place in the list
+  _seq++;
+}
+
+void MessageStore::deleteConvo(const ConvoKey& key) {
+  int ci = findConvo(key);
+  if (ci < 0) return;
+  clearConvo(key);          // tombstone every message (keeps the slot for now)
+  dropConvoIfEmpty(ci);     // ...then drop the (now empty) summary entirely
+  _seq++;
+}
+
+void MessageStore::markUnread(const ConvoKey& key) {
+  int ci = findConvo(key);
+  if (ci < 0 || _convos[ci].unread) return;   // already unread -> nothing to do
+  _convos[ci].unread = 1;
   _seq++;
 }
 size_t MessageStore::serialize(uint8_t* out, size_t cap) const {

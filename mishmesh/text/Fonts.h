@@ -9,9 +9,9 @@ namespace mishmesh {
 // mcufont font handle. Fonts are generated bw atlases (see text/fonts/*.c).
 typedef struct ::mf_font_s Font;
 
-const Font* fontBody();     // Nokia Cellphone FC size 8 — lists, status bar, body
-const Font* fontSubtitle(); // Nokia Cellphone FC size 12 — contact names, sub-headers
-const Font* fontTitle();    // Nokia Cellphone FC size 16 — screen titles, clock area
+const Font* fontBody();     // Nokia Cellphone FC size 8 - lists, status bar, body (default)
+const Font* fontSubtitle(); // Nokia Cellphone FC size 12 - contact-detail header card only
+const Font* fontCaption();  // Tom Thumb 3x6 (4px advance, 6px line) - recessive metadata
 const Font* fontNum();     // Nokia Cellphone FC size 24, digits/':'/'.' — clock
 const Font* iconFont();    // Pixelarticons 12px - see Icon
 
@@ -40,6 +40,7 @@ enum class Icon : uint16_t {
   Chip        = 0xE014,   // cpu (sensors)
   Star        = 0xE015,   // favourite marker
   Search      = 0xE016,   // discover tab
+  Plus        = 0xE017,   // create new (messages "New" tab)
 };
 
 }  // namespace mishmesh

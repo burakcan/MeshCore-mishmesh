@@ -5,6 +5,7 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Anim.h>
 #include <mishmesh/text/Fonts.h>
+#include <mishmesh/widgets/StatusBar.h>   // batteryPercent()
 #include <cstdio>
 #include <cstring>
 
@@ -81,10 +82,24 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
   _animReady = false;   // snap (no slide-in) on the opening frame
   _pinBottom = true;    // first render scrolls to the newest message
   _lastSeq = _svc ? _svc->seq() : 0;
+  _menuOpen = false;
+
+  // Header tab bar: [0] conversation (label tracks _titleBuf), [1] Settings.
+  snprintf(_titleBuf, sizeof(_titleBuf), "%s", resolveTitle());
+  _tabs.clear();
+  _tabs.addTab(_titleBuf, (uint16_t)(_key.type == 1 ? Icon::Users : Icon::User));
+  _tabs.addTab("Settings", (uint16_t)Icon::Settings);
+  _tabs.setSelected(0);
+  _chatMenu.setTarget(_key);
+  _chatMenu.reset();
+
   if (_svc) _svc->setActiveConvo(_key);
 }
 
-void MessageThreadApplet::onForeground() { if (_svc) _svc->setActiveConvo(_key); }
+void MessageThreadApplet::onForeground() {
+  snprintf(_titleBuf, sizeof(_titleBuf), "%s", resolveTitle());
+  if (_svc) _svc->setActiveConvo(_key);
+}
 void MessageThreadApplet::onBackground() { if (_svc) _svc->clearActiveConvo(); }
 void MessageThreadApplet::onStop()       { if (_svc) _svc->clearActiveConvo(); }
 
@@ -97,19 +112,18 @@ const char* MessageThreadApplet::resolveTitle() const {
 }
 
 int MessageThreadApplet::blockHeight(Canvas& body, const MessageView& m) const {
-  int adv = body.lineHeight(fontBody());
-  if (adv <= 0) adv = 8;
+  int adv = body.lineHeight(fontBody());    if (adv <= 0) adv = 8;
+  int cap = body.lineHeight(fontCaption()); if (cap <= 0) cap = 6;   // recessive metadata row
   int cw = _contentW;
   if (m.outbound) {
     int bubbleW = (cw * 3) / 4;
     int bodyH = wrapText(body, 0, 0, bubbleW - 2 * PAD, m.text, DisplayDriver::DARK, false);
     if (bodyH < adv) bodyH = adv;
-    return (bodyH + 2 * PAD) + adv + GAP;          // bubble + status line + gap
+    return (bodyH + 2 * PAD) + cap + GAP;          // bubble (body font) + caption status + gap
   }
-  int sepH = adv;                                  // sender label / divider row
   int bodyH = wrapText(body, 0, 0, cw - GUTTER - PAD, m.text, DisplayDriver::LIGHT, false);
   if (bodyH < adv) bodyH = adv;
-  return sepH + bodyH + GAP;
+  return cap + bodyH + GAP;                         // caption sender/divider row + body + gap
 }
 
 void MessageThreadApplet::layoutFocus(Canvas& body, int n) {
@@ -141,8 +155,8 @@ void MessageThreadApplet::adjustScroll() {
 }
 
 void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int top, bool focused) const {
-  int adv = body.lineHeight(fontBody());
-  if (adv <= 0) adv = 8;
+  int adv = body.lineHeight(fontBody());    if (adv <= 0) adv = 8;
+  int cap = body.lineHeight(fontCaption()); if (cap <= 0) cap = 6;
   int bh = blockHeight(body, m);
   // Clip the whole block to its own region (negative offset keeps mapping).
   Canvas blk = body.region(0, top - _scrollY, body.width(), bh);
@@ -157,21 +171,21 @@ void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int to
     blk.fillRect(bx, 0, bubbleW, bubbleH, DisplayDriver::LIGHT);
     wrapText(blk, bx + PAD, PAD, bubbleW - 2 * PAD, m.text, DisplayDriver::DARK, true);
     char st[28]; outboundStatus(m, st, sizeof(st));
-    blk.drawText(fontBody(), cw, bubbleH, st, DisplayDriver::LIGHT, TextAlign::Right);
+    blk.drawText(fontCaption(), cw, bubbleH, st, DisplayDriver::LIGHT, TextAlign::Right);
     if (focused) blk.drawText(fontBody(), bx - 6, (bubbleH - adv) / 2, ">", DisplayDriver::LIGHT);
     return;
   }
 
-  // Inbound: no box. A sender label (channel) or a short divider marks the start.
+  // Inbound: no box. A caption-size sender label (channel) or a short divider marks the start.
   if (m.isChannel && m.senderName && m.senderName[0]) {
-    blk.drawText(fontBody(), GUTTER, 0, m.senderName, DisplayDriver::LIGHT);
-    int nw = blk.textWidth(fontBody(), m.senderName);
-    blk.fillRect(GUTTER, adv - 1, nw, 1, DisplayDriver::LIGHT);   // underline = it's a label
+    blk.drawText(fontCaption(), GUTTER, 0, m.senderName, DisplayDriver::LIGHT);
+    int nw = blk.textWidth(fontCaption(), m.senderName);
+    blk.fillRect(GUTTER, cap - 1, nw, 1, DisplayDriver::LIGHT);   // underline = it's a label
   } else {
-    blk.fillRect(GUTTER, adv / 2, 16, 1, DisplayDriver::LIGHT);   // short divider
+    blk.fillRect(GUTTER, cap / 2, 16, 1, DisplayDriver::LIGHT);   // short divider
   }
-  wrapText(blk, GUTTER, adv, cw - GUTTER - PAD, m.text, DisplayDriver::LIGHT, true);
-  if (focused) blk.drawText(fontBody(), 0, adv, ">", DisplayDriver::LIGHT);
+  wrapText(blk, GUTTER, cap, cw - GUTTER - PAD, m.text, DisplayDriver::LIGHT, true);
+  if (focused) blk.drawText(fontBody(), 0, cap, ">", DisplayDriver::LIGHT);
 }
 
 int MessageThreadApplet::onRender(Canvas& c) {
@@ -181,13 +195,20 @@ int MessageThreadApplet::onRender(Canvas& c) {
     if (_focus >= n) _focus = n > 0 ? n - 1 : 0;
   }
 
-  // Header: shared small status bar (title + battery).
-  _status.setTitle(resolveTitle());
-  _status.setBattery(_app ? _app->batteryMillivolts() : 0);
-  _status.draw(c, 0, 0, c.width(), HDR_H);
+  // Header: tab bar ([0] conversation, [1] Settings) with a floating battery %.
+  snprintf(_battBuf, sizeof(_battBuf), "%d%%", batteryPercent(_app ? _app->batteryMillivolts() : 0));
+  _tabs.setDecoration(_battBuf);
+  _tabs.draw(c, 0, 0, c.width(), HDR_H);
 
   Canvas body = c.region(0, HDR_H, c.width(), c.height() - HDR_H);
   _bodyH = body.height();
+
+  // Settings tab: the shared chat menu inline (replaces the message view).
+  if (_tabs.selected() == 1) {
+    body.fillRect(0, 0, body.width(), body.height(), DisplayDriver::DARK);
+    _chatMenu.draw(body, 4, 2, body.width() - 8, body.height() - 4);
+    return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;
+  }
 
   if (_menuOpen) {
     body.fillRect(0, 0, body.width(), body.height(), DisplayDriver::DARK);   // opaque backdrop
@@ -244,39 +265,50 @@ int MessageThreadApplet::onRender(Canvas& c) {
 }
 
 bool MessageThreadApplet::onInput(InputEvent ev) {
-  int n = _svc ? _svc->messageCount(_key) : 0;
-
+  // The per-message overlay swallows everything until it closes.
   if (_menuOpen) {
     if (_menu.onInput(ev)) return true;
     if (ev == InputEvent::Select) {
       int sel = _menu.selected();
-      if (_chatMenu) {
-        if (sel == 0) {
-          if (_svc) _svc->clearConvo(_key);
-          _menuOpen = false;
-          if (_host) { _host->postToast("Chat cleared"); _host->pop(); }
-        } else {
-          _menuOpen = false;
-          if (_host) _host->postToast("Not available yet");
-        }
+      if (sel == 1) {
+        if (_svc) _svc->deleteMessage(_key, _focus);
+        _menuOpen = false;
+      } else if (sel == 2 && _msgMenu.hasPath) {
+        _menuOpen = false;
+        messagePathApplet().setTarget(_key, _focus);
+        if (_host) _host->push(&messagePathApplet());
       } else {
-        if (sel == 1) {
-          if (_svc) _svc->deleteMessage(_key, _focus);
-          _menuOpen = false;
-        } else if (sel == 2 && _msgMenu.hasPath) {
-          _menuOpen = false;
-          messagePathApplet().setTarget(_key, _focus);
-          if (_host) _host->push(&messagePathApplet());
-        } else {
-          _menuOpen = false;
-          if (_host) _host->postToast("Not available yet");
-        }
+        _menuOpen = false;
+        if (_host) _host->postToast("Not available yet");
       }
       return true;
     }
     if (ev == InputEvent::Back || ev == InputEvent::Cancel) { _menuOpen = false; return true; }
     return true;   // swallow all input while the menu is open
   }
+
+  // NavLeft/NavRight switch tabs (unused by the conversation view otherwise).
+  if (_tabs.onInput(ev)) return true;
+
+  // Settings tab: drive the shared chat menu.
+  if (_tabs.selected() == 1) {
+    if (_chatMenu.onInput(ev)) return true;
+    if (ev == InputEvent::Select) {
+      const char* toast = nullptr;
+      ChatMenu::Result r = _chatMenu.activate(_svc, toast);
+      if (_host && toast) _host->postToast(toast);
+      if (r == ChatMenu::Result::Deleted) { if (_host) _host->pop(); }   // chat is gone
+      else { _tabs.setSelected(0); _pinBottom = true; }                   // back to the conversation
+      return true;
+    }
+    return false;   // Back bubbles -> pop the thread
+  }
+
+  return onConversationInput(ev);
+}
+
+bool MessageThreadApplet::onConversationInput(InputEvent ev) {
+  int n = _svc ? _svc->messageCount(_key) : 0;
 
   // Nav decisions use the committed target (not the eased value) to avoid chatter.
   int vp = _bodyH > 0 ? _bodyH : 48;
@@ -302,14 +334,7 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
     if (_svc && _svc->getMessage(_key, _focus, m))
       hasPath = (m.kind == KIND_INBOUND) || (m.kind == KIND_OUT_CHAN);
     _msgMenu.hasPath = hasPath;
-    _chatMenu = false;
     _menu.setModel(&_msgMenu); _menu.setRowHeight(14); _menu.resetSelection();
-    _menuOpen = true;
-    return true;
-  }
-  if (ev == InputEvent::SelectLong) {
-    _chatMenu = true;
-    _menu.setModel(&_chatMenuModel); _menu.setRowHeight(14); _menu.resetSelection();
     _menuOpen = true;
     return true;
   }
