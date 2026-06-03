@@ -93,6 +93,13 @@ public:
   uint16_t batteryMillivolts() const override;
   uint32_t epochSeconds() const override;
   bool systemStats(mishmesh::SystemStats& out) const override;
+  // [mishmesh]
+  bool bleSupported() const override { return blePin() != 0 || isSerialEnabled(); }
+  bool bleEnabled()   const override { return isSerialEnabled(); }
+  bool bleConnected() const override { return hasConnection(); }
+  uint32_t blePin()   const override { return the_mesh.getBLEPin(); }
+  void setBleEnabled(bool on) override { if (on) enableSerial(); else disableSerial(); }
+  // [/mishmesh]
 
   // mishmesh::ContactsService
   int  countByKind(mishmesh::ContactKind k) const override;

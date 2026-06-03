@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Rasterise Pixelarticons (MIT, rect-path SVGs on a 24-grid) into a 16x16 1-bit
 # BDF that mcufont's import_bdf consumes. Pure-PIL: no SVG engine needed.
-import re, urllib.request, sys
+import os, re, urllib.request, sys
+from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
 DILATE = 0   # supersample-scale dilation; >0 over-thickens at 12px, keep crisp 1px
@@ -39,6 +40,9 @@ ICONS = [
     ("Backspace",   "delete",        0xE018),
     ("ArrowRight",  "arrow-right",   0xE019),
     ("Check",       "check",         0xE01A),
+    ("Feather",     "feather",       0xE01B),   # quill = compose/write
+    ("Zap",         "zap",           0xE01C),   # lightning = quick replies
+    ("Bluetooth",   "bluetooth",     0xE01D),
 ]
 
 NUM = re.compile(r'[-+]?\d*\.?\d+')
@@ -96,10 +100,16 @@ def bdf_glyph(name, cp, img):
     return (f"STARTCHAR {name}\nENCODING {cp}\nSWIDTH 1000 0\nDWIDTH {SIZE} 0\n"
             f"BBX {SIZE} {SIZE} 0 0\nBITMAP\n" + "\n".join(rows) + "\nENDCHAR\n")
 
+_HERE = Path(__file__).parent
+
 glyphs = []
 for nm, svg, cp in ICONS:
-    url = f"https://github.com/halfmage/pixelarticons/raw/master/svg/{svg}.svg"
-    data = urllib.request.urlopen(url).read().decode()
+    local = _HERE / f"{svg}.svg"
+    if local.exists():
+        data = local.read_text()
+    else:
+        url = f"https://github.com/halfmage/pixelarticons/raw/master/svg/{svg}.svg"
+        data = urllib.request.urlopen(url).read().decode()
     # Pixelarticons may split a glyph across several <path> elements; render all
     # of them (each path starts with an absolute M, so the d strings concatenate).
     ds = re.findall(r'd="([^"]+)"', data)

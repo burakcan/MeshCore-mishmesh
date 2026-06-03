@@ -35,6 +35,15 @@ struct AppServices {
   virtual uint32_t    epochSeconds() const = 0;   // UNIX seconds; 0 if unknown
   // Fill device-health stats; return false if unavailable. Default: no stats.
   virtual bool systemStats(SystemStats& out) const { (void)out; return false; }
+  // [mishmesh]
+  // BLE/companion link state. Defaults keep the framework companion-agnostic;
+  // the adapter (UITask) overrides these on BLE builds.
+  virtual bool     bleSupported() const { return false; }
+  virtual bool     bleEnabled()   const { return false; }   // radio enabled/advertising
+  virtual bool     bleConnected() const { return false; }   // a client is paired
+  virtual uint32_t blePin()       const { return 0; }       // 0 = hide PIN
+  virtual void     setBleEnabled(bool) {}
+  // [/mishmesh]
 };
 
 // Handle through which an applet reaches host/app services. Grows as features land.

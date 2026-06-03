@@ -44,6 +44,9 @@ enum class Icon : uint16_t {
   Backspace   = 0xE018,   // keypad delete
   ArrowRight  = 0xE019,   // keypad cursor-right
   Check       = 0xE01A,   // keypad confirm
+  Feather     = 0xE01B,   // quill = compose/write
+  Zap         = 0xE01C,   // lightning = quick replies
+  Bluetooth   = 0xE01D,   // BLE applet
 };
 
 }  // namespace mishmesh
