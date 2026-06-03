@@ -2,6 +2,7 @@
 #include "MessageThreadApplet.h"
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
+#include <mishmesh/widgets/Modal.h>
 #include <mishmesh/text/Fonts.h>
 #include <cstdio>
 
@@ -90,9 +91,8 @@ int MessagesApplet::onRender(Canvas& c) {
   _list.draw(c, 0, bodyY, w, bodyH);
 
   if (_menuOpen) {
-    Canvas body = c.region(0, bodyY, w, bodyH);
-    body.fillRect(0, 0, w, bodyH, DisplayDriver::DARK);   // opaque backdrop over the list
-    _chatMenu.draw(body, 4, 2, w - 8, bodyH - 4);
+    Canvas box = drawModalChrome(c);   // bare box over the live list
+    _chatMenu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
     return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;

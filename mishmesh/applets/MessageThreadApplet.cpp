@@ -6,6 +6,7 @@
 #include <mishmesh/core/Anim.h>
 #include <mishmesh/text/Fonts.h>
 #include <mishmesh/widgets/StatusBar.h>   // batteryPercent()
+#include <mishmesh/widgets/Modal.h>
 #include <cstdio>
 #include <cstring>
 
@@ -210,12 +211,6 @@ int MessageThreadApplet::onRender(Canvas& c) {
     return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
 
-  if (_menuOpen) {
-    body.fillRect(0, 0, body.width(), body.height(), DisplayDriver::DARK);   // opaque backdrop
-    _menu.draw(body, 4, 2, body.width() - 8, body.height() - 4);
-    return _menu.needsAnimation() ? ListMenu::TICK_MS : 250;
-  }
-
   if (n == 0) {
     body.drawText(fontBody(), body.width() / 2, body.height() / 2 - 4,
                   "No messages", DisplayDriver::LIGHT, TextAlign::Center);
@@ -260,6 +255,13 @@ int MessageThreadApplet::onRender(Canvas& c) {
     int maxScroll = _contentH - _bodyH;
     int thumbY = maxScroll > 0 ? (_bodyH - thumbH) * _scrollY / maxScroll : 0;
     body.fillRect(body.width() - 2, thumbY, 2, thumbH, DisplayDriver::LIGHT);
+  }
+
+  // Per-message action menu: a bare box over the live conversation.
+  if (_menuOpen) {
+    Canvas box = drawModalChrome(c);
+    _menu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
+    return _menu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
   return animating ? ListMenu::TICK_MS : 500;
 }
