@@ -66,6 +66,11 @@ public:
 
   // Return true if the event was consumed; otherwise it bubbles up to the host.
   virtual bool onInput(InputEvent) { return false; }
+
+  // Whether the Back button should auto-repeat while held during this applet.
+  // Default false: most screens must NOT repeat Back, or one hold would pop
+  // through several of them. A text editor overrides this to delete on hold.
+  virtual bool wantsBackRepeat() const { return false; }
 };
 
 }  // namespace mishmesh

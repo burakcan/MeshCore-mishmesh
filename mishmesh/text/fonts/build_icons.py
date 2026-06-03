@@ -36,6 +36,9 @@ ICONS = [
     ("Star",        "star",          0xE015),
     ("Search",      "search",        0xE016),
     ("Plus",        "plus",          0xE017),
+    ("Backspace",   "delete",        0xE018),
+    ("ArrowRight",  "arrow-right",   0xE019),
+    ("Check",       "check",         0xE01A),
 ]
 
 NUM = re.compile(r'[-+]?\d*\.?\d+')

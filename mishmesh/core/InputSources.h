@@ -6,16 +6,41 @@
 
 namespace mishmesh {
 
-// One button whose click/long/double/triple gestures map to events. `reverse`
-// and `pulldownup` describe the wiring (active-low pull-up boards pass reverse=true).
+// One button mapped to its GestureMap.click event. Edge-triggered: fires once on
+// the press edge (immediate, no release latency), and - when hold-repeat is enabled
+// for the foreground applet - auto-repeats while held (delay, then steady, like the
+// joystick's Up/Down). `reverse`/`pulldownup` describe the wiring (active-low
+// pull-up boards pass reverse=true). The GestureMap's long/double/triple fields are
+// inert: mishmesh needs 2-axis nav, so a single button can't drive the UI, and a
+// hold means "repeat", not a distinct gesture. A button still held across a
+// foreground change is ignored until released, so its hold can't leak into the
+// newly revealed screen.
 class ButtonGestureSource : public InputSource {
+  static const uint32_t REPEAT_DELAY_MS = 350;     // hold this long before repeats start
+  static const uint32_t REPEAT_INTERVAL_MS = 90;   // then one repeat per this many ms
+  static const uint32_t DEBOUNCE_MS = 25;          // a level must be stable this long to count
   MomentaryButton _btn;
   GestureMap _map;
+  bool _holdRepeat;      // host-set: auto-repeat the click while held (e.g. delete)
+  bool _wasPressed;      // debounced press state
+  bool _rawPressed;      // last raw read
+  bool _suppress;        // ignore the in-progress hold until released (set on context change)
+  uint32_t _rawSince;    // when the raw read last changed
+  uint32_t _nextRepeat;  // next repeat deadline while held
 public:
   ButtonGestureSource(int8_t pin, const GestureMap& map, int long_press_ms = 1000,
                       bool reverse = false, bool pulldownup = false)
-      : _btn(pin, long_press_ms, reverse, pulldownup, /*multiclick*/true), _map(map) {}
+      : _btn(pin, long_press_ms, reverse, pulldownup, /*multiclick*/false), _map(map),
+        _holdRepeat(false), _wasPressed(false), _rawPressed(false), _suppress(false),
+        _rawSince(0), _nextRepeat(0) {}
   void begin() { _btn.begin(); }
+  // Called by the host on every foreground change with the new applet's preference.
+  // If the button is held at that moment, swallow the rest of this press so it
+  // can't act on the revealed screen.
+  void setHoldRepeat(bool enabled) override {
+    _holdRepeat = enabled;
+    if (_wasPressed) _suppress = true;
+  }
   bool poll(InputReport& out) override;
 };
 

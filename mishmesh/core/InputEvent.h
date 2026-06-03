@@ -20,7 +20,8 @@ enum class InputEvent : uint8_t {
 
 struct InputReport {
   InputEvent event = InputEvent::None;
-  char       ch = 0;   // free-text char for keyboard sources, else 0
+  char       ch = 0;       // free-text char for keyboard sources, else 0
+  bool       repeat = false; // true when emitted by auto-repeat (held button), not a fresh press
 };
 
 }  // namespace mishmesh

@@ -41,6 +41,9 @@ enum class Icon : uint16_t {
   Star        = 0xE015,   // favourite marker
   Search      = 0xE016,   // discover tab
   Plus        = 0xE017,   // create new (messages "New" tab)
+  Backspace   = 0xE018,   // keypad delete
+  ArrowRight  = 0xE019,   // keypad cursor-right
+  Check       = 0xE01A,   // keypad confirm
 };
 
 }  // namespace mishmesh

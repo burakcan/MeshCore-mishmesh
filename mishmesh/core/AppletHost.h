@@ -35,7 +35,7 @@ public:
   Applet* foreground() const;
   int depth() const { return _depth; }
 
-  void dispatch(InputEvent ev);
+  void dispatch(InputEvent ev, bool repeat = false);
   void loop(uint32_t now_ms);
 
   // Transient feedback drawn over the foreground for ~1.4s. Outlives applet
@@ -44,6 +44,9 @@ public:
 
 private:
   void renderIfDue(uint32_t now_ms);
+  // Push the foreground applet's input preferences (currently wantsBackRepeat())
+  // to every source. Called after each foreground change.
+  void applyInputContext();
   // Drain every input source once, dispatching (and bounce-coalescing) what they
   // report. Called both before and after rendering each loop so a slow frame can't
   // open an input-blind gap - see loop().

@@ -37,6 +37,14 @@ Applet* AppletHost::foreground() const {
   return _depth > 0 ? _stack[_depth - 1] : nullptr;
 }
 
+void AppletHost::applyInputContext() {
+  Applet* fg = foreground();
+  bool backRepeat = fg != nullptr && fg->wantsBackRepeat();
+  for (int i = 0; i < _nsources; i++) {
+    if (_sources[i] != nullptr) _sources[i]->setHoldRepeat(backRepeat);
+  }
+}
+
 void AppletHost::setRoot(Applet* root) {
   if (root == nullptr || _depth != 0) return;
   if (_display != nullptr && !_display->isOn()) _display->turnOn();  // panels boot off
@@ -44,6 +52,7 @@ void AppletHost::setRoot(Applet* root) {
   _depth = 1;
   root->onStart(_ctx);
   root->onForeground();
+  applyInputContext();
   _dirty = true;
 }
 
@@ -54,6 +63,7 @@ void AppletHost::push(Applet* a) {
   _stack[_depth++] = a;
   a->onStart(_ctx);
   a->onForeground();
+  applyInputContext();
   _dirty = true;
 }
 
@@ -65,6 +75,7 @@ void AppletHost::pop() {
   _stack[--_depth] = nullptr;
   Applet* revealed = foreground();
   if (revealed != nullptr) revealed->onForeground();
+  applyInputContext();
   _dirty = true;
 }
 
@@ -76,14 +87,22 @@ void AppletHost::replace(Applet* a) {
   _stack[_depth - 1] = a;
   a->onStart(_ctx);
   a->onForeground();
+  applyInputContext();
   _dirty = true;
 }
 
-void AppletHost::dispatch(InputEvent ev) {
+void AppletHost::dispatch(InputEvent ev, bool repeat) {
   Applet* fg = foreground();
   if (fg == nullptr) return;
   bool consumed = fg->onInput(ev);
-  if (!consumed && ev == InputEvent::Back) {
+  // A long-press the screen doesn't use falls back to a normal press, so an
+  // over-long center press still activates (e.g. opens the focused menu item)
+  // instead of silently doing nothing. Screens that handle SelectLong consume it.
+  if (!consumed && ev == InputEvent::SelectLong) consumed = fg->onInput(InputEvent::Select);
+  // Auto-repeat (held button) must never pop: a hold that empties a text field
+  // should stop there, not exit - and never cascade through screens. Only a
+  // fresh, unconsumed Back pops.
+  if (!consumed && ev == InputEvent::Back && !repeat) {
     pop();
   }
   _dirty = true;
@@ -91,8 +110,9 @@ void AppletHost::dispatch(InputEvent ev) {
 
 void AppletHost::pumpInput(uint32_t now_ms) {
   for (int i = 0; i < _nsources; i++) {
-    InputReport rep;
-    while (_sources[i] != nullptr && _sources[i]->poll(rep)) {
+    if (_sources[i] == nullptr) continue;
+    InputReport rep;                       // fresh each poll: `repeat` defaults false
+    while ((rep = InputReport(), _sources[i]->poll(rep))) {
       _last_activity = now_ms;
       if (_display != nullptr && !_display->isOn()) {
         _display->turnOn();   // first press only wakes; it isn't delivered
@@ -101,7 +121,7 @@ void AppletHost::pumpInput(uint32_t now_ms) {
         bool bounce = _input_seen && rep.event == _last_input_event &&
                       now_ms - _last_input_ms < INPUT_DEBOUNCE_MS;
         _last_input_event = rep.event; _last_input_ms = now_ms; _input_seen = true;
-        if (!bounce) dispatch(rep.event);
+        if (!bounce) dispatch(rep.event, rep.repeat);
       }
     }
   }

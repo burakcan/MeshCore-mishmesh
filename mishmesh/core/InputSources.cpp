@@ -13,13 +13,36 @@ static Gesture toGesture(int buttonEvent) {
 }
 
 bool ButtonGestureSource::poll(InputReport& out) {
-  Gesture g = toGesture(_btn.check());
-  if (g == Gesture::None) return false;
-  InputEvent ev = mapGesture(_map, g);
-  if (ev == InputEvent::None) return false;
-  out.event = ev;
-  out.ch = 0;
-  return true;
+  // Level-driven and edge-triggered: the click fires once on the press edge, then
+  // (if hold-repeat is on) auto-repeats while held. A press carried over a
+  // foreground change is swallowed until released (_suppress).
+  uint32_t now = millis();
+  bool raw = _btn.isPressed();
+  if (raw != _rawPressed) { _rawPressed = raw; _rawSince = now; }
+  bool pressed = _wasPressed;
+  if ((uint32_t)(now - _rawSince) >= DEBOUNCE_MS) pressed = _rawPressed;
+
+  if (!pressed) {                                  // released: re-arm
+    _wasPressed = false;
+    _suppress = false;
+    return false;
+  }
+  if (_map.click == InputEvent::None) { _wasPressed = true; return false; }
+
+  if (!_wasPressed) {                              // press edge
+    _wasPressed = true;
+    _nextRepeat = now + REPEAT_DELAY_MS;
+    if (_suppress) return false;                   // held across a context change: ignore
+    out.event = _map.click; out.ch = 0; out.repeat = false;
+    return true;
+  }
+  if (_suppress) return false;
+  if (_holdRepeat && (int32_t)(now - _nextRepeat) >= 0) {   // held: repeat
+    _nextRepeat = now + REPEAT_INTERVAL_MS;
+    out.event = _map.click; out.ch = 0; out.repeat = true;
+    return true;
+  }
+  return false;
 }
 
 bool DirectionalSource::poll(InputReport& out) {
