@@ -4,6 +4,7 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/widgets/Modal.h>
+#include <mishmesh/widgets/StatusBar.h>   // batteryPercent()
 #include <mishmesh/text/Fonts.h>
 #include <cstdio>
 
@@ -60,6 +61,7 @@ uint16_t MessagesApplet::NewModel::icon(int i) const {
 void MessagesApplet::onStart(AppletContext& ctx) {
   _host = ctx.host;
   _svc  = ctx.messages;
+  _app  = ctx.app;
   _chats.svc = _svc;
   _tabs.clear();
   _tabs.addTab("Chats", (uint16_t)Icon::Message);
@@ -86,6 +88,8 @@ int MessagesApplet::visibleRowCountForTest() const {
 int MessagesApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   int barH = 13;
+  snprintf(_battBuf, sizeof(_battBuf), "%d%%", batteryPercent(_app ? _app->batteryMillivolts() : 0));
+  _tabs.setDecoration(_battBuf);
   _tabs.draw(c, 0, 0, w, barH);
   int bodyY = barH + 1;
   int bodyH = h - bodyY;
