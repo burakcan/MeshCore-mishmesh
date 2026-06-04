@@ -90,9 +90,17 @@ uint16_t DiscoverListModel::icon(int i) const {
   return kindIcon((ContactKind)v.type);
 }
 
+// raw autoadd_max_hops -> human label. 0=no limit, 1=direct (0 hops), N=up to N-1 hops.
+static void maxHopsLabel(int raw, char* out, uint16_t cap) {
+  if (raw <= 0)       snprintf(out, cap, "No limit");
+  else if (raw == 1)  snprintf(out, cap, "Direct");
+  else if (raw == 2)  snprintf(out, cap, "1 hop");
+  else                snprintf(out, cap, "%d hops", raw - 1);
+}
+
 static const char* SETTINGS_LABELS[ContactsSettingsModel::ROW_COUNT] = {
   "Auto-add all", "Auto-add Users", "Auto-add Repeaters", "Auto-add Rooms", "Auto-add Sensors",
-  "Overwrite oldest", "Remove non-users", "Remove non-favourites", "Remove all contacts",
+  "Overwrite oldest", "Max hops", "Remove non-users", "Remove non-favourites", "Remove all contacts",
 };
 
 bool ContactsSettingsModel::addAll() const {
@@ -107,12 +115,13 @@ ContactsSettingsModel::Row ContactsSettingsModel::rowAt(int i) const {
   seq[n++] = AutoAddAll;
   if (!addAll()) { seq[n++] = Users; seq[n++] = Repeaters; seq[n++] = Rooms; seq[n++] = Sensors; }
   seq[n++] = Overwrite;
+  seq[n++] = MaxHops;
   seq[n++] = RemoveNonUsers; seq[n++] = RemoveNonFavourites; seq[n++] = RemoveAll;
   return (i >= 0 && i < n) ? seq[i] : ROW_COUNT;
 }
 int ContactsSettingsModel::count() const {
-  // master + overwrite + 3 actions, plus the 4 kind toggles when not adding all
-  return addAll() ? 5 : ROW_COUNT;
+  // master + overwrite + maxhops + 3 actions, plus the 4 kind toggles when not adding all
+  return addAll() ? 6 : ROW_COUNT;
 }
 const char* ContactsSettingsModel::label(int i) const {
   Row r = rowAt(i);
@@ -134,10 +143,17 @@ bool ContactsSettingsModel::toggleState(int i) const {
     default:         return false;
   }
 }
+const char* ContactsSettingsModel::value(int i) const {
+  if (!_svc || rowAt(i) != MaxHops) return nullptr;   // only the MaxHops row shows a value
+  static char buf[12];
+  maxHopsLabel(_svc->getAutoAdd().maxHops, buf, sizeof(buf));
+  return buf;
+}
 
 ContactsApplet::ContactsApplet()
     : Applet("Contacts"), _host(nullptr), _svc(nullptr),
-      _confirming(false), _pendingAction(-1), _pickMode(false), _pickRequested(false) {}
+      _confirming(false), _pendingAction(-1), _pickMode(false), _pickRequested(false),
+      _editingHops(false) {}
 
 static const char* emptyLabel(ContactKind k) {
   switch (k) {
@@ -211,6 +227,7 @@ void ContactsApplet::onStart(AppletContext& ctx) {
   _settings.bind(_svc);
   _list.setRowHeight(14);
   _confirming = false; _pendingAction = -1;
+  _editingHops = false;
   _slotCount = 0;        // fresh build: no selection to preserve
   rebuildTabs();
   // On a fresh open, land on the Favourites tab when it exists (always slot 0).
@@ -234,10 +251,27 @@ int ContactsApplet::onRender(Canvas& c) {
   _list.draw(c, 0, bodyY, w, bodyH);   // contacts and settings share the one list widget
 
   if (_confirming) { _confirm.draw(c, 0, 0, w, h); return 100; }
+  if (_editingHops) { _hops.draw(c, 0, 0, w, h); return 100; }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool ContactsApplet::onInput(InputEvent ev) {
+  if (_editingHops) {
+    if (_hops.onInput(ev)) {
+      StepperResult r = _hops.result();
+      if (r != StepperResult::None) {
+        if (r == StepperResult::Confirmed && _svc) {
+          AutoAddConfig cfg = _svc->getAutoAdd();
+          cfg.maxHops = (uint8_t)_hops.value();
+          _svc->setAutoAdd(cfg);
+        }
+        _editingHops = false;
+        _hops.reset();
+      }
+    }
+    return true;   // swallow everything while modal
+  }
+
   if (_confirming) {
     if (_confirm.onInput(ev)) {
       ConfirmResult r = _confirm.result();
@@ -278,6 +312,9 @@ bool ContactsApplet::onInput(InputEvent ev) {
           default: break;
         }
         _svc->setAutoAdd(cfg);
+      } else if (r == ContactsSettingsModel::MaxHops && _svc) {
+        _hops.configure("Max hops", _svc->getAutoAdd().maxHops, 0, 64, maxHopsLabel);
+        _editingHops = true;
       } else {
         _pendingAction = r;   // store the logical Row, not the (dynamic) list index
         const char* msg = "Remove non-user contacts?";

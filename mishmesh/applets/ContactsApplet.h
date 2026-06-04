@@ -5,6 +5,7 @@
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/TabBar.h>
 #include <mishmesh/widgets/ConfirmDialog.h>
+#include <mishmesh/widgets/StepperDialog.h>
 
 namespace mishmesh {
 
@@ -55,7 +56,7 @@ class ContactsSettingsModel : public ListModel {
   ContactsService* _svc;
   bool addAll() const;   // current master state (defaults to true when unbound)
 public:
-  enum Row { AutoAddAll, Users, Repeaters, Rooms, Sensors, Overwrite,
+  enum Row { AutoAddAll, Users, Repeaters, Rooms, Sensors, Overwrite, MaxHops,
              RemoveNonUsers, RemoveNonFavourites, RemoveAll, ROW_COUNT };
   ContactsSettingsModel() : _svc(nullptr) {}
   void bind(ContactsService* svc) { _svc = svc; }
@@ -64,6 +65,7 @@ public:
   const char* label(int i) const override;
   bool isToggle(int i) const override;
   bool toggleState(int i) const override;
+  const char* value(int i) const override;
 };
 
 class ContactsApplet : public Applet {
@@ -81,6 +83,8 @@ class ContactsApplet : public Applet {
   DiscoverListModel     _discover;
   ContactsSettingsModel _settings;
   ConfirmDialog         _confirm;
+  StepperDialog         _hops;          // max-hops value picker (modal)
+  bool                  _editingHops;
   TabSlot               _slots[8];      // parallel to the tabs
   int                   _slotCount;
   bool                  _confirming;

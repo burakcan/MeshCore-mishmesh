@@ -267,8 +267,8 @@ TEST(ContactsApplet, RemoveNonFavouritesCleanupKeepsOnlyFavourites) {
   // Tabs: Favorites,Contacts,Repeaters,Rooms,Sensors,Discover,Settings -> Settings is index 6.
   for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavRight);  // -> Settings
   // Auto-add-all on (default) collapses the kind rows, so Settings is:
-  // [Auto-add all, Overwrite oldest, Remove non-users, Remove non-favourites, Remove all].
-  for (int i = 0; i < 3; i++) host.dispatch(mishmesh::InputEvent::NavDown);   // -> "Remove non-favourites"
+  // [Auto-add all, Overwrite oldest, Max hops, Remove non-users, Remove non-favourites, Remove all].
+  for (int i = 0; i < 4; i++) host.dispatch(mishmesh::InputEvent::NavDown);   // -> "Remove non-favourites"
   host.dispatch(mishmesh::InputEvent::Select);     // confirm dialog
   host.dispatch(mishmesh::InputEvent::NavRight);   // Confirm
   host.dispatch(mishmesh::InputEvent::Select);
@@ -532,14 +532,14 @@ TEST(ContactsSettings, AutoAddAllCollapsesKindRows) {
   m.bind(&svc);
 
   svc.cfg.autoAddAll = true;
-  EXPECT_EQ(5, m.count());                                  // master + overwrite + 3 actions
+  EXPECT_EQ(6, m.count());                                  // master + overwrite + maxhops + 3 actions
   EXPECT_EQ(mishmesh::ContactsSettingsModel::AutoAddAll, m.rowAt(0));
   EXPECT_TRUE(m.isToggle(0));
   EXPECT_TRUE(m.toggleState(0));                            // reflects autoAddAll
   EXPECT_EQ(mishmesh::ContactsSettingsModel::Overwrite, m.rowAt(1));   // kinds hidden
 
   svc.cfg.autoAddAll = false;
-  EXPECT_EQ(9, m.count());                                  // kinds now visible
+  EXPECT_EQ(10, m.count());                                 // kinds now visible
   EXPECT_EQ(mishmesh::ContactsSettingsModel::Users, m.rowAt(1));
   EXPECT_FALSE(m.toggleState(0));
 }
@@ -556,6 +556,73 @@ TEST(ContactsApplet, SettingsAutoAddAllTogglesMaster) {
   for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavRight);
   host.dispatch(mishmesh::InputEvent::Select);   // row 0 = "Auto-add all"
   EXPECT_FALSE(svc.cfg.autoAddAll);              // flipped to "selected"
+}
+
+TEST(ContactsSettings, MaxHopsRowShowsValueNotToggle) {
+  FakeContactsService svc;
+  svc.cfg.autoAddAll = true;
+  svc.cfg.maxHops = 1;                 // "Direct"
+  mishmesh::ContactsSettingsModel m;
+  m.bind(&svc);
+
+  // master(0), overwrite(1), maxhops(2), then 3 actions = 6 rows.
+  EXPECT_EQ(6, m.count());
+  EXPECT_EQ(mishmesh::ContactsSettingsModel::MaxHops, m.rowAt(2));
+  EXPECT_FALSE(m.isToggle(2));
+  ASSERT_NE(nullptr, m.value(2));
+  EXPECT_STREQ("Direct", m.value(2));
+  EXPECT_STREQ("Max hops", m.label(2));
+}
+
+TEST(ContactsSettings, MaxHopsLabelMapping) {
+  FakeContactsService svc;
+  svc.cfg.autoAddAll = true;
+  mishmesh::ContactsSettingsModel m;
+  m.bind(&svc);
+  svc.cfg.maxHops = 0;  EXPECT_STREQ("No limit", m.value(2));
+  svc.cfg.maxHops = 1;  EXPECT_STREQ("Direct",   m.value(2));
+  svc.cfg.maxHops = 2;  EXPECT_STREQ("1 hop",    m.value(2));
+  svc.cfg.maxHops = 3;  EXPECT_STREQ("2 hops",   m.value(2));
+  svc.cfg.maxHops = 64; EXPECT_STREQ("63 hops",  m.value(2));
+}
+
+// Selecting the Max hops row opens the stepper; NavRight then Select writes the
+// new raw value through the service.
+TEST(ContactsApplet, MaxHopsStepperWritesValue) {
+  FakeContactsService svc;
+  svc.cfg.autoAddAll = true;
+  svc.cfg.maxHops = 1;                 // "Direct"
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  // Settings is the last tab (index 5): Contacts,Repeaters,Rooms,Sensors,Discover,Settings.
+  for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavRight);
+  // Settings rows: AutoAddAll(0), Overwrite(1), MaxHops(2). Move down to MaxHops.
+  host.dispatch(mishmesh::InputEvent::NavDown);   // -> Overwrite
+  host.dispatch(mishmesh::InputEvent::NavDown);   // -> MaxHops
+  host.dispatch(mishmesh::InputEvent::Select);    // open stepper (seeded at 1)
+  host.dispatch(mishmesh::InputEvent::NavRight);  // 1 -> 2
+  host.dispatch(mishmesh::InputEvent::Select);    // confirm
+  EXPECT_EQ(2, svc.cfg.maxHops);
+}
+
+// Cancelling the stepper leaves the value unchanged.
+TEST(ContactsApplet, MaxHopsStepperCancelKeepsValue) {
+  FakeContactsService svc;
+  svc.cfg.autoAddAll = true;
+  svc.cfg.maxHops = 1;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavRight);
+  host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::Select);    // open
+  host.dispatch(mishmesh::InputEvent::NavRight);  // tweak (uncommitted)
+  host.dispatch(mishmesh::InputEvent::Back);      // cancel
+  EXPECT_EQ(1, svc.cfg.maxHops);
 }
 
 int main(int argc, char** argv) {
