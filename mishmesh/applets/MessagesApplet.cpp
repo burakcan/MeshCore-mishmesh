@@ -40,19 +40,32 @@ const char* MessagesApplet::ChatsModel::value(int i) const {
 
 // ---- NewModel ----
 
+MessagesApplet::NewAction MessagesApplet::NewModel::actionAt(int i) const {
+  if (i == 0) return NewAction::Message;
+  if (i == 1) return NewAction::CreatePrivate;
+  if (i == 2) return NewAction::JoinPrivate;
+  bool showPublic = svc && !svc->publicChannelJoined();
+  if (showPublic && i == 3) return NewAction::JoinPublic;
+  return NewAction::JoinHashtag;   // i == 4 (public shown) or i == 3 (public hidden)
+}
+
 const char* MessagesApplet::NewModel::label(int i) const {
-  switch (i) {
-    case 0:  return "New message";
-    case 1:  return "New group";
-    default: return "Join channel";
+  switch (actionAt(i)) {
+    case NewAction::Message:       return "New message";
+    case NewAction::CreatePrivate: return "Create private channel";
+    case NewAction::JoinPrivate:   return "Join private channel";
+    case NewAction::JoinPublic:    return "Join public channel";
+    default:                       return "Join hashtag channel";
   }
 }
 
 uint16_t MessagesApplet::NewModel::icon(int i) const {
-  switch (i) {
-    case 0:  return (uint16_t)Icon::Message;
-    case 1:  return (uint16_t)Icon::Users;
-    default: return (uint16_t)Icon::Comment;
+  switch (actionAt(i)) {
+    case NewAction::Message:       return (uint16_t)Icon::Message;
+    case NewAction::CreatePrivate: return (uint16_t)Icon::Users;
+    case NewAction::JoinPrivate:   return (uint16_t)Icon::Users;
+    case NewAction::JoinPublic:    return (uint16_t)Icon::Comment;
+    default:                       return (uint16_t)Icon::Comment;
   }
 }
 
@@ -63,6 +76,7 @@ void MessagesApplet::onStart(AppletContext& ctx) {
   _svc  = ctx.messages;
   _app  = ctx.app;
   _chats.svc = _svc;
+  _new.svc = _svc;
   _tabs.clear();
   _tabs.addTab("Chats", (uint16_t)Icon::Message);
   _tabs.addTab("New", (uint16_t)Icon::Plus);
@@ -72,6 +86,7 @@ void MessagesApplet::onStart(AppletContext& ctx) {
 
 void MessagesApplet::onForeground() {
   _chats.svc = _svc;
+  _new.svc = _svc;
   syncList();
 }
 
@@ -142,11 +157,17 @@ bool MessagesApplet::onInput(InputEvent ev) {
         if (_host) _host->push(&messageThreadApplet());
       }
     } else {
-      if (_list.selected() == 0) {                 // "New message" -> contact picker
-        contactsApplet().beginPick();
-        if (_host) _host->push(&contactsApplet());
-      } else if (_host) {
-        _host->postToast("Not available yet");     // "New group"
+      switch (_new.actionAt(_list.selected())) {
+        case NewAction::Message:
+          contactsApplet().beginPick();
+          if (_host) _host->push(&contactsApplet());
+          break;
+        case NewAction::CreatePrivate: openCreatePrivate(); break;
+        case NewAction::JoinPrivate:   openJoinPrivate();   break;
+        case NewAction::JoinPublic:
+          applyResult(_svc ? _svc->joinPublicChannel() : ChanResult::Error, "Joined Public");
+          break;
+        case NewAction::JoinHashtag:   openJoinHashtag();   break;
       }
     }
     return true;
@@ -161,6 +182,81 @@ bool MessagesApplet::onInput(InputEvent ev) {
     return true;
   }
   return false;   // Back bubbles -> pop to app menu
+}
+
+bool MessagesApplet::isHexKey(const char* s) {
+  int n = 0;
+  for (const char* p = s; *p; ++p, ++n) {
+    char c = *p;
+    bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    if (!hex) return false;
+  }
+  return n == 32;
+}
+
+bool MessagesApplet::applyResult(ChanResult res, const char* okToast) {
+  const char* t = "Failed"; bool pop = false;
+  switch (res) {
+    case ChanResult::Ok:        t = okToast; pop = true;
+                                _tabs.setSelected(0); _tab = 0; syncList(); break;
+    case ChanResult::Full:      t = "Channels full"; break;
+    case ChanResult::Invalid:   t = "Invalid key"; break;
+    case ChanResult::Duplicate: t = "Already joined"; pop = true; break;
+    case ChanResult::Error:     default: t = "Failed"; break;
+  }
+  if (_host) _host->postToast(t);
+  return pop;
+}
+
+void MessagesApplet::openCreatePrivate() {
+  _chName[0] = 0;
+  FormApplet::Field f[1] = { { "Name", _chName, sizeof(_chName), nullptr, "Name required" } };
+  formApplet().configure("Create private", f, 1, &MessagesApplet::submitCreatePrivate, this);
+  if (_host) _host->push(&formApplet());
+}
+
+void MessagesApplet::openJoinPrivate() {
+  _chName[0] = 0; _chKey[0] = 0;
+  FormApplet::Field f[2] = {
+    { "Name", _chName, sizeof(_chName), nullptr,                   "Name required" },
+    { "Key",  _chKey,  sizeof(_chKey),  &MessagesApplet::isHexKey, "Key: 32 hex chars" },
+  };
+  formApplet().configure("Join private", f, 2, &MessagesApplet::submitJoinPrivate, this);
+  if (_host) _host->push(&formApplet());
+}
+
+void MessagesApplet::openJoinHashtag() {
+  _chName[0] = 0;
+  FormApplet::Field f[1] = { { "Hashtag", _chName, sizeof(_chName), nullptr, "Hashtag required" } };
+  formApplet().configure("Join hashtag", f, 1, &MessagesApplet::submitJoinHashtag, this);
+  if (_host) _host->push(&formApplet());
+}
+
+bool MessagesApplet::submitCreatePrivate(void* ctx) {
+  MessagesApplet* a = (MessagesApplet*)ctx;
+  ChanResult r = a->_svc ? a->_svc->createPrivateChannel(a->_chName) : ChanResult::Error;
+  char ok[40]; snprintf(ok, sizeof(ok), "Created %s", a->_chName);
+  return a->applyResult(r, ok);
+}
+
+bool MessagesApplet::submitJoinPrivate(void* ctx) {
+  MessagesApplet* a = (MessagesApplet*)ctx;
+  ChanResult r = a->_svc ? a->_svc->joinPrivateChannel(a->_chName, a->_chKey) : ChanResult::Error;
+  char ok[40]; snprintf(ok, sizeof(ok), "Joined %s", a->_chName);
+  return a->applyResult(r, ok);
+}
+
+bool MessagesApplet::submitJoinHashtag(void* ctx) {
+  MessagesApplet* a = (MessagesApplet*)ctx;
+  ChanResult r = a->_svc ? a->_svc->joinHashtagChannel(a->_chName) : ChanResult::Error;
+  return a->applyResult(r, "Joined channel");
+}
+
+void MessagesApplet::setChannelNameForTest(const char* s) {
+  snprintf(_chName, sizeof(_chName), "%s", s ? s : "");
+}
+void MessagesApplet::setChannelKeyForTest(const char* s) {
+  snprintf(_chKey, sizeof(_chKey), "%s", s ? s : "");
 }
 
 MessagesApplet& messagesApplet() {

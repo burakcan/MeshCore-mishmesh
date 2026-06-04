@@ -14,6 +14,13 @@ struct FakeMessagesService : mishmesh::MessagesService {
   mishmesh::ConvoKey lastSentKey{};
   int sends = 0;
 
+  enum ChanOp { OP_NONE, OP_CREATE_PRIV, OP_JOIN_PRIV, OP_JOIN_PUB, OP_JOIN_HASH };
+  ChanOp lastChanOp = OP_NONE;
+  std::string lastChanName, lastChanKey;
+  int chanCalls = 0;
+  mishmesh::ChanResult chanResult = mishmesh::ChanResult::Ok;
+  bool publicJoined = false;
+
   static std::string keyName(const mishmesh::ConvoKey& k) {
     char b[24];
     if (k.type == 1) snprintf(b, sizeof(b), "#chan%u", k.id[0]);
@@ -66,5 +73,19 @@ struct FakeMessagesService : mishmesh::MessagesService {
     else             store.appendOutboundDM(k, lastSent.c_str(), len, 0, 0, 0, 0);
     return true;
   }
+  mishmesh::ChanResult createPrivateChannel(const char* name) override {
+    lastChanOp = OP_CREATE_PRIV; lastChanName = name ? name : ""; chanCalls++; return chanResult;
+  }
+  mishmesh::ChanResult joinPrivateChannel(const char* name, const char* keyHex) override {
+    lastChanOp = OP_JOIN_PRIV; lastChanName = name ? name : ""; lastChanKey = keyHex ? keyHex : "";
+    chanCalls++; return chanResult;
+  }
+  mishmesh::ChanResult joinPublicChannel() override {
+    lastChanOp = OP_JOIN_PUB; chanCalls++; return chanResult;
+  }
+  mishmesh::ChanResult joinHashtagChannel(const char* hashtag) override {
+    lastChanOp = OP_JOIN_HASH; lastChanName = hashtag ? hashtag : ""; chanCalls++; return chanResult;
+  }
+  bool publicChannelJoined() const override { return publicJoined; }
   uint32_t seq() const override { return store.seq(); }
 };

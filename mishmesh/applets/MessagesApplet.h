@@ -4,6 +4,7 @@
 #include <mishmesh/widgets/TabBar.h>
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/ChatMenu.h>
+#include <mishmesh/applets/FormApplet.h>
 
 namespace mishmesh {
 
@@ -16,9 +17,25 @@ public:
   bool onInput(InputEvent ev) override;
   int  visibleRowCountForTest() const;   // test hook
   bool menuOpenForTest() const { return _menuOpen; }
+  enum class NewAction : uint8_t { Message, CreatePrivate, JoinPrivate, JoinPublic, JoinHashtag };
+  // test seams
+  void setChannelNameForTest(const char* s);
+  void setChannelKeyForTest(const char* s);
+  int  selectedTabForTest() const { return _tab; }
 
 private:
   void syncList();
+  void openCreatePrivate();
+  void openJoinPrivate();
+  void openJoinHashtag();
+  bool applyResult(ChanResult res, const char* okToast);   // true => pop form
+  static bool isHexKey(const char* s);
+  static bool submitCreatePrivate(void* ctx);
+  static bool submitJoinPrivate(void* ctx);
+  static bool submitJoinHashtag(void* ctx);
+
+  char _chName[32];
+  char _chKey[33];   // 32 hex chars + NUL
 
   AppletHost*      _host = nullptr;
   MessagesService* _svc  = nullptr;
@@ -39,9 +56,11 @@ private:
   } _chats;
 
   struct NewModel : ListModel {
-    int          count()       const override { return 3; }
-    const char*  label(int i)  const override;
-    uint16_t     icon(int i)   const override;
+    MessagesService* svc = nullptr;
+    int count() const override { return (svc && !svc->publicChannelJoined()) ? 5 : 4; }
+    const char* label(int i) const override;
+    uint16_t    icon(int i)  const override;
+    NewAction   actionAt(int i) const;
   } _new;
 };
 

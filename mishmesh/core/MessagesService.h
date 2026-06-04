@@ -5,6 +5,9 @@
 
 namespace mishmesh {
 
+// Result of an on-device channel create/join. Drives the applet's toast.
+enum class ChanResult : int8_t { Ok, Full, Invalid, Duplicate, Error };
+
 struct ConvoView {
   ConvoKey    key;
   bool        isChannel;
@@ -58,6 +61,15 @@ struct MessagesService {
   virtual void newGroup() {}
   virtual void joinChannel() {}
   virtual void reply(const ConvoKey&, int) {}
+  // On-device channel ops. Defaults make non-adapter implementations inert.
+  // createPrivate: random 16-byte secret. joinPrivate: secret from 32-hex key.
+  // joinPublic: fixed "Public" name + well-known PSK. joinHashtag: PSK from
+  // sha256("#"+name) (name stored as "#name"); see companion_protocol.md.
+  virtual ChanResult createPrivateChannel(const char* name) { (void)name; return ChanResult::Error; }
+  virtual ChanResult joinPrivateChannel(const char* name, const char* keyHex) { (void)name; (void)keyHex; return ChanResult::Error; }
+  virtual ChanResult joinPublicChannel() { return ChanResult::Error; }
+  virtual ChanResult joinHashtagChannel(const char* hashtag) { (void)hashtag; return ChanResult::Error; }
+  virtual bool publicChannelJoined() const { return false; }
   virtual uint32_t seq() const = 0;
 };
 

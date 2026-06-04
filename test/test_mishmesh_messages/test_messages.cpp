@@ -400,7 +400,7 @@ TEST(MessagesApplet, NewMessageOpensPicker) {
   EXPECT_TRUE(mishmesh::contactsApplet().pickModeForTest());
 }
 
-// "New group" (row 1) is still a no-op toast (no push).
+// Row 1 is now "Create private channel" (was: "New group" noop); must not crash.
 TEST(MessagesApplet, NewGroupIsNoop) {
   FakeMessagesService svc;
   FakeContactsService contacts;
@@ -409,10 +409,10 @@ TEST(MessagesApplet, NewGroupIsNoop) {
   mishmesh::AppletHost host(&d, ctx);
   host.setRoot(&mishmesh::messagesApplet());
   host.dispatch(mishmesh::InputEvent::NavRight);  // -> New tab
-  host.dispatch(mishmesh::InputEvent::NavDown);   // -> "New group" (row 1)
+  host.dispatch(mishmesh::InputEvent::NavDown);   // -> "Create private channel" (row 1)
   int d0 = host.depth();
-  host.dispatch(mishmesh::InputEvent::Select);
-  EXPECT_EQ(d0, host.depth());                     // no push
+  host.dispatch(mishmesh::InputEvent::Select);    // opens the Create-private form
+  EXPECT_EQ(d0 + 1, host.depth());                // form was pushed
 }
 
 // Opening a thread with composeOnOpen() focuses the Write button, not the last message.
@@ -532,7 +532,168 @@ TEST(MessageStore, EnsureChannelIdempotent) {
   EXPECT_EQ(1, store.messageCount(mishmesh::channelKey(2)));   // message preserved
 }
 
+TEST(MessagesService, ChannelOpsRecordedByFake) {
+  FakeMessagesService svc;
+  svc.chanResult = mishmesh::ChanResult::Full;
+  EXPECT_EQ(mishmesh::ChanResult::Full, svc.createPrivateChannel("teamA"));
+  EXPECT_EQ(FakeMessagesService::OP_CREATE_PRIV, svc.lastChanOp);
+  EXPECT_EQ("teamA", svc.lastChanName);
+
+  svc.chanResult = mishmesh::ChanResult::Ok;
+  EXPECT_EQ(mishmesh::ChanResult::Ok, svc.joinPrivateChannel("p", "00112233445566778899aabbccddeeff"));
+  EXPECT_EQ(FakeMessagesService::OP_JOIN_PRIV, svc.lastChanOp);
+  EXPECT_EQ("p", svc.lastChanName);
+  EXPECT_EQ("00112233445566778899aabbccddeeff", svc.lastChanKey);
+
+  EXPECT_EQ(mishmesh::ChanResult::Ok, svc.joinPublicChannel());
+  EXPECT_EQ(FakeMessagesService::OP_JOIN_PUB, svc.lastChanOp);
+
+  svc.joinHashtagChannel("#trending");
+  EXPECT_EQ(FakeMessagesService::OP_JOIN_HASH, svc.lastChanOp);
+  EXPECT_EQ("#trending", svc.lastChanName);
+
+  svc.publicJoined = true;
+  EXPECT_TRUE(svc.publicChannelJoined());
+  EXPECT_EQ(4, svc.chanCalls);
+}
+
+// openNewTab: destroy-and-recreate the host each call so every test gets a
+// fresh stack + fresh ctx (setRoot requires depth==0; static svc pointers
+// would dangle across test boundaries). new/delete is fine in host tests.
+static mishmesh::AppletHost* gNewTabHost = nullptr;
+
+static mishmesh::AppletHost* openNewTab(FakeMessagesService& svc, FakeDisplayDriver& d) {
+  delete gNewTabHost;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  gNewTabHost = new mishmesh::AppletHost(&d, ctx);
+  gNewTabHost->setRoot(&mishmesh::messagesApplet());
+  gNewTabHost->dispatch(mishmesh::InputEvent::NavRight);   // Chats -> New
+  gNewTabHost->loop(0);
+  return gNewTabHost;
+}
+
+TEST(MessagesApplet, NewTabHidesPublicWhenJoined) {
+  FakeMessagesService svc; svc.publicJoined = true;
+  FakeDisplayDriver d; openNewTab(svc, d);
+  EXPECT_EQ(4, mishmesh::messagesApplet().visibleRowCountForTest());
+}
+
+TEST(MessagesApplet, NewTabShowsPublicWhenNotJoined) {
+  FakeMessagesService svc; svc.publicJoined = false;
+  FakeDisplayDriver d; openNewTab(svc, d);
+  EXPECT_EQ(5, mishmesh::messagesApplet().visibleRowCountForTest());
+}
+
+TEST(MessagesApplet, JoinPublicCallsServiceNoForm) {
+  FakeMessagesService svc; svc.publicJoined = false; svc.chanResult = mishmesh::ChanResult::Ok;
+  FakeDisplayDriver d; auto* host = openNewTab(svc, d);
+  // rows: 0 msg,1 create,2 join-priv,3 join-public,4 hashtag
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);   // -> row 3 (Join public)
+  host->dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(FakeMessagesService::OP_JOIN_PUB, svc.lastChanOp);
+  EXPECT_EQ(1, host->depth());                      // no form pushed
+  EXPECT_EQ(0, mishmesh::messagesApplet().selectedTabForTest());  // switched to Chats on Ok
+}
+
+TEST(MessagesApplet, CreatePrivateHappyPath) {
+  FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Ok;
+  FakeDisplayDriver d; auto* host = openNewTab(svc, d);
+  host->dispatch(mishmesh::InputEvent::NavDown);    // -> row 1 (Create private)
+  host->dispatch(mishmesh::InputEvent::Select);     // push form
+  EXPECT_EQ(2, host->depth());
+  mishmesh::messagesApplet().setChannelNameForTest("teamA");
+  host->dispatch(mishmesh::InputEvent::NavDown);    // field0 -> Submit
+  host->dispatch(mishmesh::InputEvent::Select);     // submit
+  EXPECT_EQ(FakeMessagesService::OP_CREATE_PRIV, svc.lastChanOp);
+  EXPECT_EQ("teamA", svc.lastChanName);
+  EXPECT_EQ(1, host->depth());                       // form popped
+  EXPECT_EQ(0, mishmesh::messagesApplet().selectedTabForTest());
+}
+
+TEST(MessagesApplet, JoinPrivateRejectsBadKey) {
+  FakeMessagesService svc; svc.publicJoined = true;
+  FakeDisplayDriver d; auto* host = openNewTab(svc, d);
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);    // -> row 2 (Join private)
+  host->dispatch(mishmesh::InputEvent::Select);     // push form
+  EXPECT_EQ(2, host->depth());
+  mishmesh::messagesApplet().setChannelNameForTest("p");
+  mishmesh::messagesApplet().setChannelKeyForTest("nothex");   // invalid
+  host->dispatch(mishmesh::InputEvent::NavDown);    // field0 -> field1
+  host->dispatch(mishmesh::InputEvent::NavDown);    // field1 -> Submit
+  host->dispatch(mishmesh::InputEvent::Select);     // submit blocked by isHexKey
+  EXPECT_EQ(0, svc.chanCalls);
+  EXPECT_EQ(2, host->depth());                       // form stays open
+}
+
+TEST(MessagesApplet, JoinPrivateHappyPath) {
+  FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Ok;
+  FakeDisplayDriver d; auto* host = openNewTab(svc, d);
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);    // -> row 2 (Join private)
+  host->dispatch(mishmesh::InputEvent::Select);
+  mishmesh::messagesApplet().setChannelNameForTest("p");
+  mishmesh::messagesApplet().setChannelKeyForTest("00112233445566778899aabbccddeeff");
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);    // -> Submit
+  host->dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(FakeMessagesService::OP_JOIN_PRIV, svc.lastChanOp);
+  EXPECT_EQ("00112233445566778899aabbccddeeff", svc.lastChanKey);
+  EXPECT_EQ(1, host->depth());
+}
+
+TEST(MessagesApplet, ChannelsFullKeepsFormOpen) {
+  FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Full;
+  FakeDisplayDriver d; auto* host = openNewTab(svc, d);
+  host->dispatch(mishmesh::InputEvent::NavDown);    // -> row 1 (Create private)
+  host->dispatch(mishmesh::InputEvent::Select);
+  mishmesh::messagesApplet().setChannelNameForTest("x");
+  host->dispatch(mishmesh::InputEvent::NavDown);    // -> Submit
+  host->dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(FakeMessagesService::OP_CREATE_PRIV, svc.lastChanOp);
+  EXPECT_EQ(2, host->depth());                       // stayed open (Full)
+}
+
+TEST(MessagesAppletHelpers, IsHexKeyValidation) {
+  // exercised indirectly above; assert the boundary cases via the form path
+  FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Ok;
+  FakeDisplayDriver d; auto* host = openNewTab(svc, d);
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::Select);      // join-private form
+  mishmesh::messagesApplet().setChannelNameForTest("p");
+  mishmesh::messagesApplet().setChannelKeyForTest("00112233445566778899aabbccddeeg0"); // 'g' invalid
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(0, svc.chanCalls);                        // rejected: non-hex char
+}
+
+TEST(MessagesApplet, JoinHashtagHappyPath) {
+  FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Ok;
+  FakeDisplayDriver d; auto* host = openNewTab(svc, d);
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);   // 4 rows -> row 3 = Join hashtag
+  host->dispatch(mishmesh::InputEvent::Select);    // push form
+  EXPECT_EQ(2, host->depth());
+  mishmesh::messagesApplet().setChannelNameForTest("#foo");
+  host->dispatch(mishmesh::InputEvent::NavDown);   // field0 -> Submit
+  host->dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(FakeMessagesService::OP_JOIN_HASH, svc.lastChanOp);
+  EXPECT_EQ(1, host->depth());
+}
+
+// Frees the last openNewTab() host once the suite finishes (ASan hygiene).
+class MessagesNewTabEnv : public ::testing::Environment {
+ public:
+  void TearDown() override { delete gNewTabHost; gNewTabHost = nullptr; }
+};
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
+  ::testing::AddGlobalTestEnvironment(new MessagesNewTabEnv);
   return RUN_ALL_TESTS();
 }

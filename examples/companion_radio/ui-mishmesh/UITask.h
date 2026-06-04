@@ -63,6 +63,15 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     void markUnread(const mishmesh::ConvoKey& k) override;
     uint32_t seq() const override;
     bool sendText(const mishmesh::ConvoKey& k, const char* text) override;
+    mishmesh::ChanResult createPrivateChannel(const char* name) override;
+    mishmesh::ChanResult joinPrivateChannel(const char* name, const char* keyHex) override;
+    mishmesh::ChanResult joinPublicChannel() override;
+    mishmesh::ChanResult joinHashtagChannel(const char* hashtag) override;
+    bool publicChannelJoined() const override;
+  private:
+    int freeChannelSlot() const;                                   // -1 if full
+    mishmesh::ChanResult setSecret(const char* name, const uint8_t secret16[16]);
+    static const uint8_t* publicPsk();                             // 16 bytes
   } _msgSvc;
   // [/mishmesh]
 

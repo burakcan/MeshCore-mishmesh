@@ -478,4 +478,85 @@ bool UITask::MsgSvc::sendText(const mishmesh::ConvoKey& k, const char* text) {
   return the_mesh.mishmeshSendText(k, text);
 }
 
+const uint8_t* UITask::MsgSvc::publicPsk() {
+  // 8b3387e9c5cdea6ac9e5edbaa115cd72 - the well-known public-channel key.
+  static const uint8_t k[16] = {
+    0x8b,0x33,0x87,0xe9,0xc5,0xcd,0xea,0x6a,
+    0xc9,0xe5,0xed,0xba,0xa1,0x15,0xcd,0x72,
+  };
+  return k;
+}
+
+int UITask::MsgSvc::freeChannelSlot() const {
+#ifdef MAX_GROUP_CHANNELS
+  ChannelDetails ch;
+  for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+    if (!the_mesh.getChannel(i, ch)) continue;
+    bool empty = true;                          // unused slot = all-zero secret
+    for (int b = 0; b < PUB_KEY_SIZE; b++) if (ch.channel.secret[b]) { empty = false; break; }
+    if (empty) return i;
+  }
+#endif
+  return -1;
+}
+
+mishmesh::ChanResult UITask::MsgSvc::setSecret(const char* name, const uint8_t secret16[16]) {
+  int idx = freeChannelSlot();
+  if (idx < 0) return mishmesh::ChanResult::Full;
+  ChannelDetails ch;
+  memset(&ch, 0, sizeof(ch));
+  StrHelper::strncpy(ch.name, name, sizeof(ch.name));
+  memcpy(ch.channel.secret, secret16, 16);      // 128-bit; setChannel computes the hash
+  if (!the_mesh.setChannel(idx, ch)) return mishmesh::ChanResult::Error;
+  the_mesh.getStore()->saveChannels(&the_mesh);
+  if (store) store->ensureChannel((uint8_t)idx); // seed the chat so it shows in Chats
+  return mishmesh::ChanResult::Ok;
+}
+
+mishmesh::ChanResult UITask::MsgSvc::createPrivateChannel(const char* name) {
+  if (!name || !name[0]) return mishmesh::ChanResult::Invalid;
+  uint8_t secret[16];
+  the_mesh.getRNG()->random(secret, sizeof(secret));
+  return setSecret(name, secret);
+}
+
+mishmesh::ChanResult UITask::MsgSvc::joinPrivateChannel(const char* name, const char* keyHex) {
+  if (!name || !name[0]) return mishmesh::ChanResult::Invalid;
+  // Accept exactly 32 hex chars (stripping nothing; the applet validates charset).
+  if (!keyHex) return mishmesh::ChanResult::Invalid;
+  size_t n = strlen(keyHex);
+  if (n != 32) return mishmesh::ChanResult::Invalid;
+  uint8_t secret[16];
+  if (!mesh::Utils::fromHex(secret, sizeof(secret), keyHex)) return mishmesh::ChanResult::Invalid;
+  return setSecret(name, secret);
+}
+
+mishmesh::ChanResult UITask::MsgSvc::joinPublicChannel() {
+  if (publicChannelJoined()) return mishmesh::ChanResult::Duplicate;
+  return setSecret("Public", publicPsk());
+}
+
+mishmesh::ChanResult UITask::MsgSvc::joinHashtagChannel(const char* hashtag) {
+  if (!hashtag || !hashtag[0]) return mishmesh::ChanResult::Invalid;
+  const char* base = (hashtag[0] == '#') ? hashtag + 1 : hashtag;   // strip one leading #
+  if (!base[0]) return mishmesh::ChanResult::Invalid;
+  char named[33];                                                    // "#" + up to 31-char base + NUL
+  snprintf(named, sizeof(named), "#%s", base);                       // display + hash input
+  uint8_t secret[16];
+  mesh::Utils::sha256(secret, sizeof(secret),
+                      (const uint8_t*)named, (int)strlen(named));     // first 16 bytes
+  return setSecret(named, secret);
+}
+
+bool UITask::MsgSvc::publicChannelJoined() const {
+#ifdef MAX_GROUP_CHANNELS
+  ChannelDetails ch;
+  for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+    if (!the_mesh.getChannel(i, ch)) continue;
+    if (memcmp(ch.channel.secret, publicPsk(), 16) == 0) return true;
+  }
+#endif
+  return false;
+}
+
 // [/mishmesh]
