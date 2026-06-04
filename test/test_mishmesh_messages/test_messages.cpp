@@ -93,7 +93,11 @@ TEST(MessagesApplet, LongPressDeletesChatFromList) {
   EXPECT_TRUE(mishmesh::messagesApplet().menuOpenForTest());
   host.dispatch(mishmesh::InputEvent::NavDown);       // -> Mark unread
   host.dispatch(mishmesh::InputEvent::NavDown);       // -> Delete chat
-  host.dispatch(mishmesh::InputEvent::Select);        // invoke Delete
+  host.dispatch(mishmesh::InputEvent::Select);        // arm the confirm dialog
+  EXPECT_TRUE(mishmesh::messagesApplet().menuOpenForTest());   // still open, awaiting confirm
+  EXPECT_EQ(2, svc.convoCount());                     // nothing deleted yet
+  host.dispatch(mishmesh::InputEvent::NavRight);      // Cancel -> Confirm
+  host.dispatch(mishmesh::InputEvent::Select);        // confirm Delete
   EXPECT_FALSE(mishmesh::messagesApplet().menuOpenForTest());
   EXPECT_EQ(1, svc.convoCount());
   EXPECT_EQ(1, mishmesh::messagesApplet().visibleRowCountForTest());
@@ -182,7 +186,11 @@ TEST(MessageThread, SettingsTabClearKeepsThread) {
   int d0 = host.depth();
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> Settings tab
   EXPECT_EQ(1, mishmesh::messageThreadApplet().selectedTabForTest());
-  host.dispatch(mishmesh::InputEvent::Select);     // "Clear chat" (first item)
+  host.dispatch(mishmesh::InputEvent::Select);     // "Clear chat" (first item) -> confirm dialog
+  EXPECT_EQ(2, svc.messageCount(k));               // not emptied yet
+  EXPECT_EQ(1, mishmesh::messageThreadApplet().selectedTabForTest());  // still on Settings tab
+  host.dispatch(mishmesh::InputEvent::NavRight);   // Cancel -> Confirm
+  host.dispatch(mishmesh::InputEvent::Select);     // confirm Clear
   EXPECT_EQ(0, svc.messageCount(k));               // emptied
   EXPECT_EQ(1, svc.convoCount());                  // chat still exists
   EXPECT_EQ(d0, host.depth());                     // still in the thread
@@ -204,7 +212,11 @@ TEST(MessageThread, SettingsTabDeletePopsToList) {
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> Settings tab
   host.dispatch(mishmesh::InputEvent::NavDown);    // -> Mark unread
   host.dispatch(mishmesh::InputEvent::NavDown);    // -> Delete chat
-  host.dispatch(mishmesh::InputEvent::Select);     // invoke Delete
+  host.dispatch(mishmesh::InputEvent::Select);     // arm the confirm dialog
+  EXPECT_EQ(1, svc.convoCount());                  // not removed yet
+  EXPECT_EQ(d0, host.depth());                     // still in the thread
+  host.dispatch(mishmesh::InputEvent::NavRight);   // Cancel -> Confirm
+  host.dispatch(mishmesh::InputEvent::Select);     // confirm Delete
   EXPECT_EQ(0, svc.convoCount());                  // chat removed
   EXPECT_EQ(d0 - 1, host.depth());                 // popped back to the list
 }

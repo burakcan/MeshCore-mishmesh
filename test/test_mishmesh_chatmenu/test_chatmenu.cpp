@@ -12,15 +12,40 @@ static FakeMessagesService twoChats() {
   return svc;
 }
 
+// Drives the embedded confirm dialog to its "Confirm" button and presses it.
+static ChatMenu::Result confirm(ChatMenu& m, const char*& toast) {
+  m.onInput(InputEvent::NavRight);   // Cancel (default) -> Confirm
+  m.onInput(InputEvent::Select);
+  return m.takeResult(toast);
+}
+
 TEST(ChatMenu, ClearKeepsChatEmptiesMessages) {
   FakeMessagesService svc = twoChats();
   ChatMenu m; m.setTarget(dm("ALICE!")); m.reset();
   EXPECT_EQ(0, m.selected());                       // Clear chat is the first item
   const char* toast = nullptr;
-  EXPECT_EQ(ChatMenu::Result::Cleared, m.activate(&svc, toast));
+  EXPECT_EQ(ChatMenu::Result::None, m.activate(&svc, toast));   // arms the confirm dialog
+  EXPECT_TRUE(m.confirming());
+  EXPECT_EQ(2, svc.convoCount());                   // nothing happened yet
+  EXPECT_EQ(1, svc.messageCount(dm("ALICE!")));
+  EXPECT_EQ(ChatMenu::Result::Cleared, confirm(m, toast));
+  EXPECT_FALSE(m.confirming());
   EXPECT_STREQ("Chat cleared", toast);
   EXPECT_EQ(2, svc.convoCount());                   // chat stays in the list
   EXPECT_EQ(0, svc.messageCount(dm("ALICE!")));
+}
+
+TEST(ChatMenu, CancelLeavesChatUntouched) {
+  FakeMessagesService svc = twoChats();
+  ChatMenu m; m.setTarget(dm("ALICE!")); m.reset();
+  const char* toast = nullptr;
+  m.activate(&svc, toast);                          // Clear chat -> confirm dialog
+  EXPECT_TRUE(m.confirming());
+  m.onInput(InputEvent::Back);                       // Back cancels the dialog
+  EXPECT_FALSE(m.confirming());
+  EXPECT_EQ(ChatMenu::Result::None, m.takeResult(toast));
+  EXPECT_EQ(2, svc.convoCount());                   // nothing cleared or deleted
+  EXPECT_EQ(1, svc.messageCount(dm("ALICE!")));
 }
 
 TEST(ChatMenu, MarkUnreadFlagsChat) {
@@ -41,7 +66,10 @@ TEST(ChatMenu, DeleteRemovesChatFromList) {
   m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown);   // -> "Delete chat"
   EXPECT_EQ(2, m.selected());
   const char* toast = nullptr;
-  EXPECT_EQ(ChatMenu::Result::Deleted, m.activate(&svc, toast));
+  EXPECT_EQ(ChatMenu::Result::None, m.activate(&svc, toast));   // arms the confirm dialog
+  EXPECT_TRUE(m.confirming());
+  EXPECT_EQ(2, svc.convoCount());                  // not gone yet
+  EXPECT_EQ(ChatMenu::Result::Deleted, confirm(m, toast));
   EXPECT_STREQ("Chat deleted", toast);
   EXPECT_EQ(1, svc.convoCount());                  // ALICE gone, BOBBBB remains
   EXPECT_EQ(1, svc.messageCount(dm("BOBBBB")));

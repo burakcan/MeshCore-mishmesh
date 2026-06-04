@@ -94,6 +94,7 @@ int MessagesApplet::onRender(Canvas& c) {
   if (_menuOpen) {
     Canvas box = drawModalChrome(c);   // bare box over the live list
     _chatMenu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
+    if (_chatMenu.confirming()) _chatMenu.drawConfirm(c, 0, 0, w, h);   // full-screen guard
     return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
@@ -102,13 +103,21 @@ int MessagesApplet::onRender(Canvas& c) {
 bool MessagesApplet::onInput(InputEvent ev) {
   // Long-press chat-action overlay swallows input until it closes.
   if (_menuOpen) {
+    if (_chatMenu.confirming()) {   // destructive action awaiting Confirm/Cancel
+      _chatMenu.onInput(ev);
+      const char* toast = nullptr;
+      ChatMenu::Result r = _chatMenu.takeResult(toast);
+      if (_host && toast) _host->postToast(toast);
+      if (r != ChatMenu::Result::None) { syncList(); _menuOpen = false; }   // confirmed -> done
+      return true;   // cancel just dismisses the dialog, back to the action list
+    }
     if (_chatMenu.onInput(ev)) return true;
     if (ev == InputEvent::Select) {
       const char* toast = nullptr;
-      ChatMenu::Result r = _chatMenu.activate(_svc, toast);
+      ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete arm confirm
       if (_host && toast) _host->postToast(toast);
       if (r != ChatMenu::Result::None) syncList();   // chat cleared/removed -> refresh rows
-      _menuOpen = false;
+      if (!_chatMenu.confirming()) _menuOpen = false;   // non-destructive (or none) closes the overlay
       return true;
     }
     if (ev == InputEvent::Back || ev == InputEvent::Cancel) { _menuOpen = false; return true; }
