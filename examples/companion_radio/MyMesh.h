@@ -130,6 +130,7 @@ public:
   bool uiDeleteContact(const uint8_t* pubkey);
   bool uiClearConversation(const uint8_t* pubkey);
   bool uiSetFavourite(const uint8_t* pubkey, bool fav);   // flags bit0 = favourite
+  bool uiRenameContact(const uint8_t* pubkey, const char* name);  // local display label
   void uiPersistContacts();
 
   // Discovery: adverts seen but not auto-added, so the UI can add them manually.
@@ -139,6 +140,11 @@ public:
   bool uiAddDiscovery(const uint8_t* pubkey);             // promote a discovery to a contact
   void uiSetMessageStore(mishmesh::MessageStore* s) { _mm_store = s; }
   DataStore* getStore() const { return _store; }
+  // On-device send mirroring CMD_SEND_TXT_MSG: DM (k.type==0) or channel (k.type==1).
+  bool mishmeshSendText(const mishmesh::ConvoKey& k, const char* text);
+  // Seed an (empty) chat for every joined channel (e.g. the default Public
+  // channel) so it shows on a fresh device before any message arrives.
+  void uiSeedChannels();
   // [/mishmesh]
 
 protected:

@@ -6,6 +6,8 @@
 
 namespace mishmesh {
 
+typedef void (*KeypadConfirmFn)(void* ctx, const char* text);
+
 class Canvas;
 
 // Nokia-3310-style multi-tap text entry on a 4x4 GridView. Standalone for now
@@ -28,12 +30,15 @@ public:
 
   // Applet
   void onStart(AppletContext& ctx) override;
+  void onStop() override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
   bool wantsBackRepeat() const override { return true; }  // hold Back = repeat-delete
 
   // Future integration seam (unused by the menu launch). Call before push().
-  void configure(char* dst, uint16_t cap, const char* title);
+  // onConfirm (if set) receives the buffer on OK, before the host pops.
+  void configure(char* dst, uint16_t cap, const char* title,
+                 KeypadConfirmFn onConfirm = nullptr, void* ctx = nullptr);
 
   void setFocusForTest(int r, int c) { _grid.setFocus(r, c); }
 
@@ -52,6 +57,8 @@ private:
   char* _buf;            // _own, unless configure() points it elsewhere
   uint16_t _cap;
   const char* _title;
+  KeypadConfirmFn _onConfirm;
+  void* _onConfirmCtx;
   uint16_t _len;
   uint16_t _cursor;      // insertion index, 0.._len
   Mode _mode;
@@ -76,5 +83,7 @@ private:
   void confirmAndExit();
   void drawBuffer(Canvas& c, int x, int y, int w, int h);
 };
+
+KeypadApplet& keypadApplet();
 
 }  // namespace mishmesh

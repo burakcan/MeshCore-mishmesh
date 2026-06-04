@@ -91,6 +91,9 @@ public:
   void clearConvo(const ConvoKey& key);    // empties messages, keeps the chat in the list
   void deleteConvo(const ConvoKey& key);   // empties messages AND removes the chat
   void markUnread(const ConvoKey& key);    // flags the chat unread if it isn't already
+  // Ensure an (empty) chat exists for a joined channel so it shows in the list
+  // before any message arrives. No-op if the convo already exists.
+  void ensureChannel(uint8_t channelIdx);
 
   uint32_t seq() const { return _seq; }
 

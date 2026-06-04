@@ -5,13 +5,16 @@
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/TabBar.h>
 #include <mishmesh/widgets/ChatMenu.h>
+#include <mishmesh/applets/KeypadApplet.h>
+#include <mishmesh/widgets/Button.h>
 
 namespace mishmesh {
 
 class MessageThreadApplet : public Applet {
 public:
   MessageThreadApplet() : Applet("Thread") {}
-  void setTarget(const ConvoKey& k) { _key = k; }
+  void setTarget(const ConvoKey& k, const char* fallbackName = nullptr);
+  void composeOnOpen() { _composeOnOpen = true; }   // one-shot: open focused on the Write button
   void onStart(AppletContext&) override;
   void onForeground() override;
   void onBackground() override;
@@ -19,7 +22,9 @@ public:
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
   int  focusedIndexForTest() const { return _focus; }
+  const char* headerTitleForTest() const { return _titleBuf; }
   int  selectedTabForTest() const { return _tabs.selected(); }
+  int  barRowForTest() const { return _barRow; }
 private:
   const char* resolveTitle() const;
   bool onConversationInput(InputEvent ev);   // tab 0: message nav / per-message menu
@@ -27,6 +32,9 @@ private:
   void layoutFocus(Canvas& body, int n);   // sets _focusTop/_focusBot/_contentH
   void adjustScroll();                      // clamps _scrollY to keep focus visible
   void drawMessage(Canvas& body, const MessageView& m, int top, bool focused) const;
+  void drawActionBar(Canvas& bar);   // two stacked Write/Quick buttons, focus per _barRow
+  void startCompose(const char* seed = nullptr);
+  static void onComposeDone(void* ctx, const char* text);
 
   AppletHost*      _host = nullptr;
   MessagesService* _svc = nullptr;
@@ -45,6 +53,7 @@ private:
   uint32_t         _lastSeq = 0;
   bool             _menuOpen = false; // per-message action menu overlay (Reply/Delete/Path)
   char             _titleBuf[40] = {0};  // stable backing for the conversation tab label
+  char             _fallbackName[32] = {0};   // header name when no conversation exists yet
   char             _battBuf[8] = {0};    // stable backing for the battery decoration
 
   TabBar    _tabs;       // [0] conversation, [1] Settings
@@ -59,6 +68,10 @@ private:
       return "View Path";
     }
   } _msgMenu;
+  int       _barRow = -1;     // -1 = on a message; 0 = Write; 1 = Quick
+  bool      _composeOnOpen = false;   // one-shot: focus the Write button on next onStart
+  Button    _btn;             // reused to draw each stacked action button in turn
+  char _composeBuf[KeypadApplet::KP_MAX + 1];   // backs keypad text during compose
 };
 
 MessageThreadApplet& messageThreadApplet();

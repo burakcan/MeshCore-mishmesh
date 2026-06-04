@@ -95,6 +95,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   }
   _msgSvc.store = &_msgStore;
   the_mesh.uiSetMessageStore(&_msgStore);
+  // Surface joined channels (e.g. the default Public channel) as chats even
+  // before any message arrives - the store is otherwise only fed on message capture.
+  the_mesh.uiSeedChannels();
   // [/mishmesh]
 
   mishmesh::AppletContext ctx;
@@ -228,6 +231,7 @@ bool UITask::getFavourite(int index, mishmesh::ContactView& out) const {
 }
 
 bool UITask::setFavourite(const uint8_t* pk, bool fav) { return the_mesh.uiSetFavourite(pk, fav); }
+bool UITask::renameContact(const uint8_t* pk, const char* name) { return the_mesh.uiRenameContact(pk, name); }
 
 int UITask::countDiscovered() const { return the_mesh.uiDiscoveryCount(); }
 bool UITask::getDiscovered(int index, mishmesh::ContactView& out) const {
@@ -275,6 +279,8 @@ bool UITask::latestPing(const uint8_t* pk, mishmesh::PingView& out) const {
 mishmesh::AutoAddConfig UITask::getAutoAdd() const {
   NodePrefs* p = the_mesh.getNodePrefs();
   mishmesh::AutoAddConfig c;
+  // manual_add_contacts bit0: 0 = auto-add everything, 1 = only the selected kinds.
+  c.autoAddAll  = (p->manual_add_contacts & 1) == 0;
   c.addChat     = (p->autoadd_config & AUTO_ADD_CHAT) != 0;
   c.addRepeater = (p->autoadd_config & AUTO_ADD_REPEATER) != 0;
   c.addRoom     = (p->autoadd_config & AUTO_ADD_ROOM_SERVER) != 0;
@@ -285,6 +291,7 @@ mishmesh::AutoAddConfig UITask::getAutoAdd() const {
 }
 void UITask::setAutoAdd(const mishmesh::AutoAddConfig& c) {
   NodePrefs* p = the_mesh.getNodePrefs();
+  p->manual_add_contacts = c.autoAddAll ? 0 : 1;   // bit0: 0 = add all, 1 = selected kinds
   uint8_t v = 0;
   if (c.addChat) v |= AUTO_ADD_CHAT;
   if (c.addRepeater) v |= AUTO_ADD_REPEATER;
@@ -466,5 +473,9 @@ void UITask::MsgSvc::clearConvo(const mishmesh::ConvoKey& k) { store->clearConvo
 void UITask::MsgSvc::deleteConvo(const mishmesh::ConvoKey& k) { store->deleteConvo(k); }
 void UITask::MsgSvc::markUnread(const mishmesh::ConvoKey& k) { store->markUnread(k); }
 uint32_t UITask::MsgSvc::seq() const { return store->seq(); }
+
+bool UITask::MsgSvc::sendText(const mishmesh::ConvoKey& k, const char* text) {
+  return the_mesh.mishmeshSendText(k, text);
+}
 
 // [/mishmesh]

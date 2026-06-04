@@ -1,8 +1,10 @@
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/applets/DiscoverDetailApplet.h>
+#include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
+#include <mishmesh/core/MessageStore.h>
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 
@@ -42,15 +44,37 @@ const char* ContactListModel::label(int i) const {
   return contactLabel(v, buf, sizeof(buf));
 }
 
+int FavouritesListModel::count() const {
+  if (!_svc) return 0;
+  if (!_usersOnly) return _svc->countFavourites();
+  int n = 0; ContactView v;
+  for (int i = 0; i < _svc->countFavourites(); i++)
+    if (_svc->getFavourite(i, v) && v.type == (uint8_t)ContactKind::Chat) n++;
+  return n;
+}
+int FavouritesListModel::underlying(int filtered) const {
+  if (!_svc) return -1;
+  if (!_usersOnly) return filtered;
+  int seen = 0; ContactView v;
+  for (int i = 0; i < _svc->countFavourites(); i++) {
+    if (_svc->getFavourite(i, v) && v.type == (uint8_t)ContactKind::Chat) {
+      if (seen == filtered) return i;
+      seen++;
+    }
+  }
+  return -1;
+}
 const char* FavouritesListModel::label(int i) const {
   static ContactView v;
   static char buf[44];
-  if (!_svc || !_svc->getFavourite(i, v)) return "";
+  int u = underlying(i);
+  if (u < 0 || !_svc || !_svc->getFavourite(u, v)) return "";
   return contactLabel(v, buf, sizeof(buf));
 }
 uint16_t FavouritesListModel::icon(int i) const {
   static ContactView v;
-  if (!_svc || !_svc->getFavourite(i, v)) return 0;
+  int u = underlying(i);
+  if (u < 0 || !_svc || !_svc->getFavourite(u, v)) return 0;
   return kindIcon((ContactKind)v.type);
 }
 
@@ -67,28 +91,53 @@ uint16_t DiscoverListModel::icon(int i) const {
 }
 
 static const char* SETTINGS_LABELS[ContactsSettingsModel::ROW_COUNT] = {
-  "Auto-add Users", "Auto-add Repeaters", "Auto-add Rooms", "Auto-add Sensors",
+  "Auto-add all", "Auto-add Users", "Auto-add Repeaters", "Auto-add Rooms", "Auto-add Sensors",
   "Overwrite oldest", "Remove non-users", "Remove non-favourites", "Remove all contacts",
 };
+
+bool ContactsSettingsModel::addAll() const {
+  return _svc ? _svc->getAutoAdd().autoAddAll : true;
+}
+
+// Logical row sequence: the master toggle, then the per-kind toggles only when
+// it's off, then overwrite + the cleanup actions.
+ContactsSettingsModel::Row ContactsSettingsModel::rowAt(int i) const {
+  Row seq[ROW_COUNT];
+  int n = 0;
+  seq[n++] = AutoAddAll;
+  if (!addAll()) { seq[n++] = Users; seq[n++] = Repeaters; seq[n++] = Rooms; seq[n++] = Sensors; }
+  seq[n++] = Overwrite;
+  seq[n++] = RemoveNonUsers; seq[n++] = RemoveNonFavourites; seq[n++] = RemoveAll;
+  return (i >= 0 && i < n) ? seq[i] : ROW_COUNT;
+}
+int ContactsSettingsModel::count() const {
+  // master + overwrite + 3 actions, plus the 4 kind toggles when not adding all
+  return addAll() ? 5 : ROW_COUNT;
+}
 const char* ContactsSettingsModel::label(int i) const {
-  return (i >= 0 && i < ROW_COUNT) ? SETTINGS_LABELS[i] : "";
+  Row r = rowAt(i);
+  return (r >= 0 && r < ROW_COUNT) ? SETTINGS_LABELS[r] : "";
+}
+bool ContactsSettingsModel::isToggle(int i) const {
+  return rowAt(i) <= Overwrite;   // AutoAddAll..Overwrite are toggles; the rest are actions
 }
 bool ContactsSettingsModel::toggleState(int i) const {
   if (!_svc) return false;
   AutoAddConfig c = _svc->getAutoAdd();
-  switch (i) {
-    case Users:     return c.addChat;
-    case Repeaters: return c.addRepeater;
-    case Rooms:     return c.addRoom;
-    case Sensors:   return c.addSensor;
-    case Overwrite: return c.overwriteOldest;
-    default:        return false;
+  switch (rowAt(i)) {
+    case AutoAddAll: return c.autoAddAll;
+    case Users:      return c.addChat;
+    case Repeaters:  return c.addRepeater;
+    case Rooms:      return c.addRoom;
+    case Sensors:    return c.addSensor;
+    case Overwrite:  return c.overwriteOldest;
+    default:         return false;
   }
 }
 
 ContactsApplet::ContactsApplet()
     : Applet("Contacts"), _host(nullptr), _svc(nullptr),
-      _confirming(false), _pendingAction(-1) {}
+      _confirming(false), _pendingAction(-1), _pickMode(false), _pickRequested(false) {}
 
 static const char* emptyLabel(ContactKind k) {
   switch (k) {
@@ -118,21 +167,27 @@ void ContactsApplet::rebuildTabs() {
 
   _tabs.clear();   // resets selection to 0
   _slotCount = 0;
-  if (_svc && _svc->countFavourites() > 0) {
+  int favCount = _pickMode ? _favs.count() : (_svc ? _svc->countFavourites() : 0);
+  if (favCount > 0) {
     _tabs.addTab("Favorites", (uint16_t)Icon::Star);
     _slots[_slotCount++] = {TabKind::Favourites, ContactKind::Chat};
   }
-  static const ContactKind KINDS[4] = {
-    ContactKind::Chat, ContactKind::Repeater, ContactKind::Room, ContactKind::Sensor };
-  static const char* KIND_LABELS[4] = { "Contacts", "Repeaters", "Rooms", "Sensors" };
-  for (int i = 0; i < 4; i++) {
-    _tabs.addTab(KIND_LABELS[i], tabIcon(KINDS[i]));
-    _slots[_slotCount++] = {TabKind::Kind, KINDS[i]};
+  if (_pickMode) {
+    _tabs.addTab("Contacts", tabIcon(ContactKind::Chat));
+    _slots[_slotCount++] = {TabKind::Kind, ContactKind::Chat};
+  } else {
+    static const ContactKind KINDS[4] = {
+      ContactKind::Chat, ContactKind::Repeater, ContactKind::Room, ContactKind::Sensor };
+    static const char* KIND_LABELS[4] = { "Contacts", "Repeaters", "Rooms", "Sensors" };
+    for (int i = 0; i < 4; i++) {
+      _tabs.addTab(KIND_LABELS[i], tabIcon(KINDS[i]));
+      _slots[_slotCount++] = {TabKind::Kind, KINDS[i]};
+    }
+    _tabs.addTab("Discover", (uint16_t)Icon::Search);   // seen-but-not-added nodes
+    _slots[_slotCount++] = {TabKind::Discovered, ContactKind::Chat};
+    _tabs.addTab("Settings", (uint16_t)Icon::Settings);
+    _slots[_slotCount++] = {TabKind::Settings, ContactKind::Chat};
   }
-  _tabs.addTab("Discover", (uint16_t)Icon::Search);   // seen-but-not-added nodes
-  _slots[_slotCount++] = {TabKind::Discovered, ContactKind::Chat};
-  _tabs.addTab("Settings", (uint16_t)Icon::Settings);
-  _slots[_slotCount++] = {TabKind::Settings, ContactKind::Chat};
 
   for (int i = 0; i < _slotCount; i++) {
     if (_slots[i].kind != prevKind) continue;
@@ -145,11 +200,13 @@ void ContactsApplet::rebuildTabs() {
 void ContactsApplet::onStart(AppletContext& ctx) {
   _host = ctx.host;
   _svc = ctx.contacts;
+  _pickMode = _pickRequested; _pickRequested = false;
   _models[0].bind(_svc, ContactKind::Chat, kindIcon(ContactKind::Chat));
   _models[1].bind(_svc, ContactKind::Repeater, kindIcon(ContactKind::Repeater));
   _models[2].bind(_svc, ContactKind::Room, kindIcon(ContactKind::Room));
   _models[3].bind(_svc, ContactKind::Sensor, kindIcon(ContactKind::Sensor));
   _favs.bind(_svc);
+  _favs.setUsersOnly(_pickMode);
   _discover.bind(_svc);
   _settings.bind(_svc);
   _list.setRowHeight(14);
@@ -208,21 +265,24 @@ bool ContactsApplet::onInput(InputEvent ev) {
   if (ev == InputEvent::Select) {
     if (settingsTab()) {
       int i = _list.selected();
+      ContactsSettingsModel::Row r = _settings.rowAt(i);
       if (_settings.isToggle(i) && _svc) {
         AutoAddConfig cfg = _svc->getAutoAdd();
-        switch (i) {
-          case ContactsSettingsModel::Users:     cfg.addChat = !cfg.addChat; break;
-          case ContactsSettingsModel::Repeaters: cfg.addRepeater = !cfg.addRepeater; break;
-          case ContactsSettingsModel::Rooms:     cfg.addRoom = !cfg.addRoom; break;
-          case ContactsSettingsModel::Sensors:   cfg.addSensor = !cfg.addSensor; break;
-          case ContactsSettingsModel::Overwrite: cfg.overwriteOldest = !cfg.overwriteOldest; break;
+        switch (r) {
+          case ContactsSettingsModel::AutoAddAll: cfg.autoAddAll = !cfg.autoAddAll; break;
+          case ContactsSettingsModel::Users:      cfg.addChat = !cfg.addChat; break;
+          case ContactsSettingsModel::Repeaters:  cfg.addRepeater = !cfg.addRepeater; break;
+          case ContactsSettingsModel::Rooms:      cfg.addRoom = !cfg.addRoom; break;
+          case ContactsSettingsModel::Sensors:    cfg.addSensor = !cfg.addSensor; break;
+          case ContactsSettingsModel::Overwrite:  cfg.overwriteOldest = !cfg.overwriteOldest; break;
+          default: break;
         }
         _svc->setAutoAdd(cfg);
       } else {
-        _pendingAction = i;
+        _pendingAction = r;   // store the logical Row, not the (dynamic) list index
         const char* msg = "Remove non-user contacts?";
-        if (i == ContactsSettingsModel::RemoveAll) msg = "Remove ALL contacts?";
-        else if (i == ContactsSettingsModel::RemoveNonFavourites) msg = "Remove all non-favourites?";
+        if (r == ContactsSettingsModel::RemoveAll) msg = "Remove ALL contacts?";
+        else if (r == ContactsSettingsModel::RemoveNonFavourites) msg = "Remove all non-favourites?";
         _confirm.configure(msg);
         _confirming = true;
       }
@@ -238,12 +298,25 @@ bool ContactsApplet::onInput(InputEvent ev) {
         }
         return true;
       }
-      // Favourites or a kind tab: drill into detail.
-      bool ok = (s.kind == TabKind::Favourites) ? _svc->getFavourite(_list.selected(), v)
-                                                : _svc->getByKind(s.contactKind, _list.selected(), v);
+      // Favourites or a kind tab: drill into detail (or open thread in pick mode).
+      // For Favourites, resolve filtered index -> raw service index via rawIndex() so that
+      // users-only filtering (pick mode) doesn't silently fetch the wrong entry.
+      bool ok;
+      if (s.kind == TabKind::Favourites) {
+        int raw = _favs.rawIndex(_list.selected());
+        ok = (raw >= 0) && _svc->getFavourite(raw, v);
+      } else {
+        ok = _svc->getByKind(s.contactKind, _list.selected(), v);
+      }
       if (ok) {
-        contactDetailApplet().setTarget(v.pubKey);
-        if (_host) _host->push(&contactDetailApplet());
+        if (_pickMode) {
+          messageThreadApplet().setTarget(directKey(v.pubKey), v.name);
+          messageThreadApplet().composeOnOpen();   // picker = intent to write -> focus Write button
+          if (_host) _host->replace(&messageThreadApplet());
+        } else {
+          contactDetailApplet().setTarget(v.pubKey);
+          if (_host) _host->push(&contactDetailApplet());
+        }
       }
     }
     return true;

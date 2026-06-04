@@ -62,6 +62,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     void deleteConvo(const mishmesh::ConvoKey& k) override;
     void markUnread(const mishmesh::ConvoKey& k) override;
     uint32_t seq() const override;
+    bool sendText(const mishmesh::ConvoKey& k, const char* text) override;
   } _msgSvc;
   // [/mishmesh]
 
@@ -107,6 +108,7 @@ public:
   int  countFavourites() const override;
   bool getFavourite(int index, mishmesh::ContactView& out) const override;
   bool setFavourite(const uint8_t* pubKey, bool fav) override;
+  bool renameContact(const uint8_t* pubKey, const char* name) override;
   int  countDiscovered() const override;
   bool getDiscovered(int index, mishmesh::ContactView& out) const override;
   bool addDiscovered(const uint8_t* pubKey) override;

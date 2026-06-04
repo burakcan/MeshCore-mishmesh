@@ -13,7 +13,7 @@ public:
   std::vector<Row> chats, repeaters, rooms, sensors, discovered;
   bool hasSelfLoc=false; int32_t selfLat=0, selfLon=0;
 
-  mishmesh::AutoAddConfig cfg{true,false,false,false,false,3};
+  mishmesh::AutoAddConfig cfg{true,false,false,false,false,false,3};  // autoAddAll, 4 kinds, overwrite, maxHops
   uint32_t telemSeq = 0;
   mishmesh::TelemetryView telem{};
 
@@ -67,6 +67,14 @@ public:
     for (auto* l : {&chats, &repeaters, &rooms, &sensors})
       for (Row& r : *const_cast<std::vector<Row>*>(l))
         if (keyStr(r.pubkey) == keyStr(pk)) { r.favourite = fav; calls.push_back("setfav"); return true; }
+    return false;
+  }
+  std::string lastRenamed;   // pubkey of the last renamed contact
+  bool renameContact(const uint8_t* pk, const char* name) override {
+    if (!name || !name[0]) return false;
+    for (auto* l : {&chats, &repeaters, &rooms, &sensors})
+      for (Row& r : *const_cast<std::vector<Row>*>(l))
+        if (keyStr(r.pubkey) == keyStr(pk)) { r.name = name; lastRenamed = keyStr(pk); calls.push_back("rename"); return true; }
     return false;
   }
   int countDiscovered() const override { return (int)discovered.size(); }

@@ -1,8 +1,10 @@
 #include <mishmesh/applets/ContactDetailApplet.h>
+#include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/ContactsService.h>
 #include <mishmesh/core/ContactFormat.h>
 #include <mishmesh/core/Geo.h>
+#include <mishmesh/core/MessageStore.h>
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,6 +17,7 @@ static const uint32_t TELEM_TIMEOUT_MS = 12000;
 // Favourite's label is dynamic (see label()); this slot is a placeholder.
 static const char* ACTION_LABELS[ContactDetailApplet::ACTION_KINDS] = {
   "View details", "", "Telemetry", "Ping (0 hop)", "Reset path", "Clear conversation", "Delete contact",
+  "Send message", "Rename",
 };
 
 static const char* typeName(uint8_t t) { return contactTypeName(t); }
@@ -42,7 +45,9 @@ void ContactDetailApplet::setTarget(const uint8_t* pubKey) {
 
 void ContactDetailApplet::buildActions() {
   _actionCount = 0;
+  if (_type == (uint8_t)ContactKind::Chat) _actions[_actionCount++] = Message;   // primary for users
   _actions[_actionCount++] = View;
+  _actions[_actionCount++] = Rename;     // local display label, all contact types
   _actions[_actionCount++] = Favourite;
   _actions[_actionCount++] = Telemetry;
   if (_type == (uint8_t)ContactKind::Repeater) _actions[_actionCount++] = Ping;
@@ -51,6 +56,14 @@ void ContactDetailApplet::buildActions() {
   if (_type == (uint8_t)ContactKind::Chat || _type == (uint8_t)ContactKind::Room)
     _actions[_actionCount++] = ClearConvo;
   _actions[_actionCount++] = Delete;
+}
+
+// Keypad confirm (ctx = this applet): rename the contact, then refresh the card.
+// Runs before the keypad pops, so the detail screen re-renders with the new name.
+void ContactDetailApplet::onRenameDone(void* ctx, const char* text) {
+  auto* self = static_cast<ContactDetailApplet*>(ctx);
+  if (!text || !text[0] || !self->_svc) return;   // empty -> keep the old name
+  if (self->_svc->renameContact(self->_pubkey, text)) self->refresh();
 }
 
 void ContactDetailApplet::refresh() {
@@ -224,6 +237,18 @@ bool ContactDetailApplet::onInput(InputEvent ev) {
   if (ev == InputEvent::Select && _svc) {
     int action = _actions[_list.selected()];
     switch (action) {
+      case Message:
+        messageThreadApplet().setTarget(directKey(_pubkey), _name);
+        messageThreadApplet().composeOnOpen();   // intent is to write -> focus the Write button
+        if (_host) _host->push(&messageThreadApplet());
+        return true;
+      case Rename:
+        strncpy(_renameBuf, _name, sizeof(_renameBuf) - 1);   // seed with the current name
+        _renameBuf[sizeof(_renameBuf) - 1] = 0;
+        keypadApplet().configure(_renameBuf, sizeof(_renameBuf) - 1, "Rename",
+                                 &ContactDetailApplet::onRenameDone, this);
+        if (_host) _host->push(&keypadApplet());
+        return true;
       case View: _viewing = true; return true;
       case Favourite:
         if (_svc->setFavourite(_pubkey, !_favourite)) {

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <string>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
@@ -252,6 +253,50 @@ TEST(Keypad, HeldBackStopsAtEmptyFreshBackExits) {
   EXPECT_EQ(2, host.depth());
   host.dispatch(InputEvent::Back, /*repeat=*/false);  // a fresh Back click exits
   EXPECT_EQ(1, host.depth());
+}
+
+namespace {
+struct ConfirmCapture {
+  std::string text;
+  int calls = 0;
+  static void cb(void* ctx, const char* t) {
+    auto* self = static_cast<ConfirmCapture*>(ctx);
+    self->text = t ? t : "";
+    self->calls++;
+  }
+};
+}
+
+TEST(Keypad, ConfirmFiresCallbackWithTypedText) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+
+  KeypadApplet k;
+  char buf[KeypadApplet::KP_MAX + 1] = {0};
+  ConfirmCapture cap;
+  k.configure(buf, KeypadApplet::KP_MAX, "Message", &ConfirmCapture::cb, &cap);
+  host.push(&k);
+  EXPECT_EQ(2, host.depth());
+
+  k.onInput(InputEvent::Select);   // 'a' (opens focused on "abc")
+  k.setFocusForTest(3, 3);         // OK cell
+  k.onInput(InputEvent::Select);   // confirm
+
+  EXPECT_EQ(1, cap.calls);
+  EXPECT_EQ("a", cap.text);
+  EXPECT_EQ(1, host.depth());      // popped back to root
+}
+
+TEST(Keypad, StandaloneConfirmDoesNotCallback) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+
+  KeypadApplet k;                  // no configure() -> standalone, no callback
+  host.push(&k);
+  k.onInput(InputEvent::Select);   // 'a'
+  k.setFocusForTest(3, 3);
+  k.onInput(InputEvent::Select);   // confirm
+  EXPECT_EQ(1, host.depth());      // still pops, as before
 }
 
 int main(int argc, char** argv) {

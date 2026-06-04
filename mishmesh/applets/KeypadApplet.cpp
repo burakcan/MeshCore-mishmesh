@@ -11,7 +11,8 @@ KeypadApplet::KeypadApplet()
     : Applet("Keypad"), _ctx(nullptr), _buf(_own), _cap(KP_MAX), _title("Text"),
       _len(0), _cursor(0), _mode(Mode::Lower), _symPage(false),
       _pending(false), _pendingPos(0), _tapGroupCell(-1), _tapIndex(0),
-      _lastTapMs(0), _tapStampPending(false), _now(0) {
+      _lastTapMs(0), _tapStampPending(false), _now(0),
+      _onConfirm(nullptr), _onConfirmCtx(nullptr) {
   _own[0] = 0;
 }
 
@@ -195,10 +196,19 @@ bool KeypadApplet::onInput(InputEvent ev) {
 
 void KeypadApplet::confirmAndExit() {
   commitPending();
+  if (_onConfirm) _onConfirm(_onConfirmCtx, _buf);
   if (_ctx && _ctx->host) {
-    _ctx->host->postToast(_len ? "Saved" : "(empty)");
+    if (!_onConfirm) _ctx->host->postToast(_len ? "Saved" : "(empty)");
     _ctx->host->pop();
   }
+}
+
+void KeypadApplet::onStop() {
+  _buf = _own;
+  _cap = KP_MAX;
+  _title = "Text";
+  _onConfirm = nullptr;
+  _onConfirmCtx = nullptr;
 }
 
 void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
@@ -236,12 +246,17 @@ void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
   }
 }
 
-void KeypadApplet::configure(char* dst, uint16_t cap, const char* title) {
+void KeypadApplet::configure(char* dst, uint16_t cap, const char* title,
+                             KeypadConfirmFn onConfirm, void* ctx) {
   _buf = dst; _cap = cap; _title = title;
+  _onConfirm = onConfirm; _onConfirmCtx = ctx;
   _len = (uint16_t)strlen(dst); _cursor = _len;
 }
 
-static KeypadApplet s_keypad;
-MISHMESH_REGISTER_APPLET(&s_keypad, ::mishmesh::Placement::AppMenu, "Keypad", 0);
+KeypadApplet& keypadApplet() {
+  static KeypadApplet s_keypad;
+  return s_keypad;
+}
+MISHMESH_REGISTER_APPLET(&keypadApplet(), ::mishmesh::Placement::AppMenu, "Keypad", 0);
 
 }  // namespace mishmesh

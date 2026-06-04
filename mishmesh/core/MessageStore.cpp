@@ -257,6 +257,12 @@ void MessageStore::markUnread(const ConvoKey& key) {
   _convos[ci].unread = 1;
   _seq++;
 }
+void MessageStore::ensureChannel(uint8_t channelIdx) {
+  ConvoKey k = channelKey(channelIdx);
+  if (findConvo(k) >= 0) return;   // already seeded or has messages
+  ensureConvo(k);                  // empty slot; lastTime 0 -> sorts below active chats
+  _seq++;                          // mark dirty: refresh the list + persist the chat
+}
 size_t MessageStore::serialize(uint8_t* out, size_t cap) const {
   size_t need = 4 + 1 + 4 + 2 + (size_t)_convoCount * sizeof(ConvoSummary) + _used;
   if (cap < need) return 0;

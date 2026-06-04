@@ -22,7 +22,8 @@ struct ContactView {
 };
 
 struct AutoAddConfig {
-  bool    addChat, addRepeater, addRoom, addSensor;
+  bool    autoAddAll;         // master: true = add every advert; false = only the kinds below
+  bool    addChat, addRepeater, addRoom, addSensor;   // consulted only when !autoAddAll
   bool    overwriteOldest;
   uint8_t maxHops;            // mirrors prefs; not edited in v1 UI
 };
@@ -62,6 +63,7 @@ struct ContactsService {
   virtual int  countFavourites() const = 0;
   virtual bool getFavourite(int index, ContactView& out) const = 0;
   virtual bool setFavourite(const uint8_t* pubKey, bool fav) = 0;
+  virtual bool renameContact(const uint8_t* pubKey, const char* name) = 0;   // local display label
 
   // Discovered nodes: adverts seen but not added as contacts (e.g. auto-add off).
   virtual int  countDiscovered() const = 0;

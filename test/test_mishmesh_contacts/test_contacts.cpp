@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 #include "FakeContactsService.h"
+#include "FakeMessagesService.h"
 #include "FakeDisplayDriver.h"
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/ContactDetailApplet.h>
+#include <mishmesh/applets/MessageThreadApplet.h>
+#include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/widgets/TelemetryDialog.h>
 #include <mishmesh/core/AppletHost.h>
 #include <cstring>
@@ -45,7 +48,7 @@ TEST(ContactsApplet, SettingsToggleCallsService) {
   host.setRoot(&mishmesh::contactsApplet());
   // Tabs: Contacts,Repeaters,Rooms,Sensors,Discover,Settings -> Settings is index 5.
   for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavRight);
-  // Select first settings row (Users toggle).
+  // Select first settings row ("Auto-add all" master toggle).
   host.dispatch(mishmesh::InputEvent::Select);
   bool called = false;
   for (auto& s : svc.calls) if (s == "setautoadd") called = true;
@@ -66,8 +69,8 @@ TEST(ContactDetail, DeleteConfirmCallsServiceAndPops) {
   host.dispatch(mishmesh::InputEvent::Select);
   EXPECT_EQ(2, host.depth());
 
-  // Move to "Delete contact" (row 5): View, Favourite, Telemetry, Reset path, Clear, Delete.
-  for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavDown);
+  // Move to "Delete contact" (row 7): Send message, View, Rename, Favourite, Telemetry, Reset path, Clear, Delete.
+  for (int i = 0; i < 7; i++) host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::Select);     // opens confirm
   host.dispatch(mishmesh::InputEvent::NavRight);   // select Confirm
   host.dispatch(mishmesh::InputEvent::Select);     // confirm
@@ -90,7 +93,7 @@ TEST(ContactDetail, ChatHasClearConversation) {
   mishmesh::AppletHost host(&d, ctx);
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::Select);   // open Alice (chat)
-  EXPECT_EQ(6, mishmesh::contactDetailApplet().count());
+  EXPECT_EQ(8, mishmesh::contactDetailApplet().count());
   EXPECT_TRUE(detailHasAction("Clear conversation"));
   EXPECT_TRUE(detailHasAction("Add to favorites"));
 }
@@ -104,8 +107,8 @@ TEST(ContactDetail, RepeaterHasPingNotClearConversation) {
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::NavRight);  // -> repeaters tab
   host.dispatch(mishmesh::InputEvent::Select);    // open Rep1
-  // View, Favourite, Telemetry, Ping, Reset path, Delete (no Clear conversation)
-  EXPECT_EQ(6, mishmesh::contactDetailApplet().count());
+  // View, Rename, Favourite, Telemetry, Ping, Reset path, Delete (no Clear conversation)
+  EXPECT_EQ(7, mishmesh::contactDetailApplet().count());
   EXPECT_FALSE(detailHasAction("Clear conversation"));
   EXPECT_TRUE(detailHasAction("Ping (0 hop)"));
   EXPECT_TRUE(detailHasAction("Delete contact"));
@@ -134,7 +137,8 @@ TEST(ContactDetail, TelemetryOpensModalAndShowsResult) {
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> repeaters tab
   host.dispatch(mishmesh::InputEvent::Select);     // open Rep1 detail
-  // Telemetry is action index 2 (View, Favourite, Telemetry, ...): move down twice.
+  // Telemetry is action index 3 (View, Rename, Favourite, Telemetry, ...): move down 3x.
+  host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::Select);     // opens telemetry modal + requests
@@ -160,7 +164,8 @@ TEST(ContactDetail, PingOpensModalAndFires) {
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> repeaters tab
   host.dispatch(mishmesh::InputEvent::Select);     // open Rep1 detail
-  // Move to "Ping (0 hop)" (index 3: View, Favourite, Telemetry, Ping) and select it.
+  // Move to "Ping (0 hop)" (index 4: View, Rename, Favourite, Telemetry, Ping) and select it.
+  host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
@@ -195,7 +200,9 @@ TEST(ContactDetail, FavouriteToggleAddsToFavouritesTab) {
   EXPECT_EQ(0, svc.countFavourites());
 
   host.dispatch(mishmesh::InputEvent::Select);     // open Alice (contacts tab) detail
-  host.dispatch(mishmesh::InputEvent::NavDown);     // -> "Add to favorites" (action index 1)
+  host.dispatch(mishmesh::InputEvent::NavDown);     // -> View details (action index 1)
+  host.dispatch(mishmesh::InputEvent::NavDown);     // -> Rename (action index 2)
+  host.dispatch(mishmesh::InputEvent::NavDown);     // -> "Add to favorites" (action index 3)
   EXPECT_TRUE(detailHasAction("Add to favorites"));
   host.dispatch(mishmesh::InputEvent::Select);     // toggle favourite ON
   EXPECT_EQ(1, svc.countFavourites());
@@ -241,7 +248,7 @@ TEST(ContactsApplet, KeepsListPositionAfterDrillInAndBack) {
 
   // Re-open the selected row and delete it; the target reveals which row was kept.
   host.dispatch(mishmesh::InputEvent::Select);
-  for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavDown);  // -> Delete contact
+  for (int i = 0; i < 7; i++) host.dispatch(mishmesh::InputEvent::NavDown);  // -> Delete contact
   host.dispatch(mishmesh::InputEvent::Select);    // confirm dialog
   host.dispatch(mishmesh::InputEvent::NavRight);  // Confirm
   host.dispatch(mishmesh::InputEvent::Select);
@@ -259,7 +266,9 @@ TEST(ContactsApplet, RemoveNonFavouritesCleanupKeepsOnlyFavourites) {
   host.setRoot(&mishmesh::contactsApplet());
   // Tabs: Favorites,Contacts,Repeaters,Rooms,Sensors,Discover,Settings -> Settings is index 6.
   for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavRight);  // -> Settings
-  for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavDown);   // -> "Remove non-favourites"
+  // Auto-add-all on (default) collapses the kind rows, so Settings is:
+  // [Auto-add all, Overwrite oldest, Remove non-users, Remove non-favourites, Remove all].
+  for (int i = 0; i < 3; i++) host.dispatch(mishmesh::InputEvent::NavDown);   // -> "Remove non-favourites"
   host.dispatch(mishmesh::InputEvent::Select);     // confirm dialog
   host.dispatch(mishmesh::InputEvent::NavRight);   // Confirm
   host.dispatch(mishmesh::InputEvent::Select);
@@ -298,6 +307,255 @@ TEST(ContactsApplet, DiscoverTabAddsSelectedNode) {
   EXPECT_EQ(0, svc.countDiscovered());
   EXPECT_EQ(1, svc.countByKind(mishmesh::ContactKind::Chat));
   EXPECT_EQ(2, host.depth());                       // replace()d with contact detail; Back returns to list
+}
+
+// ---- Task 2: Send message action -------------------------------------------
+
+// A user (Chat) contact gets "Send message" as its first action, opening the thread.
+TEST(ContactDetail, SendMessageFirstForUserOpensThread) {
+  FakeContactsService svc;
+  FakeContactsService::Row r; r.name = "Alice"; memcpy(r.pubkey, "ALICE!", 6); r.type = 1;
+  svc.chats.push_back(r);
+  FakeMessagesService msgs;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc; ctx.messages = &msgs;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  mishmesh::contactDetailApplet().setTarget((const uint8_t*)"ALICE!");
+  host.push(&mishmesh::contactDetailApplet());
+
+  EXPECT_STREQ("Send message", mishmesh::contactDetailApplet().label(0));
+  int d0 = host.depth();
+  host.dispatch(mishmesh::InputEvent::Select);    // first action = Send message
+  EXPECT_EQ(d0 + 1, host.depth());
+  EXPECT_STREQ("Alice", mishmesh::messageThreadApplet().headerTitleForTest());
+}
+
+// A non-user contact (repeater) does NOT get a Send message action.
+TEST(ContactDetail, NoSendMessageForRepeater) {
+  FakeContactsService svc;
+  FakeContactsService::Row r; r.name = "RptX"; memcpy(r.pubkey, "RPTXXX", 6); r.type = 2;
+  svc.repeaters.push_back(r);
+  FakeMessagesService msgs;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc; ctx.messages = &msgs;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  mishmesh::contactDetailApplet().setTarget((const uint8_t*)"RPTXXX");
+  host.push(&mishmesh::contactDetailApplet());
+  for (int i = 0; i < mishmesh::contactDetailApplet().count(); i++)
+    EXPECT_STRNE("Send message", mishmesh::contactDetailApplet().label(i));
+}
+
+// ---- Task 3: Contact picker (FavouritesListModel users-only + pick mode) ----
+
+// FavouritesListModel users-only filter: counts/returns only Chat-type favourites.
+TEST(FavouritesModel, UsersOnlyFiltersNonChat) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); a.type = 1; a.favourite = true;
+  FakeContactsService::Row rp; rp.name = "Rpt"; memcpy(rp.pubkey, "RPTXXX", 6); rp.type = 2; rp.favourite = true;
+  svc.chats.push_back(a); svc.repeaters.push_back(rp);
+
+  mishmesh::FavouritesListModel m; m.bind(&svc);
+  EXPECT_EQ(2, m.count());                       // unfiltered: both favourites
+  m.setUsersOnly(true);
+  EXPECT_EQ(1, m.count());                        // only the Chat favourite
+  EXPECT_STREQ("Alice", m.label(0));
+}
+
+// Pick mode: only Favourites + Contacts tabs (favourites filtered to users).
+TEST(ContactsPick, PickModeLimitsTabs) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); a.type = 1; a.favourite = true;
+  svc.chats.push_back(a);
+  FakeContactsService::Row rp; rp.name = "Rpt"; memcpy(rp.pubkey, "RPTXXX", 6); rp.type = 2; rp.favourite = true;
+  svc.repeaters.push_back(rp);
+  FakeMessagesService msgs;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc; ctx.messages = &msgs;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  mishmesh::contactsApplet().beginPick();
+  host.push(&mishmesh::contactsApplet());
+  EXPECT_TRUE(mishmesh::contactsApplet().pickModeForTest());
+  EXPECT_EQ(2, mishmesh::contactsApplet().tabCountForTest());   // Favorites (users) + Contacts
+}
+
+// Pick mode select opens the contact's thread via replace (depth unchanged).
+TEST(ContactsPick, SelectOpensThreadViaReplace) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); a.type = 1;
+  svc.chats.push_back(a);
+  FakeMessagesService msgs;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc; ctx.messages = &msgs;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  mishmesh::contactsApplet().beginPick();
+  host.push(&mishmesh::contactsApplet());        // no favourites -> single Contacts tab, Alice at row 0
+  int d0 = host.depth();
+  host.dispatch(mishmesh::InputEvent::Select);   // pick Alice
+  EXPECT_EQ(d0, host.depth());                    // replace, not push
+  EXPECT_STREQ("Alice", mishmesh::messageThreadApplet().headerTitleForTest());
+}
+
+// A normal (non-pick) start still opens the contact detail on select.
+TEST(ContactsPick, NormalModeStillOpensDetail) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); a.type = 1;
+  svc.chats.push_back(a);
+  FakeMessagesService msgs;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc; ctx.messages = &msgs;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  host.push(&mishmesh::contactsApplet());         // normal mode (no beginPick)
+  EXPECT_FALSE(mishmesh::contactsApplet().pickModeForTest());
+  int d0 = host.depth();
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(d0 + 1, host.depth());                // detail pushed
+}
+
+// ---- Task 3 bug fix: rawIndex() maps filtered -> raw for pick-mode handler ----
+
+// Verify that FavouritesListModel::rawIndex() returns the correct raw index when
+// setUsersOnly(true) and favourites contain both Chat and non-Chat entries.
+//
+// NOTE on cross-ordering reproducibility: FakeContactsService::getFavourite() iterates
+// kinds in fixed order Chat -> Repeater -> Room -> Sensor, so a Chat favourite ALWAYS
+// has a lower raw index than a Repeater favourite. This means the failure path
+// (filtered 0 fetching a Repeater at raw 0) cannot be constructed through this fake.
+// We therefore assert the property that IS observable - rawIndex(i)==i for a single
+// Chat favourite at raw 0, and confirm the pick-mode select handler resolves through
+// rawIndex() correctly (opening the right thread). The cross-ordering guard lives in the
+// production code path itself (rawIndex() used in the handler for all Favourites selects).
+TEST(FavouritesModel, RawIndexMapsCorrectlyUsersOnly) {
+  FakeContactsService svc;
+  // raw 0: Chat "Alice" (favourite, displayed in users-only mode)
+  // raw 1: Repeater "Bob" (favourite, NOT displayed in users-only mode)
+  // Because Chat enumerates before Repeater in getFavourite(), Alice is always raw 0
+  // and Bob is always raw 1; cross-ordering (Bob < Alice raw) is not achievable here.
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); a.type = 1; a.favourite = true;
+  FakeContactsService::Row b; b.name = "Bob";   memcpy(b.pubkey, "BOBXXX", 6); b.type = 2; b.favourite = true;
+  svc.chats.push_back(a); svc.repeaters.push_back(b);
+
+  mishmesh::FavouritesListModel m; m.bind(&svc);
+  m.setUsersOnly(true);
+  EXPECT_EQ(1, m.count());            // only Alice visible
+  EXPECT_EQ(0, m.rawIndex(0));        // filtered 0 -> raw 0 (Alice)
+  EXPECT_EQ(-1, m.rawIndex(1));       // out-of-range filtered -> -1 (no crash)
+}
+
+// Pick mode: selecting the Favourites tab row opens the thread for the CORRECT contact
+// (the Chat favourite, not any non-Chat favourite) via rawIndex() indirection.
+TEST(ContactsPick, FavouritesTabSelectOpensCorrectUserThread) {
+  FakeContactsService svc;
+  // Alice is Chat favourite (raw 0 in getFavourite enumeration since Chat iterates first).
+  // Rep is Repeater favourite (raw 1). In pick mode the Favourites tab shows only Alice
+  // (filtered index 0 = raw index 0). The handler must resolve via rawIndex() and open
+  // Alice's thread. Without the fix it called getFavourite(_list.selected()) = getFavourite(0)
+  // which is already Alice here, so this specific ordering does NOT expose the bug through
+  // this fake. The test still confirms the handler reaches the right contact and documents
+  // the rawIndex() guard is exercised.
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); a.type = 1; a.favourite = true;
+  FakeContactsService::Row rp; rp.name = "Rep"; memcpy(rp.pubkey, "REPXXX", 6); rp.type = 2; rp.favourite = true;
+  svc.chats.push_back(a); svc.repeaters.push_back(rp);
+  FakeMessagesService msgs;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc; ctx.messages = &msgs;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  mishmesh::contactsApplet().beginPick();
+  host.push(&mishmesh::contactsApplet());
+  // In pick mode: Favourites tab (users-only) has 1 row = Alice; Contacts tab has 1 row = Alice.
+  // The applet opens on the Favourites tab (slot 0). Select -> should open Alice's thread.
+  int d0 = host.depth();
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(d0, host.depth());    // replace, not push
+  EXPECT_STREQ("Alice", mishmesh::messageThreadApplet().headerTitleForTest());
+}
+
+// Rename: appears after View, opens the keypad pre-filled with the current name,
+// and on OK renames the contact (and the detail refreshes to the new name).
+TEST(ContactDetail, RenameOpensKeypadPrefilledAndRenames) {
+  FakeContactsService svc;
+  FakeContactsService::Row r; r.name = "Alice"; memcpy(r.pubkey, "ALICE!", 6); r.type = 1;
+  svc.chats.push_back(r);
+  FakeMessagesService msgs;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc; ctx.messages = &msgs;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  mishmesh::contactDetailApplet().setTarget((const uint8_t*)"ALICE!");
+  host.push(&mishmesh::contactDetailApplet());
+
+  // Chat actions: [Send message, View details, Rename, ...]
+  EXPECT_STREQ("Rename", mishmesh::contactDetailApplet().label(2));
+
+  host.dispatch(mishmesh::InputEvent::NavDown);   // View
+  host.dispatch(mishmesh::InputEvent::NavDown);   // Rename
+  int d0 = host.depth();
+  host.dispatch(mishmesh::InputEvent::Select);    // open keypad
+  EXPECT_EQ(d0 + 1, host.depth());
+  EXPECT_STREQ("Alice", mishmesh::keypadApplet().text());   // pre-filled with current name
+
+  host.dispatch(mishmesh::InputEvent::Select);    // keypad opens on "abc" -> append 'a' => "Alicea"
+  mishmesh::keypadApplet().setFocusForTest(3, 3); // OK cell
+  host.dispatch(mishmesh::InputEvent::Select);    // confirm -> rename + pop
+  EXPECT_EQ(d0, host.depth());
+  EXPECT_FALSE(svc.lastRenamed.empty());          // renameContact was called
+  mishmesh::ContactView v; ASSERT_TRUE(svc.getByKind(mishmesh::ContactKind::Chat, 0, v));
+  EXPECT_STREQ("Alicea", v.name);
+}
+
+// Rename is offered for non-user contacts too (here: a repeater), right after View.
+TEST(ContactDetail, RenameOfferedForRepeater) {
+  FakeContactsService svc;
+  FakeContactsService::Row r; r.name = "Rpt"; memcpy(r.pubkey, "RPTXXX", 6); r.type = 2;
+  svc.repeaters.push_back(r);
+  FakeMessagesService msgs;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc; ctx.messages = &msgs;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  mishmesh::contactDetailApplet().setTarget((const uint8_t*)"RPTXXX");
+  host.push(&mishmesh::contactDetailApplet());
+  // Repeater (no Send message): [View details, Rename, ...]
+  EXPECT_STREQ("Rename", mishmesh::contactDetailApplet().label(1));
+}
+
+// "Auto-add all" collapses the per-kind toggles; turning it off reveals them
+// (mirrors the companion app's all/selected modes).
+TEST(ContactsSettings, AutoAddAllCollapsesKindRows) {
+  FakeContactsService svc;
+  mishmesh::ContactsSettingsModel m;
+  m.bind(&svc);
+
+  svc.cfg.autoAddAll = true;
+  EXPECT_EQ(5, m.count());                                  // master + overwrite + 3 actions
+  EXPECT_EQ(mishmesh::ContactsSettingsModel::AutoAddAll, m.rowAt(0));
+  EXPECT_TRUE(m.isToggle(0));
+  EXPECT_TRUE(m.toggleState(0));                            // reflects autoAddAll
+  EXPECT_EQ(mishmesh::ContactsSettingsModel::Overwrite, m.rowAt(1));   // kinds hidden
+
+  svc.cfg.autoAddAll = false;
+  EXPECT_EQ(9, m.count());                                  // kinds now visible
+  EXPECT_EQ(mishmesh::ContactsSettingsModel::Users, m.rowAt(1));
+  EXPECT_FALSE(m.toggleState(0));
+}
+
+// Selecting the master row flips manual/auto mode via the service.
+TEST(ContactsApplet, SettingsAutoAddAllTogglesMaster) {
+  FakeContactsService svc;
+  svc.cfg.autoAddAll = true;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  // Tabs: Contacts,Repeaters,Rooms,Sensors,Discover,Settings -> Settings is index 5.
+  for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavRight);
+  host.dispatch(mishmesh::InputEvent::Select);   // row 0 = "Auto-add all"
+  EXPECT_FALSE(svc.cfg.autoAddAll);              // flipped to "selected"
 }
 
 int main(int argc, char** argv) {

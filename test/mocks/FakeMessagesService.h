@@ -8,7 +8,11 @@
 struct FakeMessagesService : mishmesh::MessagesService {
   mishmesh::MessageStore store;
   std::string nameBuf, prevBuf, sndBuf, repName;
+  std::string senderName;   // surfaced from getMessage (default "" = no sender)
   uint32_t deletes = 0;
+  std::string lastSent;
+  mishmesh::ConvoKey lastSentKey{};
+  int sends = 0;
 
   static std::string keyName(const mishmesh::ConvoKey& k) {
     char b[24];
@@ -33,7 +37,7 @@ struct FakeMessagesService : mishmesh::MessagesService {
     auto* self = const_cast<FakeMessagesService*>(this);
     self->sndBuf.assign(r.text, r.textLen);
     o.outbound = r.kind != mishmesh::KIND_INBOUND; o.isChannel = k.type == 1; o.kind = r.kind;
-    o.senderTime = r.senderTime; o.localTime = r.localTime; o.senderName = "";
+    o.senderTime = r.senderTime; o.localTime = r.localTime; o.senderName = self->senderName.c_str();
     o.text = self->sndBuf.c_str(); o.status = r.status; o.tripTimeMs = r.tripTimeMs;
     o.heardCount = r.heardCount; o.snrx4 = r.snrx4; o.hops = r.hops; o.path = r.path; o.pathLen = r.pathLen;
     return true;
@@ -53,5 +57,14 @@ struct FakeMessagesService : mishmesh::MessagesService {
   void clearConvo(const mishmesh::ConvoKey& k) override { store.clearConvo(k); }
   void deleteConvo(const mishmesh::ConvoKey& k) override { store.deleteConvo(k); }
   void markUnread(const mishmesh::ConvoKey& k) override { store.markUnread(k); }
+  bool sendText(const mishmesh::ConvoKey& k, const char* text) override {
+    lastSent = text ? text : "";
+    lastSentKey = k;
+    sends++;
+    uint16_t len = (uint16_t)lastSent.size();
+    if (k.type == 1) store.appendOutboundChannel(k, lastSent.c_str(), len, 0, 0);
+    else             store.appendOutboundDM(k, lastSent.c_str(), len, 0, 0, 0, 0);
+    return true;
+  }
   uint32_t seq() const override { return store.seq(); }
 };

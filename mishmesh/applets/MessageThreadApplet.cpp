@@ -1,6 +1,7 @@
 // mishmesh/applets/MessageThreadApplet.cpp
 #include "MessageThreadApplet.h"
 #include "MessagePathApplet.h"
+#include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Anim.h>
@@ -17,6 +18,7 @@ static const int GUTTER  = 7;   // left gutter on inbound messages (focus caret 
 static const int PAD     = 2;   // bubble inner padding
 static const int GAP     = 3;   // vertical gap between message blocks
 static const int SB_GUTTER = 4; // width reserved on the right when a scrollbar shows
+static const int BTN_H   = 36;  // 2-button action bar at the bottom of the thread
 
 // Word-wraps `text` to `maxW` using fontBody. When draw is true, renders each
 // line into `c` starting at (x,y); otherwise only measures. Returns total height
@@ -75,6 +77,13 @@ static void outboundStatus(const MessageView& m, char* buf, int cap) {
   }
 }
 
+void MessageThreadApplet::setTarget(const ConvoKey& k, const char* fallbackName) {
+  _key = k;
+  if (fallbackName) { strncpy(_fallbackName, fallbackName, sizeof(_fallbackName) - 1);
+                      _fallbackName[sizeof(_fallbackName) - 1] = 0; }
+  else _fallbackName[0] = 0;
+}
+
 void MessageThreadApplet::onStart(AppletContext& ctx) {
   _host = ctx.host; _svc = ctx.messages; _app = ctx.app;
   int n = _svc ? _svc->messageCount(_key) : 0;
@@ -84,6 +93,8 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
   _pinBottom = true;    // first render scrolls to the newest message
   _lastSeq = _svc ? _svc->seq() : 0;
   _menuOpen = false;
+  _barRow = _composeOnOpen ? 0 : -1;   // open focused on the Write button when requested
+  _composeOnOpen = false;              // one-shot
 
   // Header tab bar: [0] conversation (label tracks _titleBuf), [1] Settings.
   snprintf(_titleBuf, sizeof(_titleBuf), "%s", resolveTitle());
@@ -109,7 +120,7 @@ const char* MessageThreadApplet::resolveTitle() const {
   for (int i = 0; _svc && i < _svc->convoCount(); i++) {
     if (_svc->getConvo(i, cv) && cv.key.equals(_key)) return cv.name;
   }
-  return "";
+  return _fallbackName;
 }
 
 int MessageThreadApplet::blockHeight(Canvas& body, const MessageView& m) const {
@@ -133,10 +144,11 @@ void MessageThreadApplet::layoutFocus(Canvas& body, int n) {
   for (int i = 0; i < n; i++) {
     MessageView m; if (!_svc->getMessage(_key, i, m)) continue;
     int bh = blockHeight(body, m);
-    if (i == _focus) { _focusTop = top; _focusBot = top + bh; }
+    if (i == _focus && _barRow < 0) { _focusTop = top; _focusBot = top + bh; }
     top += bh;
   }
-  _contentH = top;
+  if (_barRow >= 0) { _focusTop = top; _focusBot = top + BTN_H; }  // whole bar visible
+  _contentH = top + BTN_H;   // bar always present below the messages
 }
 
 // Pulls the committed scroll target just far enough to keep the focused message
@@ -189,6 +201,20 @@ void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int to
   if (focused) blk.drawText(fontBody(), 0, cap, ">", DisplayDriver::LIGHT);
 }
 
+// Draws the two stacked Write/Quick buttons into a BTN_H-tall region; the
+// focused button (per _barRow) renders filled.
+void MessageThreadApplet::drawActionBar(Canvas& bar) {
+  const int MX = 2, MY = 1, GAP = 2;             // outer margin + inter-button gap
+  int bw = bar.width() - 2 * MX;
+  int bh = (BTN_H - 2 * MY - GAP) / 2;
+  _btn.set("Write a message", (uint16_t)Icon::Feather);
+  _btn.setFocused(_barRow == 0);
+  _btn.draw(bar, MX, MY, bw, bh);
+  _btn.set("Quick replies", (uint16_t)Icon::Zap);
+  _btn.setFocused(_barRow == 1);
+  _btn.draw(bar, MX, MY + bh + GAP, bw, bh);
+}
+
 int MessageThreadApplet::onRender(Canvas& c) {
   int n = _svc ? _svc->messageCount(_key) : 0;
   if (_svc && _svc->seq() != _lastSeq) {
@@ -211,9 +237,15 @@ int MessageThreadApplet::onRender(Canvas& c) {
     return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
 
+  // Empty thread: the hint centered in the space above a bottom-pinned action
+  // bar (no scroll machinery - there's nothing to lay out).
   if (n == 0) {
-    body.drawText(fontBody(), body.width() / 2, body.height() / 2 - 4,
+    int barTop = body.height() - BTN_H; if (barTop < 0) barTop = 0;
+    int hintY = (barTop - body.fontHeight(fontBody())) / 2; if (hintY < 0) hintY = 0;
+    body.drawText(fontBody(), body.width() / 2, hintY,
                   "No messages", DisplayDriver::LIGHT, TextAlign::Center);
+    Canvas barC = body.region(0, barTop, body.width(), BTN_H);
+    drawActionBar(barC);
     return 500;
   }
 
@@ -249,6 +281,16 @@ int MessageThreadApplet::onRender(Canvas& c) {
     if (y >= _bodyH) break;
   }
 
+  // Action bar: two stacked bordered buttons as an inline trailing block below
+  // the messages. Drawn here (this applet owns the _barRow focus state machine).
+  {
+    int by = (_contentH - BTN_H) - _scrollY;
+    if (by + BTN_H > 0 && by < _bodyH) {
+      Canvas barC = body.region(0, by, _contentW, BTN_H);
+      drawActionBar(barC);
+    }
+  }
+
   // Scrollbar thumb on the right edge (content already cleared SB_GUTTER for it).
   if (scrollbar) {
     int thumbH = _bodyH * _bodyH / _contentH; if (thumbH < 3) thumbH = 3;
@@ -279,6 +321,14 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
         _menuOpen = false;
         messagePathApplet().setTarget(_key, _focus);
         if (_host) _host->push(&messagePathApplet());
+      } else if (sel == 0) {                 // Reply -> compose, seeding @sender for channels
+        _menuOpen = false;
+        char seed[40] = {0};
+        MessageView m;
+        if (_key.type == 1 && _svc && _svc->getMessage(_key, _focus, m) &&
+            m.senderName && m.senderName[0])
+          snprintf(seed, sizeof(seed), "@%s ", m.senderName);
+        startCompose(seed);
       } else {
         _menuOpen = false;
         if (_host) _host->postToast("Not available yet");
@@ -312,9 +362,38 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
 bool MessageThreadApplet::onConversationInput(InputEvent ev) {
   int n = _svc ? _svc->messageCount(_key) : 0;
 
+  // Empty thread: the action bar is the only focusable region, and the n==0
+  // render path never computes the message-layout fields the scroll logic below
+  // relies on (which are stale from the previously-viewed thread - this applet is
+  // a reused singleton). Keep focus inside the bar so Write stays reachable.
+  if (n == 0) {
+    if (ev == InputEvent::NavDown) { _barRow = (_barRow < 1) ? _barRow + 1 : 1; return true; }
+    if (ev == InputEvent::NavUp)   { _barRow = (_barRow > 0) ? _barRow - 1 : 0; return true; }
+    if (ev == InputEvent::Select) {
+      if (_barRow <= 0) startCompose();
+      else if (_host) _host->postToast("Not available yet");
+      return true;
+    }
+    return false;   // Back bubbles -> pop to chat list (Left/Right consumed by tabs)
+  }
+
   // Nav decisions use the committed target (not the eased value) to avoid chatter.
   int vp = _bodyH > 0 ? _bodyH : 48;
   int step = vp > 16 ? (vp * 2) / 3 : 12;
+
+  // Button bar has focus: vertical nav moves between/out of the two buttons;
+  // Left/Right and Back are left unconsumed so they bubble (tabs / pop).
+  if (_barRow >= 0) {
+    if (ev == InputEvent::NavDown) { if (_barRow < 1) _barRow++; return true; }
+    if (ev == InputEvent::NavUp)   { _barRow = (_barRow > 0) ? _barRow - 1 : -1; return true; }
+    if (ev == InputEvent::Select) {
+      if (_barRow == 0) startCompose();
+      else if (_host) _host->postToast("Not available yet");
+      return true;
+    }
+    return false;
+  }
+
   if (ev == InputEvent::NavUp) {
     if (_focusTop < _scrollTarget) {             // more of the focused message is above
       _scrollTarget -= step; if (_scrollTarget < _focusTop) _scrollTarget = _focusTop;
@@ -328,6 +407,8 @@ bool MessageThreadApplet::onConversationInput(InputEvent ev) {
       _scrollTarget += step; if (_scrollTarget > _focusBot - vp) _scrollTarget = _focusBot - vp;
     } else if (_focus < n - 1) {
       _focus++;
+    } else {
+      _barRow = 0;                               // past the last message -> action bar
     }
     return true;
   }
@@ -341,6 +422,23 @@ bool MessageThreadApplet::onConversationInput(InputEvent ev) {
     return true;
   }
   return false;   // Back bubbles -> pop to chat list
+}
+
+void MessageThreadApplet::startCompose(const char* seed) {
+  if (seed && seed[0]) { strncpy(_composeBuf, seed, KeypadApplet::KP_MAX);
+                         _composeBuf[KeypadApplet::KP_MAX] = 0; }
+  else _composeBuf[0] = 0;
+  keypadApplet().configure(_composeBuf, KeypadApplet::KP_MAX, "Message",
+                           &MessageThreadApplet::onComposeDone, this);
+  if (_host) _host->push(&keypadApplet());
+}
+
+void MessageThreadApplet::onComposeDone(void* ctx, const char* text) {
+  auto* self = static_cast<MessageThreadApplet*>(ctx);
+  if (!text || !text[0] || !self->_svc) return;          // empty -> send nothing
+  if (!self->_svc->sendText(self->_key, text)) {
+    if (self->_host) self->_host->postToast("Send failed");
+  }
 }
 
 MessageThreadApplet& messageThreadApplet() {

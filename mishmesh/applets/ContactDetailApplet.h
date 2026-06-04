@@ -8,12 +8,13 @@
 #include <mishmesh/widgets/TelemetryDialog.h>
 #include <mishmesh/widgets/ScrollText.h>
 #include <mishmesh/widgets/Card.h>
+#include <mishmesh/applets/KeypadApplet.h>
 
 namespace mishmesh {
 
 class ContactDetailApplet : public Applet, public ListModel {
 public:
-  enum Action { View, Favourite, Telemetry, Ping, ResetPath, ClearConvo, Delete, ACTION_KINDS };
+  enum Action { View, Favourite, Telemetry, Ping, ResetPath, ClearConvo, Delete, Message, Rename, ACTION_KINDS };
 private:
   AppletHost*      _host;
   ContactsService* _svc;
@@ -51,9 +52,12 @@ private:
   uint32_t         _telemStartMs;
   int              _pendingAction;
 
+  char             _renameBuf[32];   // backs the keypad while renaming (ContactInfo.name is [32])
+
   void refresh();        // pull current contact into the detail fields + cards
   void buildActions();   // fill _actions from _type
   void buildInfo();      // build _displayName / _infoLine / _details from the fields
+  static void onRenameDone(void* ctx, const char* text);   // keypad confirm -> rename + refresh
 public:
   ContactDetailApplet();
   void setTarget(const uint8_t* pubKey);

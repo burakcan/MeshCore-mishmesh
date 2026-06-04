@@ -1,5 +1,6 @@
 #include "MessagesApplet.h"
 #include "MessageThreadApplet.h"
+#include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/widgets/Modal.h>
@@ -128,7 +129,12 @@ bool MessagesApplet::onInput(InputEvent ev) {
         if (_host) _host->push(&messageThreadApplet());
       }
     } else {
-      if (_host) _host->postToast("Not available yet");
+      if (_list.selected() == 0) {                 // "New message" -> contact picker
+        contactsApplet().beginPick();
+        if (_host) _host->push(&contactsApplet());
+      } else if (_host) {
+        _host->postToast("Not available yet");     // "New group"
+      }
     }
     return true;
   }

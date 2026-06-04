@@ -50,6 +50,9 @@ struct MessagesService {
   virtual void clearConvo(const ConvoKey& k) = 0;
   virtual void deleteConvo(const ConvoKey& k) = 0;
   virtual void markUnread(const ConvoKey& k) = 0;
+  // On-device send. type==0 direct (id = 6-byte pubkey prefix), type==1 channel
+  // (id[0] = channel index). Returns false on failure (table full / not found).
+  virtual bool sendText(const ConvoKey& k, const char* text) = 0;
   // v1 no-ops (no on-device input)
   virtual void newMessage() {}
   virtual void newGroup() {}

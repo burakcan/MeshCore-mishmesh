@@ -866,6 +866,16 @@ bool MyMesh::uiSetFavourite(const uint8_t* pubkey, bool fav) {
   return true;
 }
 
+bool MyMesh::uiRenameContact(const uint8_t* pubkey, const char* name) {
+  if (!name || !name[0]) return false;
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);
+  if (!c) return false;
+  StrHelper::strncpy(c->name, name, sizeof(c->name));   // ContactInfo.name is char[32]
+  c->lastmod = getRTCClock()->getCurrentTime();
+  saveContacts();   // persist immediately so the rename survives a reboot
+  return true;
+}
+
 void MyMesh::uiPersistContacts() {
   markContactsDirty();
 }
@@ -919,6 +929,56 @@ bool MyMesh::uiAddDiscovery(const uint8_t* pubkey) {
     return true;
   }
   return false;
+}
+
+bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text) {
+  if (!text || !text[0]) return false;
+  uint16_t tlen = (uint16_t)strlen(text);
+
+  if (k.type == 0) {                                     // direct message
+    ContactInfo* recipient = lookupContactByPubKey(k.id, 6);
+    if (!recipient) return false;
+    uint32_t msg_timestamp = getRTCClock()->getCurrentTimeUnique();
+    uint32_t expected_ack = 0, est_timeout = 0;
+    int result = sendMessage(*recipient, msg_timestamp, 0, text, expected_ack, est_timeout);
+    if (result == MSG_SEND_FAILED) return false;
+    if (expected_ack) {
+      expected_ack_table[next_ack_idx].msg_sent = _ms->getMillis();
+      expected_ack_table[next_ack_idx].ack = expected_ack;
+      expected_ack_table[next_ack_idx].contact = recipient;
+      next_ack_idx = (next_ack_idx + 1) % EXPECTED_ACK_TABLE_SIZE;
+    }
+    if (_mm_store) {
+      _mm_store->appendOutboundDM(k, text, tlen, msg_timestamp,
+                                  getRTCClock()->getCurrentTime(),
+                                  expected_ack, _ms->getMillis());
+    }
+    return true;
+  }
+
+  // channel message
+  ChannelDetails channel;
+  if (!getChannel(k.id[0], channel)) return false;
+  uint32_t msg_timestamp = getRTCClock()->getCurrentTimeUnique();
+  if (!sendGroupMessage(msg_timestamp, channel.channel, _prefs.node_name, text, tlen)) return false;
+  if (_mm_store) {
+    _mm_store->appendOutboundChannel(k, text, tlen, msg_timestamp,
+                                     getRTCClock()->getCurrentTime());
+  }
+  return true;
+}
+
+void MyMesh::uiSeedChannels() {
+#ifdef MAX_GROUP_CHANNELS
+  if (!_mm_store) return;
+  ChannelDetails ch;
+  for (uint8_t i = 0; i < MAX_GROUP_CHANNELS; i++) {
+    if (!getChannel(i, ch)) continue;
+    bool empty = true;                       // unused slots have an all-zero secret
+    for (int b = 0; b < PUB_KEY_SIZE; b++) if (ch.channel.secret[b]) { empty = false; break; }
+    if (!empty) _mm_store->ensureChannel(i);
+  }
+#endif
 }
 // [/mishmesh]
 

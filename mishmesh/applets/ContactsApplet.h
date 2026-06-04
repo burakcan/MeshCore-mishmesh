@@ -25,10 +25,14 @@ public:
 // Favourites span all kinds; each row carries its own contact-type icon.
 class FavouritesListModel : public ListModel {
   ContactsService* _svc;
+  bool             _usersOnly;
+  int  underlying(int filtered) const;   // map filtered idx -> raw favourite idx (-1 if none)
 public:
-  FavouritesListModel() : _svc(nullptr) {}
+  FavouritesListModel() : _svc(nullptr), _usersOnly(false) {}
   void bind(ContactsService* svc) { _svc = svc; }
-  int count() const override { return _svc ? _svc->countFavourites() : 0; }
+  void setUsersOnly(bool u) { _usersOnly = u; }
+  int rawIndex(int filtered) const { return underlying(filtered); }
+  int count() const override;
   const char* label(int i) const override;
   uint16_t icon(int i) const override;
 };
@@ -44,16 +48,21 @@ public:
   uint16_t icon(int i) const override;
 };
 
-// Fixed settings rows (4 auto-add toggles + overwrite + 2 cleanup actions).
+// Settings rows. The per-kind auto-add toggles only appear when "Auto-add all"
+// is off (mirrors the companion app's all/selected modes), so the visible row
+// set is dynamic — map list index -> logical Row via rowAt().
 class ContactsSettingsModel : public ListModel {
   ContactsService* _svc;
+  bool addAll() const;   // current master state (defaults to true when unbound)
 public:
-  enum Row { Users, Repeaters, Rooms, Sensors, Overwrite, RemoveNonUsers, RemoveNonFavourites, RemoveAll, ROW_COUNT };
+  enum Row { AutoAddAll, Users, Repeaters, Rooms, Sensors, Overwrite,
+             RemoveNonUsers, RemoveNonFavourites, RemoveAll, ROW_COUNT };
   ContactsSettingsModel() : _svc(nullptr) {}
   void bind(ContactsService* svc) { _svc = svc; }
-  int count() const override { return ROW_COUNT; }
+  Row rowAt(int i) const;   // visible list index -> logical Row (ROW_COUNT if out of range)
+  int count() const override;
   const char* label(int i) const override;
-  bool isToggle(int i) const override { return i <= Overwrite; }
+  bool isToggle(int i) const override;
   bool toggleState(int i) const override;
 };
 
@@ -76,6 +85,8 @@ class ContactsApplet : public Applet {
   int                   _slotCount;
   bool                  _confirming;
   int                   _pendingAction; // ContactsSettingsModel::Row for cleanup confirm
+  bool                  _pickMode;        // picker: only Favourites(users) + Contacts(users), select -> thread
+  bool                  _pickRequested;   // one-shot, consumed by onStart
 
   const TabSlot& currentSlot() const { return _slots[_tabs.selected()]; }
   bool settingsTab() const { return currentSlot().kind == TabKind::Settings; }
@@ -88,6 +99,9 @@ public:
   void onForeground() override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
+  void beginPick() { _pickRequested = true; }
+  int  tabCountForTest() const { return _slotCount; }
+  bool pickModeForTest() const { return _pickMode; }
 };
 
 ContactsApplet& contactsApplet();   // shared static instance
