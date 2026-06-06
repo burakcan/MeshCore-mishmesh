@@ -211,7 +211,7 @@ bool MessagesApplet::applyResult(ChanResult res, const char* okToast) {
 void MessagesApplet::openCreatePrivate() {
   _chName[0] = 0;
   FormApplet::Field f[1] = { { "Name", _chName, sizeof(_chName), nullptr, "Name required" } };
-  formApplet().configure("Create private", f, 1, &MessagesApplet::submitCreatePrivate, this);
+  formApplet().configure("Create private", f, 1, &MessagesApplet::submitCreatePrivate, this, "Create");
   if (_host) _host->push(&formApplet());
 }
 
@@ -221,14 +221,14 @@ void MessagesApplet::openJoinPrivate() {
     { "Name", _chName, sizeof(_chName), nullptr,                   "Name required" },
     { "Key",  _chKey,  sizeof(_chKey),  &MessagesApplet::isHexKey, "Key: 32 hex chars" },
   };
-  formApplet().configure("Join private", f, 2, &MessagesApplet::submitJoinPrivate, this);
+  formApplet().configure("Join private", f, 2, &MessagesApplet::submitJoinPrivate, this, "Join");
   if (_host) _host->push(&formApplet());
 }
 
 void MessagesApplet::openJoinHashtag() {
   _chName[0] = 0;
   FormApplet::Field f[1] = { { "Hashtag", _chName, sizeof(_chName), nullptr, "Hashtag required" } };
-  formApplet().configure("Join hashtag", f, 1, &MessagesApplet::submitJoinHashtag, this);
+  formApplet().configure("Join hashtag", f, 1, &MessagesApplet::submitJoinHashtag, this, "Join");
   if (_host) _host->push(&formApplet());
 }
 
