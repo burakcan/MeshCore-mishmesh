@@ -31,10 +31,10 @@ struct MessageView {
   const uint8_t* path; uint8_t pathLen;
 };
 struct RepeatView {
-  const char* repeaterName;  // resolved or hex; "" if unknown
-  uint8_t     knownCount;    // # contacts matching the 1-byte hash (collisions)
-  uint8_t     hops;
-  int8_t      snrx4;
+  uint8_t        hops;
+  int8_t         snrx4;
+  const uint8_t* path;     // hop hash-bytes; resolve via resolveHop()
+  uint8_t        pathLen;
 };
 
 struct MessagesService {

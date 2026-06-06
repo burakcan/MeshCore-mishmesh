@@ -33,6 +33,7 @@ public:
   void addLine(const char* s);
   void addf(const char* fmt, ...);
   int  count() const { return _count; }
+  const char* lineForTest(int i) const { return (i >= 0 && i < _count) ? _lines[i] : ""; }
   bool needsAnimation() const { return _animating; }
   bool onInput(InputEvent ev) override;     // NavUp/Down scroll; else false
   void draw(Canvas& c, int x, int y, int w, int h) override;

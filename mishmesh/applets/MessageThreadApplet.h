@@ -25,6 +25,7 @@ public:
   const char* headerTitleForTest() const { return _titleBuf; }
   int  selectedTabForTest() const { return _tabs.selected(); }
   int  barRowForTest() const { return _barRow; }
+  const char* msgMenuLabelForTest(int i) const { return _msgMenu.label(i); }
 private:
   const char* resolveTitle() const;
   bool onConversationInput(InputEvent ev);   // tab 0: message nav / per-message menu
@@ -61,11 +62,12 @@ private:
   ListMenu  _menu;       // per-message action overlay
   struct MsgMenuModel : ListModel {
     bool hasPath = false;
+    bool repeats = false;   // outbound channel -> "Heard Repeats" instead of "View Path"
     int count() const override { return hasPath ? 3 : 2; }
     const char* label(int i) const override {
       if (i == 0) return "Reply";
       if (i == 1) return "Delete";
-      return "View Path";
+      return repeats ? "Heard Repeats" : "View Path";
     }
   } _msgMenu;
   int       _barRow = -1;     // -1 = on a message; 0 = Write; 1 = Quick

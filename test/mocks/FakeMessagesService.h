@@ -7,7 +7,7 @@
 
 struct FakeMessagesService : mishmesh::MessagesService {
   mishmesh::MessageStore store;
-  std::string nameBuf, prevBuf, sndBuf, repName;
+  std::string nameBuf, prevBuf, sndBuf;
   std::string senderName;   // surfaced from getMessage (default "" = no sender)
   uint32_t deletes = 0;
   std::string lastSent;
@@ -54,12 +54,13 @@ struct FakeMessagesService : mishmesh::MessagesService {
   int repeatCount(const mishmesh::ConvoKey& k, int m) const override { return store.repeatCount(k, m); }
   bool getRepeat(const mishmesh::ConvoKey& k, int m, int r, mishmesh::RepeatView& o) const override {
     mishmesh::RepeatRec rr; if (!store.getRepeat(k, m, r, rr)) return false;
-    auto* self = const_cast<FakeMessagesService*>(this);
-    self->repName = "RPT";
-    o.repeaterName = self->repName.c_str(); o.knownCount = 1; o.hops = rr.hops; o.snrx4 = rr.snrx4;
+    o.hops = rr.hops; o.snrx4 = rr.snrx4; o.path = rr.path; o.pathLen = rr.pathLen;
     return true;
   }
-  bool resolveHop(uint8_t, const char*& name, uint8_t& kc) const override { name = "RPT"; kc = 1; return true; }
+  bool resolveHop(uint8_t b, const char*& name, uint8_t& kc) const override {
+    if (b == 0xAA) { name = "Alice"; kc = 1; return true; }   // everything else falls back to hex
+    name = ""; kc = 0; return false;
+  }
   void deleteMessage(const mishmesh::ConvoKey& k, int i) override { store.deleteMessage(k, i); deletes++; }
   void clearConvo(const mishmesh::ConvoKey& k) override { store.clearConvo(k); }
   void deleteConvo(const mishmesh::ConvoKey& k) override { store.deleteConvo(k); }

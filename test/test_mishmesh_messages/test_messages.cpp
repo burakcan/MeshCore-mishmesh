@@ -221,11 +221,39 @@ TEST(MessageThread, SettingsTabDeletePopsToList) {
   EXPECT_EQ(d0 - 1, host.depth());                 // popped back to the list
 }
 
-TEST(MessagePath, InboundShowsHops) {
+TEST(MessageThread, OutboundChannelMenuSaysHeardRepeats) {
+  FakeMessagesService svc;
+  auto k = mishmesh::channelKey(1);
+  svc.store.appendOutboundChannel(k, "hey", 3, 5, 5);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.dispatch(mishmesh::InputEvent::Select);   // open per-message menu on the message
+  EXPECT_STREQ("Heard Repeats", mishmesh::messageThreadApplet().msgMenuLabelForTest(2));
+}
+
+TEST(MessageThread, InboundMenuSaysViewPath) {
   FakeMessagesService svc;
   auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
-  uint8_t path[3] = {0x5B, 0x63, 0x5E};
-  svc.store.appendInbound(k, "hi", 2, 1, 1, -32, path, 3);
+  svc.store.appendInbound(k, "hi", 2, 1, 1, 0, nullptr, 0);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_STREQ("View Path", mishmesh::messageThreadApplet().msgMenuLabelForTest(2));
+}
+
+TEST(MessagePath, InboundResolvesNameElseHex) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  uint8_t path[2] = {0xAA, 0x5B};            // 0xAA is the only byte the fake resolves
+  svc.store.appendInbound(k, "hi", 2, 1, 1, -30, path, 2);
   FakeDisplayDriver d;
   mishmesh::AppletContext ctx; ctx.messages = &svc;
   mishmesh::AppletHost host(&d, ctx);
@@ -233,16 +261,35 @@ TEST(MessagePath, InboundShowsHops) {
   mishmesh::messagePathApplet().setTarget(k, 0);
   host.push(&mishmesh::messagePathApplet());
   host.loop(0);
-  EXPECT_EQ(3, mishmesh::messagePathApplet().rowCountForTest());
+  EXPECT_STREQ("Path: 2 hops", mishmesh::messagePathApplet().titleForTest());
+  EXPECT_EQ(2, mishmesh::messagePathApplet().rowCountForTest());
+  EXPECT_STREQ("1  Alice", mishmesh::messagePathApplet().lineForTest(0));
+  EXPECT_STREQ("2  5B",    mishmesh::messagePathApplet().lineForTest(1));
 }
 
-TEST(MessagePath, ChannelShowsRepeats) {
+TEST(MessagePath, InboundDirectHasNoHops) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  svc.store.appendInbound(k, "hi", 2, 1, 1, 0, nullptr, 0);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messagePathApplet().setTarget(k, 0);
+  host.push(&mishmesh::messagePathApplet());
+  host.loop(0);
+  EXPECT_STREQ("Direct", mishmesh::messagePathApplet().titleForTest());
+  EXPECT_EQ(0, mishmesh::messagePathApplet().rowCountForTest());
+  EXPECT_STREQ("Direct (no path)", mishmesh::messagePathApplet().lineForTest(0));
+}
+
+TEST(MessagePath, ChannelShowsRepeatChains) {
   FakeMessagesService svc;
   auto k = mishmesh::channelKey(2);
   svc.store.appendOutboundChannel(k, "x", 1, 9, 9);
-  uint8_t p[1] = {0x33};
-  svc.store.addRepeat(k, 9, 7, p, 1);
-  svc.store.addRepeat(k, 9, -1, p, 1);
+  uint8_t p[2] = {0xAA, 0x5B};               // Alice -> 5B
+  svc.store.addRepeat(k, 9, 7, p, 2);
+  svc.store.addRepeat(k, 9, -1, p, 1);       // Alice only
   FakeDisplayDriver d;
   mishmesh::AppletContext ctx; ctx.messages = &svc;
   mishmesh::AppletHost host(&d, ctx);
@@ -250,7 +297,32 @@ TEST(MessagePath, ChannelShowsRepeats) {
   mishmesh::messagePathApplet().setTarget(k, 0);
   host.push(&mishmesh::messagePathApplet());
   host.loop(0);
-  EXPECT_EQ(2, mishmesh::messagePathApplet().rowCountForTest());
+  EXPECT_STREQ("Heard 2 times", mishmesh::messagePathApplet().titleForTest());
+  EXPECT_EQ(2, mishmesh::messagePathApplet().rowCountForTest());     // counts re-hearings
+  EXPECT_STREQ("#1   2h | 1.8dB", mishmesh::messagePathApplet().lineForTest(0));
+  EXPECT_STREQ("  Alice -> 5B",   mishmesh::messagePathApplet().lineForTest(1));
+}
+
+// Outbound channel with no repeats yet (heardCount==0) -> "Not heard yet".
+// The sibling "Details not available" branch (repeatCount()==0 but heardCount>0,
+// i.e. per-repeat detail lost on reboot while the persisted heard counter survives)
+// is not reachable from the public store API in a host test: addRepeat() always
+// adds a Tracked repeat AND bumps heardCount together, so it cannot be reproduced
+// without reboot/persistence state.
+TEST(MessagePath, ChannelNotHeardYet) {
+  FakeMessagesService svc;
+  auto k = mishmesh::channelKey(2);
+  svc.store.appendOutboundChannel(k, "x", 1, 9, 9);   // no repeats added
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messagePathApplet().setTarget(k, 0);
+  host.push(&mishmesh::messagePathApplet());
+  host.loop(0);
+  EXPECT_STREQ("Heard repeats", mishmesh::messagePathApplet().titleForTest());
+  EXPECT_EQ(0, mishmesh::messagePathApplet().rowCountForTest());
+  EXPECT_STREQ("Not heard yet", mishmesh::messagePathApplet().lineForTest(0));
 }
 
 TEST(MessagesBadge, TotalUnreadReflectsInbound) {

@@ -448,18 +448,10 @@ int  UITask::MsgSvc::repeatCount(const mishmesh::ConvoKey& k, int m) const { ret
 bool UITask::MsgSvc::getRepeat(const mishmesh::ConvoKey& k, int m, int r, mishmesh::RepeatView& out) const {
   mishmesh::RepeatRec rr;
   if (!store->getRepeat(k, m, r, rr)) return false;
-  out.hops  = rr.hops;
-  out.snrx4 = rr.snrx4;
-  const char* rname; uint8_t kc;
-  if (rr.pathLen > 0 && resolveHop(rr.path[rr.pathLen - 1], rname, kc)) {
-    out.repeaterName = rname;
-    out.knownCount   = kc;
-  } else {
-    static char hexBuf[3];
-    if (rr.pathLen > 0) { snprintf(hexBuf, sizeof(hexBuf), "%02X", rr.path[rr.pathLen - 1]); out.repeaterName = hexBuf; }
-    else out.repeaterName = "";
-    out.knownCount = 0;
-  }
+  out.hops    = rr.hops;
+  out.snrx4   = rr.snrx4;
+  out.path    = rr.path;
+  out.pathLen = rr.pathLen;
   return true;
 }
 

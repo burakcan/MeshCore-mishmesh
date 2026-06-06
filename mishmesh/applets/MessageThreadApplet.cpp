@@ -429,10 +429,13 @@ bool MessageThreadApplet::onConversationInput(InputEvent ev) {
     return true;
   }
   if (ev == InputEvent::Select && n > 0) {
-    MessageView m; bool hasPath = false;
-    if (_svc && _svc->getMessage(_key, _focus, m))
+    MessageView m; bool hasPath = false, repeats = false;
+    if (_svc && _svc->getMessage(_key, _focus, m)) {
       hasPath = (m.kind == KIND_INBOUND) || (m.kind == KIND_OUT_CHAN);
+      repeats = (m.kind == KIND_OUT_CHAN);
+    }
     _msgMenu.hasPath = hasPath;
+    _msgMenu.repeats = repeats;
     _menu.setModel(&_msgMenu); _menu.setRowHeight(14); _menu.resetSelection();
     _menuOpen = true;
     return true;
