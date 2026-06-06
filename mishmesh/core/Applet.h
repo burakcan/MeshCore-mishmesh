@@ -43,6 +43,10 @@ struct AppServices {
   virtual bool     bleConnected() const { return false; }   // a client is paired
   virtual uint32_t blePin()       const { return 0; }       // 0 = hide PIN
   virtual void     setBleEnabled(bool) {}
+  // Broadcast a self-advert now. false = zero hop (neighbours only, no relay),
+  // true = flood routed (propagates multi-hop across the mesh). Returns false if
+  // it could not be sent (e.g. packet pool exhausted). Default: no-op.
+  virtual bool sendAdvert(bool flood) { (void)flood; return false; }
   // [/mishmesh]
 };
 

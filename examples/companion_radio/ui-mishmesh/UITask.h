@@ -109,6 +109,7 @@ public:
   bool bleConnected() const override { return hasConnection(); }
   uint32_t blePin()   const override { return the_mesh.getBLEPin(); }
   void setBleEnabled(bool on) override { if (on) enableSerial(); else disableSerial(); }
+  bool sendAdvert(bool flood) override { return the_mesh.sendSelfAdvert(flood); }
   // [/mishmesh]
 
   // mishmesh::ContactsService

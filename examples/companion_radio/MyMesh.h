@@ -101,6 +101,11 @@ public:
   void loop();
   void handleCmdFrame(size_t len);
   bool advert();
+  // [mishmesh]
+  // On-device advert trigger for the mishmesh UI. false = zero hop, true = flood
+  // routed (default transport scope). Mirrors the CMD_SEND_SELF_ADVERT handler.
+  bool sendSelfAdvert(bool flood);
+  // [/mishmesh]
   void enterCLIRescue();
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);

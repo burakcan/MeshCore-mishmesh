@@ -470,7 +470,16 @@ bool UITask::MsgSvc::resolveHop(uint8_t hashByte, const char*& name, uint8_t& kn
 
 void UITask::MsgSvc::deleteMessage(const mishmesh::ConvoKey& k, int i) { store->deleteMessage(k, i); }
 void UITask::MsgSvc::clearConvo(const mishmesh::ConvoKey& k) { store->clearConvo(k); }
-void UITask::MsgSvc::deleteConvo(const mishmesh::ConvoKey& k) { store->deleteConvo(k); }
+void UITask::MsgSvc::deleteConvo(const mishmesh::ConvoKey& k) {
+#ifdef MAX_GROUP_CHANNELS
+  if (k.type == 1) {                       // leaving a channel: free the mesh slot, not just the chat
+    ChannelDetails empty;
+    memset(&empty, 0, sizeof(empty));      // zero name + secret = the protocol's "delete channel" form
+    if (the_mesh.setChannel(k.id[0], empty)) the_mesh.getStore()->saveChannels(&the_mesh);
+  }
+#endif
+  store->deleteConvo(k);
+}
 void UITask::MsgSvc::markUnread(const mishmesh::ConvoKey& k) { store->markUnread(k); }
 uint32_t UITask::MsgSvc::seq() const { return store->seq(); }
 
@@ -501,6 +510,19 @@ int UITask::MsgSvc::freeChannelSlot() const {
 }
 
 mishmesh::ChanResult UITask::MsgSvc::setSecret(const char* name, const uint8_t secret16[16]) {
+#ifdef MAX_GROUP_CHANNELS
+  // Already joined this exact key? Reuse its slot instead of allocating a second
+  // one - a duplicate slot would split send (newest slot) from receive
+  // (findChannelIdx picks the lowest-index match).
+  mesh::GroupChannel probe;
+  memset(&probe, 0, sizeof(probe));
+  memcpy(probe.secret, secret16, 16);
+  int existing = the_mesh.findChannelIdx(probe);
+  if (existing >= 0) {
+    if (store) store->ensureChannel((uint8_t)existing);   // surface the chat
+    return mishmesh::ChanResult::Duplicate;
+  }
+#endif
   int idx = freeChannelSlot();
   if (idx < 0) return mishmesh::ChanResult::Full;
   ChannelDetails ch;
