@@ -343,6 +343,7 @@ void MyMesh::onContactsFull() {
 void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path) {
   // [mishmesh] is_new == seen-but-not-added (no auto-add / hop limit / full); buffer it
   if (is_new) uiNoteDiscovery(contact);
+  uiNoteRecentAdvert(contact);   // every advert (contacts included) for the Recent tab
   // [/mishmesh]
   if (_serial->isConnected()) {
     if (is_new) {
@@ -918,6 +919,33 @@ bool MyMesh::uiGetDiscovery(int index, ContactInfo& out) {
   }
   return false;
 }
+
+// [mishmesh] Newest-first feed of every advert heard. Dedup by pubkey, move-to-front
+// on (re)hear, drop the oldest when full. Stamp OUR clock so ordering and "heard N
+// ago" are correct regardless of the advertiser's clock.
+void MyMesh::uiNoteRecentAdvert(const ContactInfo& ci) {
+  ContactInfo entry = ci;
+  entry.lastmod = getRTCClock()->getCurrentTime();
+
+  int found = -1;
+  for (int i = 0; i < _ui_recent_advert_count; i++) {
+    if (memcmp(_ui_recent_adverts[i].id.pub_key, ci.id.pub_key, PUB_KEY_SIZE) == 0) { found = i; break; }
+  }
+  int top = (found >= 0) ? found
+          : (_ui_recent_advert_count < UI_MAX_RECENT_ADVERTS ? _ui_recent_advert_count++
+                                                             : UI_MAX_RECENT_ADVERTS - 1);
+  for (int i = top; i > 0; i--) _ui_recent_adverts[i] = _ui_recent_adverts[i - 1];
+  _ui_recent_adverts[0] = entry;
+}
+
+int MyMesh::uiRecentAdvertCount() { return _ui_recent_advert_count; }
+
+bool MyMesh::uiGetRecentAdvert(int index, ContactInfo& out) {
+  if (index < 0 || index >= _ui_recent_advert_count) return false;
+  out = _ui_recent_adverts[index];
+  return true;
+}
+// [/mishmesh]
 
 bool MyMesh::uiAddDiscovery(const uint8_t* pubkey) {
   for (int i = 0; i < _ui_discovery_count; i++) {

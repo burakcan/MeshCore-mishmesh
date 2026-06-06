@@ -6,6 +6,7 @@
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/MessageStore.h>
 #include <mishmesh/text/Fonts.h>
+#include <mishmesh/core/ContactFormat.h>   // kindIcon + contactLabel (shared)
 #include <stdio.h>
 
 namespace mishmesh {
@@ -13,28 +14,9 @@ namespace mishmesh {
 // contactDetailApplet() is declared by ContactDetailApplet.h (Task 11); including
 // that header gives the complete type needed for setTarget() + the Applet* upcast.
 
-static uint16_t kindIcon(ContactKind k) {
-  switch (k) {
-    case ContactKind::Chat:     return (uint16_t)Icon::User;
-    case ContactKind::Repeater: return (uint16_t)Icon::Radio;
-    case ContactKind::Room:     return (uint16_t)Icon::Comment;
-    default:                    return (uint16_t)Icon::Chip;
-  }
-}
-
 // Tab-bar icon for a kind (plural "Users" for the contacts tab vs the per-row User).
 static uint16_t tabIcon(ContactKind k) {
   return k == ContactKind::Chat ? (uint16_t)Icon::Users : kindIcon(k);
-}
-
-// Row label shared by the per-kind and favourites lists: repeaters get a 2-hex
-// key prefix (they often share generic names); everything else is just the name.
-static const char* contactLabel(const ContactView& v, char* buf, int n) {
-  if (v.type == (uint8_t)ContactKind::Repeater && v.pubKey) {
-    snprintf(buf, n, "%02X %s", v.pubKey[0], v.name);
-    return buf;
-  }
-  return v.name;
 }
 
 const char* ContactListModel::label(int i) const {

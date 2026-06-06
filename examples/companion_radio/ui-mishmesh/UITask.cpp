@@ -196,6 +196,7 @@ void UITask::fillView(const ContactInfo& c, mishmesh::ContactView& out) {
   out.hasLocation = (c.gps_lat != 0 || c.gps_lon != 0);
   out.gpsLat = c.gps_lat;
   out.gpsLon = c.gps_lon;
+  out.heardAt = c.lastmod;   // [mishmesh] our-clock receive time, for the Recent tab
 }
 
 bool UITask::getByKind(mishmesh::ContactKind k, int index, mishmesh::ContactView& out) const {
@@ -240,6 +241,16 @@ bool UITask::getDiscovered(int index, mishmesh::ContactView& out) const {
   return true;
 }
 bool UITask::addDiscovered(const uint8_t* pk) { return the_mesh.uiAddDiscovery(pk); }
+
+// [mishmesh]
+int UITask::countRecentAdverts() const { return the_mesh.uiRecentAdvertCount(); }
+bool UITask::getRecentAdvert(int index, mishmesh::ContactView& out) const {
+  if (!the_mesh.uiGetRecentAdvert(index, _scratch)) return false;
+  fillView(_scratch, out);
+  return true;
+}
+bool UITask::isContact(const uint8_t* pk) const { return the_mesh.lookupContactByPubKey(pk, 6) != nullptr; }
+// [/mishmesh]
 
 bool UITask::selfLocation(int32_t& lat, int32_t& lon) const {
   if (!_sensors) return false;

@@ -143,6 +143,11 @@ public:
   int  uiDiscoveryCount();                                // entries not already contacts
   bool uiGetDiscovery(int index, ContactInfo& out);
   bool uiAddDiscovery(const uint8_t* pubkey);             // promote a discovery to a contact
+  // [mishmesh] Recent adverts: every advert heard (incl. contacts), newest-first.
+  static const int UI_MAX_RECENT_ADVERTS = 16;
+  int  uiRecentAdvertCount();
+  bool uiGetRecentAdvert(int index, ContactInfo& out);
+  // [/mishmesh]
   void uiSetMessageStore(mishmesh::MessageStore* s) { _mm_store = s; }
   DataStore* getStore() const { return _store; }
   // On-device send mirroring CMD_SEND_TXT_MSG: DM (k.type==0) or channel (k.type==1).
@@ -286,6 +291,11 @@ private:
   ContactInfo _ui_discoveries[UI_MAX_DISCOVERIES];
   int _ui_discovery_count = 0;
   void uiNoteDiscovery(const ContactInfo& ci);   // called from onDiscoveredContact
+  // [mishmesh]
+  ContactInfo _ui_recent_adverts[UI_MAX_RECENT_ADVERTS];
+  int _ui_recent_advert_count = 0;
+  void uiNoteRecentAdvert(const ContactInfo& ci);   // called from onDiscoveredContact
+  // [/mishmesh]
   // Shared by the CMD_* serial handlers and the UI hooks (DRY - see MyMesh.cpp).
   int  startContactRequest(ContactInfo& contact, uint8_t req_type, uint32_t& tag, uint32_t& est_timeout);
   mesh::Packet* startTrace(uint32_t tag, uint32_t auth, uint8_t flags, const uint8_t* path, uint8_t path_len);

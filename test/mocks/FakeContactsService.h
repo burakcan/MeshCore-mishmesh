@@ -8,9 +8,10 @@
 // per kind and records action calls.
 class FakeContactsService : public mishmesh::ContactsService {
 public:
-  struct Row { std::string name; uint8_t pubkey[6]; bool favourite=false; bool hasPath=true; uint32_t lastAdvert=0;
+  struct Row { std::string name; uint8_t pubkey[mishmesh::PUBKEY_LEN]={0}; bool favourite=false; bool hasPath=true;
+               uint32_t lastAdvert=0; uint32_t heardAt=0;
                bool hasLocation=false; int32_t gpsLat=0, gpsLon=0; uint8_t type=1; };
-  std::vector<Row> chats, repeaters, rooms, sensors, discovered;
+  std::vector<Row> chats, repeaters, rooms, sensors, discovered, recent;
   bool hasSelfLoc=false; int32_t selfLat=0, selfLon=0;
 
   mishmesh::AutoAddConfig cfg{true,false,false,false,false,false,3};  // autoAddAll, 4 kinds, overwrite, maxHops
@@ -124,4 +125,18 @@ public:
     return removed;
   }
   int removeAll() override { calls.push_back("removeall"); int n=(int)(chats.size()+repeaters.size()+rooms.size()+sensors.size()); chats.clear();repeaters.clear();rooms.clear();sensors.clear(); return n; }
+  int countRecentAdverts() const override { return (int)recent.size(); }
+  bool getRecentAdvert(int index, mishmesh::ContactView& out) const override {
+    if (index < 0 || index >= (int)recent.size()) return false;
+    const Row& r = recent[index];
+    out.name = r.name.c_str(); out.type = r.type; out.isFavourite = false;
+    out.hasPath = r.hasPath; out.hops = r.hasPath ? 1 : 0; out.lastAdvert = r.lastAdvert; out.pubKey = r.pubkey;
+    out.hasLocation = r.hasLocation; out.gpsLat = r.gpsLat; out.gpsLon = r.gpsLon; out.heardAt = r.heardAt;
+    return true;
+  }
+  bool isContact(const uint8_t* pk) const override {
+    for (auto* l : {&chats, &repeaters, &rooms, &sensors})
+      for (const Row& r : *l) if (keyStr(r.pubkey) == keyStr(pk)) return true;
+    return false;
+  }
 };

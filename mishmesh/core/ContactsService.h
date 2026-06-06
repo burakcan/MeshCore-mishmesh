@@ -19,6 +19,10 @@ struct ContactView {
   bool           hasLocation;
   int32_t        gpsLat;      // degrees * 1e6
   int32_t        gpsLon;
+  // [mishmesh] our-clock receive time (UNIX seconds, 0 = unknown); used by the
+  // Advert applet's Recent tab for the "heard N ago" column.
+  uint32_t       heardAt = 0;
+  // [/mishmesh]
 };
 
 struct AutoAddConfig {
@@ -69,6 +73,14 @@ struct ContactsService {
   virtual int  countDiscovered() const = 0;
   virtual bool getDiscovered(int index, ContactView& out) const = 0;
   virtual bool addDiscovered(const uint8_t* pubKey) = 0;   // promote to a real contact
+
+  // [mishmesh] Recent adverts: every advert heard (incl. known contacts), newest
+  // first. Non-pure so existing implementers/fakes need not override. isContact
+  // lets the Recent row route to the contact vs discover detail screen.
+  virtual int  countRecentAdverts() const { return 0; }
+  virtual bool getRecentAdvert(int index, ContactView& out) const { (void)index; (void)out; return false; }
+  virtual bool isContact(const uint8_t* pubKey) const { (void)pubKey; return false; }
+  // [/mishmesh]
 
   // Our own location (degrees * 1e6); false if unknown.
   virtual bool selfLocation(int32_t& lat1e6, int32_t& lon1e6) const = 0;
