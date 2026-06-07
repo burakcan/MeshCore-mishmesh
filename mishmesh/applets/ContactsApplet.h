@@ -76,6 +76,8 @@ class ContactsApplet : public Applet {
 
   AppletHost*           _host;
   ContactsService*      _svc;
+  AppServices*          _app = nullptr;   // for the tab-bar battery decoration
+  char                  _battBuf[8] = {0};
   TabBar                _tabs;
   ListMenu              _list;
   ContactListModel      _models[4];     // Chat/Repeater/Room/Sensor

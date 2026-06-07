@@ -47,6 +47,10 @@ struct AppServices {
   // true = flood routed (propagates multi-hop across the mesh). Returns false if
   // it could not be sent (e.g. packet pool exhausted). Default: no-op.
   virtual bool sendAdvert(bool flood) { (void)flood; return false; }
+  // Whether self-adverts include this node's location. Persisted by the adapter.
+  // Defaults keep the framework companion-agnostic (off, not settable).
+  virtual bool shareLocationInAdvert() const { return false; }
+  virtual void setShareLocationInAdvert(bool) {}
   // [/mishmesh]
 };
 

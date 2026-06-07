@@ -46,17 +46,22 @@ const char* AdvertApplet::RecentModel::value(int index) const {
 void AdvertApplet::onStart(AppletContext& ctx) {
   _app = ctx.app; _svc = ctx.contacts; _host = ctx.host;
   _recent.bind(_svc, _app);
+  _settings.bind(_app);
   _tabs.clear();
   _tabs.addTab("Advert", (uint16_t)Icon::Radio);
   _tabs.addTab("Recent", (uint16_t)Icon::Search);
+  _tabs.addTab("Settings", (uint16_t)Icon::Settings);
   _list.setRowHeight(14);
   syncListToTab();
   _list.resetSelection();
 }
 
 void AdvertApplet::syncListToTab() {
-  if (_tabs.selected() == 0) { _list.setModel(&_send);   _list.setEmptyText(nullptr); }
-  else                       { _list.setModel(&_recent); _list.setEmptyText("No adverts yet"); }
+  switch (_tabs.selected()) {
+    case 0:  _list.setModel(&_send);     _list.setEmptyText(nullptr);            break;
+    case 1:  _list.setModel(&_recent);   _list.setEmptyText("No adverts yet");   break;
+    default: _list.setModel(&_settings); _list.setEmptyText(nullptr);            break;
+  }
 }
 
 int AdvertApplet::onRender(Canvas& c) {
@@ -82,6 +87,10 @@ bool AdvertApplet::onInput(InputEvent ev) {
         _host->postToast(ok ? (flood ? "Flood advert sent" : "Zero-hop advert sent")
                             : "Advert failed");
       }
+      return true;
+    }
+    if (_tabs.selected() == 2) {                             // Settings tab
+      if (_app) _app->setShareLocationInAdvert(!_app->shareLocationInAdvert());
       return true;
     }
     // Recent tab: route to the contact detail (if a contact) or discover detail.

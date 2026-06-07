@@ -110,6 +110,16 @@ public:
   uint32_t blePin()   const override { return the_mesh.getBLEPin(); }
   void setBleEnabled(bool on) override { if (on) enableSerial(); else disableSerial(); }
   bool sendAdvert(bool flood) override { return the_mesh.sendSelfAdvert(flood); }
+  bool shareLocationInAdvert() const override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    return p && p->advert_loc_policy == ADVERT_LOC_SHARE;
+  }
+  void setShareLocationInAdvert(bool on) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->advert_loc_policy = on ? ADVERT_LOC_SHARE : ADVERT_LOC_NONE;
+    the_mesh.savePrefs();
+  }
   // [/mishmesh]
 
   // mishmesh::ContactsService

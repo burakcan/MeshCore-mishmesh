@@ -7,6 +7,7 @@
 #include <mishmesh/core/MessageStore.h>
 #include <mishmesh/text/Fonts.h>
 #include <mishmesh/core/ContactFormat.h>   // kindIcon + contactLabel (shared)
+#include <mishmesh/widgets/StatusBar.h>    // batteryPercent
 #include <stdio.h>
 
 namespace mishmesh {
@@ -198,6 +199,7 @@ void ContactsApplet::rebuildTabs() {
 void ContactsApplet::onStart(AppletContext& ctx) {
   _host = ctx.host;
   _svc = ctx.contacts;
+  _app = ctx.app;
   _pickMode = _pickRequested; _pickRequested = false;
   _models[0].bind(_svc, ContactKind::Chat, kindIcon(ContactKind::Chat));
   _models[1].bind(_svc, ContactKind::Repeater, kindIcon(ContactKind::Repeater));
@@ -227,6 +229,8 @@ void ContactsApplet::onForeground() { rebuildTabs(); }
 int ContactsApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   int barH = 13;
+  snprintf(_battBuf, sizeof(_battBuf), "%d%%", batteryPercent(_app ? _app->batteryMillivolts() : 0));
+  _tabs.setDecoration(_battBuf);
   _tabs.draw(c, 0, 0, w, barH);
   int bodyY = barH + 1;
   int bodyH = h - bodyY;
