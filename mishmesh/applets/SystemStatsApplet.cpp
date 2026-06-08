@@ -73,6 +73,6 @@ bool SystemStatsApplet::onInput(InputEvent ev) {
 
 static SystemStatsApplet s_systemStats;
 MISHMESH_REGISTER_APPLET_ICON(&s_systemStats, ::mishmesh::Placement::AppMenu,
-                              "System", 0, (uint16_t)::mishmesh::Icon::Chip);
+                              "System", 6, (uint16_t)::mishmesh::Icon::Chip);
 
 }  // namespace mishmesh

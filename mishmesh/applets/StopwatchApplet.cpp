@@ -51,6 +51,6 @@ bool StopwatchApplet::onInput(InputEvent ev) {
 
 static StopwatchApplet s_stopwatch;
 MISHMESH_REGISTER_APPLET_ICON(&s_stopwatch, ::mishmesh::Placement::AppMenu,
-                             "Stopwatch", 0, (uint16_t)::mishmesh::Icon::Clock);
+                             "Stopwatch", 5, (uint16_t)::mishmesh::Icon::Clock);
 
 }  // namespace mishmesh

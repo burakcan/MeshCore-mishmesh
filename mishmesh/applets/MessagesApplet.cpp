@@ -264,7 +264,7 @@ MessagesApplet& messagesApplet() {
   return a;
 }
 
-MISHMESH_REGISTER_APPLET_ICON(&messagesApplet(), Placement::AppMenu, "Messages", 1,
+MISHMESH_REGISTER_APPLET_ICON(&messagesApplet(), Placement::AppMenu, "Messages", 0,
                               (uint16_t)Icon::Message);
 
 }  // namespace mishmesh

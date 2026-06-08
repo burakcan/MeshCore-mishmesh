@@ -58,7 +58,7 @@ bool BluetoothApplet::onInput(InputEvent ev) {
 #ifdef BLE_PIN_CODE
 static BluetoothApplet s_bluetooth;
 MISHMESH_REGISTER_APPLET_ICON(&s_bluetooth, ::mishmesh::Placement::AppMenu,
-                              "Bluetooth", 5, (uint16_t)::mishmesh::Icon::Bluetooth);
+                              "Bluetooth", 4, (uint16_t)::mishmesh::Icon::Bluetooth);
 #endif
 
 }  // namespace mishmesh

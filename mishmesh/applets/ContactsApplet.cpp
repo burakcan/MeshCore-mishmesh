@@ -7,7 +7,6 @@
 #include <mishmesh/core/MessageStore.h>
 #include <mishmesh/text/Fonts.h>
 #include <mishmesh/core/ContactFormat.h>   // kindIcon + contactLabel (shared)
-#include <mishmesh/widgets/StatusBar.h>    // batteryPercent
 #include <stdio.h>
 
 namespace mishmesh {
@@ -229,8 +228,6 @@ void ContactsApplet::onForeground() { rebuildTabs(); }
 int ContactsApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   int barH = 13;
-  snprintf(_battBuf, sizeof(_battBuf), "%d%%", batteryPercent(_app ? _app->batteryMillivolts() : 0));
-  _tabs.setDecoration(_battBuf);
   _tabs.draw(c, 0, 0, w, barH);
   int bodyY = barH + 1;
   int bodyH = h - bodyY;
@@ -352,7 +349,7 @@ ContactsApplet& contactsApplet() {
   return s_contacts;
 }
 
-MISHMESH_REGISTER_APPLET_ICON(&contactsApplet(), Placement::AppMenu, "Contacts", 2,
+MISHMESH_REGISTER_APPLET_ICON(&contactsApplet(), Placement::AppMenu, "Contacts", 1,
                               (uint16_t)Icon::Users);
 
 }  // namespace mishmesh

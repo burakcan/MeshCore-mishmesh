@@ -257,6 +257,5 @@ KeypadApplet& keypadApplet() {
   static KeypadApplet s_keypad;
   return s_keypad;
 }
-MISHMESH_REGISTER_APPLET(&keypadApplet(), ::mishmesh::Placement::AppMenu, "Keypad", 0);
 
 }  // namespace mishmesh

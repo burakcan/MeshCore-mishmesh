@@ -31,12 +31,13 @@ void AppMenuApplet::onStart(AppletContext& ctx) {
 
 int AppMenuApplet::onRender(Canvas& c) {
   int w = c.width();
-  const int headH = c.fontHeight(fontBody()) + 3;
-  int ty = (headH - 1 - c.fontHeight(fontBody())) / 2;
-  if (ty < 0) ty = 0;
-  c.drawText(fontBody(), 4, ty, "Apps", DisplayDriver::LIGHT);
-  c.fillRect(0, headH - 1, w, 1, DisplayDriver::LIGHT);
-  _list.draw(c, 0, headH, w, c.height() - headH);
+  // const int headH = c.fontHeight(fontBody()) + 3;
+  // int ty = (headH - 1 - c.fontHeight(fontBody())) / 2;
+  // if (ty < 0) ty = 0;
+  // c.drawText(fontBody(), 4, ty, "Apps", DisplayDriver::LIGHT);
+  // c.fillRect(0, headH - 1, w, 1, DisplayDriver::LIGHT);
+  // _list.draw(c, 0, headH, w, c.height() - headH);
+  _list.draw(c, 0, 0, w, c.height());
   return _list.needsAnimation() ? ListMenu::TICK_MS : 1000;
 }
 
