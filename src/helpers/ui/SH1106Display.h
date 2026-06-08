@@ -49,4 +49,7 @@ public:
   void drawXbm(int x, int y, const uint8_t *bits, int w, int h) override;
   uint16_t getTextWidth(const char *str) override;
   void endFrame() override;
+  // [mishmesh]
+  void blitColumnMajor1bpp(const uint8_t* buf, int w, int h) override;
+  // [/mishmesh]
 };

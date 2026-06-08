@@ -6,6 +6,14 @@
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/core/Canvas.h>
 
+// Max display flushes/sec while a wantsExclusive() applet is foreground. The sim
+// (onRender) still runs every loop pass; only the blocking panel flush is capped,
+// to bound the I2C stall duty cycle so inbound mesh packets aren't starved.
+// Override per-build with -D MISHMESH_GAME_MAX_FLUSH_FPS=<n>.
+#ifndef MISHMESH_GAME_MAX_FLUSH_FPS
+#define MISHMESH_GAME_MAX_FLUSH_FPS 60
+#endif
+
 namespace mishmesh {
 
 // The UI runtime: owns a fixed-size applet stack (root at index 0), the input
@@ -42,6 +50,9 @@ public:
   // pops (e.g. "Contact deleted" shown after a detail screen closes itself).
   void postToast(const char* msg);
 
+  // Test/inspection accessor for the live held-button snapshot.
+  const InputState& ctxInput() const { return _input_state; }
+
 private:
   void renderIfDue(uint32_t now_ms);
   // Push the foreground applet's input preferences (currently wantsBackRepeat())
@@ -51,6 +62,7 @@ private:
   // report. Called both before and after rendering each loop so a slow frame can't
   // open an input-blind gap - see loop().
   void pumpInput(uint32_t now_ms);
+  void refreshInputState();   // OR every source's heldMask() into _input_state
 
   DisplayDriver* _display;
   Canvas _canvas;
@@ -63,6 +75,7 @@ private:
   int _nsources;
 
   uint32_t _next_render_at;
+  uint32_t _last_flush_ms;   // exclusive-mode flush-rate cap timestamp
   bool _has_rendered;
   bool _dirty;
 
@@ -81,6 +94,8 @@ private:
   char _toast_msg[28];
   uint32_t _toast_until;
   bool _toast_pending;
+
+  InputState _input_state;
 };
 
 }  // namespace mishmesh

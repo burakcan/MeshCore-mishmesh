@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <mishmesh/core/AppletStorage.h>
 #include <mishmesh/core/InputEvent.h>
 
 namespace mishmesh {
@@ -61,6 +62,14 @@ struct AppletContext {
   ContactsService* contacts = nullptr;   // [new] contacts/mesh seam
   // [mishmesh]
   struct MessagesService* messages = nullptr;
+  const InputState* inputState = nullptr;   // host-owned; updated once per loop
+  AppletStorage* storage = nullptr;   // generic key->blob persistence (may be null)
+  // Live held-button snapshot for real-time applets. Safe before the host wires
+  // it up: returns an all-released state.
+  const InputState& input() const {
+    static const InputState kEmpty;
+    return inputState ? *inputState : kEmpty;
+  }
   // [/mishmesh]
 };
 
@@ -88,6 +97,11 @@ public:
   // Default false: most screens must NOT repeat Back, or one hold would pop
   // through several of them. A text editor overrides this to delete on hold.
   virtual bool wantsBackRepeat() const { return false; }
+
+  // Opt into real-time "game mode": while this applet is foreground the host
+  // calls onRender every main-loop pass (no dirty/delay gating) and the returned
+  // delay is ignored. Default false: normal applets stay dirty/event-driven.
+  virtual bool wantsExclusive() const { return false; }
 };
 
 }  // namespace mishmesh

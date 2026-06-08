@@ -2,6 +2,7 @@
 
 #include <helpers/ui/DisplayDriver.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Records draw calls so tests can assert on clipped/translated geometry.
@@ -16,6 +17,11 @@ public:
   Color lastColor = DARK;
   int cursorX = 0, cursorY = 0;
   std::vector<std::string> prints;
+  std::vector<std::pair<int,int>> litPixels;   // (x,y) of 1x1 fills emitted by blit
+  bool hasLit(int x, int y) const {
+    for (auto& p : litPixels) if (p.first == x && p.second == y) return true;
+    return false;
+  }
 
   FakeDisplayDriver(int w = 128, int h = 64) : DisplayDriver(w, h) {}
 
@@ -29,7 +35,10 @@ public:
   void setColor(Color c) override { lastColor = c; }
   void setCursor(int x, int y) override { cursorX = x; cursorY = y; }
   void print(const char* str) override { prints.push_back(str ? str : ""); }
-  void fillRect(int x, int y, int w, int h) override { fills.push_back({x, y, w, h}); }
+  void fillRect(int x, int y, int w, int h) override {
+    fills.push_back({x, y, w, h});
+    if (w == 1 && h == 1 && lastColor != DARK) litPixels.push_back({x, y});
+  }
   void drawRect(int x, int y, int w, int h) override { rects.push_back({x, y, w, h}); }
   void drawXbm(int, int, const uint8_t*, int, int) override {}
   uint16_t getTextWidth(const char* str) override { return str ? (uint16_t)(6 * __builtin_strlen(str)) : 0; }

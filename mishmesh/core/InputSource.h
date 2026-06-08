@@ -14,6 +14,11 @@ struct InputSource {
   // wantsBackRepeat() preference. Sources that can auto-repeat a held button
   // honor it (e.g. the Back button); others ignore it.
   virtual void setHoldRepeat(bool /*enabled*/) {}
+
+  // Bitmask (see maskBit) of semantic buttons this source currently reports as
+  // held. Default 0: sources that only emit discrete events (and test fakes)
+  // need not implement it. Read after the host has drained poll() this loop.
+  virtual uint16_t heldMask() const { return 0; }
 };
 
 }  // namespace mishmesh

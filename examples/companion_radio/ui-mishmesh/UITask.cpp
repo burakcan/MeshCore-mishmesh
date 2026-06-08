@@ -105,6 +105,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   ctx.contacts = this;
   // [mishmesh]
   ctx.messages = &_msgSvc;
+  _theStorage.ds = the_mesh.getStore();
+  ctx.storage = &_theStorage;
   // [/mishmesh]
   _host = new mishmesh::AppletHost(_display, ctx);
 
@@ -582,6 +584,49 @@ bool UITask::MsgSvc::publicChannelJoined() const {
   }
 #endif
   return false;
+}
+
+// --- MishmeshStorage: filesystem key->blob persistence for applets ---
+// Files live under /mm/<key> on the secondary FS (fallback primary), capped at 128 B.
+
+static void mmPath(char* buf, size_t size, const char* key) {
+  snprintf(buf, size, "/mm/%s", key);
+}
+
+uint8_t UITask::MishmeshStorage::load(const char* key, uint8_t* dst, uint8_t cap) {
+  if (!ds || !key || !dst || cap == 0) return 0;
+  FILESYSTEM* fs = ds->getSecondaryFS() ? ds->getSecondaryFS() : ds->getPrimaryFS();
+  if (!fs) return 0;
+  char path[40];
+  mmPath(path, sizeof(path), key);
+  File f = ds->openRead(fs, path);
+  if (!f) return 0;
+  uint8_t toRead = cap < 128 ? cap : 128;
+  uint8_t n = (uint8_t)f.read(dst, toRead);
+  f.close();
+  return n;
+}
+
+bool UITask::MishmeshStorage::save(const char* key, const uint8_t* src, uint8_t len) {
+  if (!ds || !key || !src || len == 0) return false;
+  FILESYSTEM* fs = ds->getSecondaryFS() ? ds->getSecondaryFS() : ds->getPrimaryFS();
+  if (!fs) return false;
+  fs->mkdir("/mm");
+  char path[40];
+  mmPath(path, sizeof(path), key);
+#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  fs->remove(path);
+  File f = fs->open(path, FILE_O_WRITE);
+#elif defined(RP2040_PLATFORM)
+  File f = fs->open(path, "w");
+#else
+  File f = fs->open(path, "w", true);
+#endif
+  if (!f) return false;
+  uint8_t toWrite = len < 128 ? len : 128;
+  size_t w = f.write(src, toWrite);
+  f.close();
+  return w == (size_t)toWrite;
 }
 
 // [/mishmesh]

@@ -260,6 +260,21 @@ TEST(AppletHost, InputWhileOnIsDeliveredAndExtendsTimer) {
 // poll of a loop() and only reports on the second - emulating a press that lands while
 // the frame is being composed. It must still be delivered within the same loop(),
 // which only happens if the host polls again after rendering.
+class ExclusiveApplet : public Applet {
+public:
+  int rendered = 0;
+  explicit ExclusiveApplet(const char* n) : Applet(n) {}
+  bool wantsExclusive() const override { return true; }
+  int onRender(Canvas&) override { rendered++; return 10000; }   // big delay; must be ignored
+};
+
+class HeldSource : public InputSource {
+public:
+  uint16_t mask = 0;
+  bool poll(InputReport&) override { return false; }   // no discrete events
+  uint16_t heldMask() const override { return mask; }
+};
+
 class SecondPollSource : public InputSource {
 public:
   int polls = 0;
@@ -285,6 +300,86 @@ TEST(AppletHost, InputIsPolledAgainAfterRender) {
   // Delivered in the post-render poll of this same loop(), not deferred to the next.
   EXPECT_EQ(InputEvent::Select, root.lastInput);
   EXPECT_GE(src.polls, 2);
+}
+
+TEST(InputState, IsDownReflectsHeldBits) {
+  InputState s;
+  EXPECT_FALSE(s.isDown(InputEvent::NavLeft));
+  s.held = maskBit(InputEvent::NavLeft) | maskBit(InputEvent::NavRight);
+  EXPECT_TRUE(s.isDown(InputEvent::NavLeft));
+  EXPECT_TRUE(s.isDown(InputEvent::NavRight));
+  EXPECT_FALSE(s.isDown(InputEvent::NavUp));
+  EXPECT_FALSE(s.isDown(InputEvent::Select));
+}
+
+TEST(AppletHost, AggregatesHeldMaskFromSources) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setRoot(&root);
+
+  HeldSource a, b;
+  host.addSource(&a);
+  host.addSource(&b);
+  a.mask = maskBit(InputEvent::NavLeft);
+  b.mask = maskBit(InputEvent::Select);
+
+  host.loop(0);
+  const InputState& in = host.ctxInput();   // test accessor, see Step 4
+  EXPECT_TRUE(in.isDown(InputEvent::NavLeft));
+  EXPECT_TRUE(in.isDown(InputEvent::Select));
+  EXPECT_FALSE(in.isDown(InputEvent::NavRight));
+
+  a.mask = 0; b.mask = 0;
+  host.loop(10);
+  EXPECT_FALSE(host.ctxInput().isDown(InputEvent::NavLeft));
+}
+
+TEST(AppletHost, ExclusiveAppletRendersEveryPassIgnoringDelay) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  ExclusiveApplet game("game");
+  host.setRoot(&game);
+
+  // Despite returning a 10s delay, it must render on each loop pass.
+  host.loop(0);
+  host.loop(1);
+  host.loop(2);
+  EXPECT_EQ(3, game.rendered);
+}
+
+TEST(AppletHost, NonExclusiveAppletStillRespectsDelay) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  root.renderDelay = 1000;
+  host.setRoot(&root);
+
+  host.loop(0);          // first render (forced)
+  int after_first = root.rendered;
+  host.loop(1);          // within the 1000ms delay window: must NOT re-render
+  EXPECT_EQ(after_first, root.rendered);
+}
+
+TEST(AppletHost, ExclusiveFlushIsRateCappedButRenderIsNot) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  ExclusiveApplet game("game");
+  host.setRoot(&game);
+
+  // Drive 0..48ms at 1ms steps: 49 passes.
+  for (uint32_t t = 0; t <= 48; t++) host.loop(t);
+
+  // onRender (and startFrame) every pass.
+  EXPECT_EQ(49, game.rendered);
+  int startFrames = 0;
+  for (const auto& c : d.calls) if (c == "startFrame") startFrames++;
+  EXPECT_EQ(49, startFrames);
+
+  // endFrame capped at 60fps (>=16ms apart): flushes at t=0,16,32,48 -> 4.
+  int endFrames = 0;
+  for (const auto& c : d.calls) if (c == "endFrame") endFrames++;
+  EXPECT_EQ(4, endFrames);
 }
 
 int main(int argc, char** argv) {

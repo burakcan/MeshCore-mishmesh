@@ -27,6 +27,23 @@ public:
   virtual void fillRect(int x, int y, int w, int h) = 0;
   virtual void drawRect(int x, int y, int w, int h) = 0;
   virtual void drawXbm(int x, int y, const uint8_t* bits, int w, int h) = 0;
+  // Blit a full-screen column-major 1bpp buffer (8 vertical px/byte, LSB = top pixel) to
+  // the panel at device origin. Portable default: per-pixel via fillRect; mono drivers
+  // override with a fast buffer copy. Each column uses h/8 bytes; h must be a multiple of 8.
+  virtual void blitColumnMajor1bpp(const uint8_t* buf, int w, int h) {
+    int pages = h / 8;
+    for (int x = 0; x < w; x++) {
+      for (int p = 0; p < pages; p++) {
+        uint8_t bits = buf[x * pages + p];
+        for (int bit = 0; bit < 8; bit++) {
+          if (bits & (1 << bit)) {   // only lit pixels are drawn (background already cleared)
+            setColor(LIGHT);
+            fillRect(x, p * 8 + bit, 1, 1);
+          }
+        }
+      }
+    }
+  }
   virtual uint16_t getTextWidth(const char* str) = 0;
   virtual void drawTextCentered(int mid_x, int y, const char* str) {   // helper method (override to optimise)
     int w = getTextWidth(str);

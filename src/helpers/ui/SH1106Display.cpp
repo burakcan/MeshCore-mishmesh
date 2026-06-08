@@ -96,6 +96,29 @@ void SH1106Display::endFrame()
   // is polled. Animations still flush - only genuinely identical frames are skipped.
   uint8_t* buf = display.getBuffer();
   if (buf != nullptr && _shadowValid && memcmp(buf, _shadow, FB_SIZE) == 0) return;
+  // Bump I2C only around the blocking pixel push, then restore. The RTC shares this
+  // Wire bus (target.cpp), so it must never run at fast-mode-plus; the bracket
+  // confines the fast clock to the framebuffer transfer. Halves the flush.
+#ifdef MISHMESH_FAST_FLUSH_HZ
+  Wire.setClock(MISHMESH_FAST_FLUSH_HZ);
+#endif
   display.display();
+#ifdef MISHMESH_FAST_FLUSH_HZ
+  Wire.setClock(MISHMESH_NORMAL_I2C_HZ);
+#endif
   if (buf != nullptr) { memcpy(_shadow, buf, FB_SIZE); _shadowValid = true; }
+  // [/mishmesh]
 }
+
+// [mishmesh] Fast full-screen 1bpp blit: the Adafruit SH1106 buffer is the same
+// column-major page format as the source, so copy 1KB directly instead of per-pixel.
+void SH1106Display::blitColumnMajor1bpp(const uint8_t* buf, int w, int h) {
+  if (buf == nullptr) return;
+  uint8_t* dst = display.getBuffer();
+  if (dst == nullptr || w != width() || h != height()) {
+    DisplayDriver::blitColumnMajor1bpp(buf, w, h);   // portable fallback on mismatch
+    return;
+  }
+  memcpy(dst, buf, (size_t)(w * h) / 8);
+}
+// [/mishmesh]

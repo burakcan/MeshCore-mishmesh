@@ -17,6 +17,7 @@
 #include <mishmesh/applets/AppMenuApplet.h>
 // [mishmesh]
 #include <mishmesh/core/MessagesService.h>
+#include <mishmesh/core/AppletStorage.h>
 // [/mishmesh]
 
 class UITask : public AbstractUITask, public mishmesh::AppServices, public mishmesh::ContactsService {
@@ -73,6 +74,14 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     mishmesh::ChanResult setSecret(const char* name, const uint8_t secret16[16]);
     static const uint8_t* publicPsk();                             // 16 bytes
   } _msgSvc;
+
+  // Filesystem-backed AppletStorage: one small file per key under /mm/ on the
+  // secondary FS (fallback primary). Capped at 128 bytes per key.
+  struct MishmeshStorage : public mishmesh::AppletStorage {
+    DataStore* ds = nullptr;
+    uint8_t load(const char* key, uint8_t* dst, uint8_t cap) override;
+    bool    save(const char* key, const uint8_t* src, uint8_t len) override;
+  } _theStorage;
   // [/mishmesh]
 
 #ifdef UI_HAS_JOYSTICK

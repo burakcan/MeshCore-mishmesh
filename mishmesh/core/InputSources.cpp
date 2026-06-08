@@ -92,4 +92,26 @@ bool DirectionalSource::poll(InputReport& out) {
   return false;
 }
 
+uint16_t ButtonGestureSource::heldMask() const {
+  // Report held only when debounced-down and not suppressed (a press carried
+  // across a foreground change is ignored until released). Click maps to Back.
+  if (!_wasPressed || _suppress || _map.click == InputEvent::None) return 0;
+  return maskBit(_map.click);
+}
+
+uint16_t DirectionalSource::heldMask() const {
+  // The 4 directions carry debounced live state in _wasPressed[0..3]
+  // (up,down,left,right). Center (Select) stays discrete - not reported here.
+  static const Direction dirs[4] = {
+    Direction::Up, Direction::Down, Direction::Left, Direction::Right
+  };
+  uint16_t mask = 0;
+  for (int i = 0; i < 4; i++) {
+    if (!_wasPressed[i]) continue;
+    InputEvent ev = mapDirection(_map, dirs[i]);
+    if (ev != InputEvent::None) mask |= maskBit(ev);
+  }
+  return mask;
+}
+
 }  // namespace mishmesh

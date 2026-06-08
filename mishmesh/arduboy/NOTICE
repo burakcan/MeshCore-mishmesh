@@ -1,0 +1,61 @@
+mishmesh/arduboy — Arduboy2 vendoring NOTICE
+============================================
+
+This directory vendors the Arduboy2 library to run real Arduboy games on the
+mishmesh on-device UI (nRF52840 / Wio Tracker L1).
+
+Arduboy2
+--------
+  Upstream:  https://github.com/MLXXXp/Arduboy2  (branch: master)
+  Authors:   Scott Allen (MLXXXp) and contributors. Arduboy2 is derived from the
+             original Arduboy library by Kevin Bates / the Arduboy team, with
+             additional contributions from many community members (see the
+             upstream repository's commit history and source headers).
+
+  Licenses (per-file, as marked in the original source headers):
+    - BSD 3-Clause License
+    - BSD 2-Clause License
+    - MIT License
+  Every vendored file retains its original license/copyright header verbatim.
+
+What was vendored
+-----------------
+  Only the contents of the upstream `src/` directory were vendored, into
+  `mishmesh/arduboy/arduboy2/`:
+
+    Arduboy2.cpp        Arduboy2.h
+    Arduboy2Audio.cpp   Arduboy2Audio.h
+    Arduboy2Beep.cpp    Arduboy2Beep.h
+    Arduboy2Core.cpp    Arduboy2Core.h     (REPLACED — see below)
+    Arduboy2Data.cpp
+    Sprites.cpp         Sprites.h
+    SpritesB.cpp        SpritesB.h
+    SpritesCommon.h
+
+  The upstream `examples/` sketches were NOT vendored (they carry different
+  licenses, e.g. LGPL/CC0, and are not needed).
+
+mishmesh modifications
+----------------------
+  - `arduboy2/Arduboy2Core.{h,cpp}` were REPLACED in place with a mishmesh-
+    authored hardware backend (same class/namespace/method signatures). It
+    forwards rendering to a mishmesh::Canvas and reads buttons from a latch the
+    runtime sets; all AVR-specific SPI/OLED/RGB/timer/USB code is a no-op. These
+    two files are mishmesh-authored, not Arduboy2 source.
+
+  - A small number of minimal, marked (`// [mishmesh]`) edits neutralize AVR-only
+    code so the remaining vendored files compile on nRF52 (ARM). These are the
+    only edits to otherwise-verbatim vendored files; each is documented in the
+    Task 5 report. They consist of:
+      * Two `#include <EEPROM.h>` sites repointed to `<ArduboyEeprom.h>` (a
+        mishmesh EEPROM-compat shim; renamed to avoid a case-insensitive-
+        filesystem clash with the Task 4 `Eeprom.h`).
+      * AVR inline-asm blocks (Arduboy2.cpp drawPixel/fillScreen, Sprites.cpp
+        SPRITE_PLUS_MASK) guarded with `#ifdef __AVR__` and given portable C
+        fallbacks (drawPixel/fillScreen use the library's own documented C
+        equivalents).
+      * AVR speaker-register / timer code in Arduboy2Audio.cpp and
+        Arduboy2Beep.cpp guarded so audio compiles but is inert on non-AVR.
+
+  The EEPROM-compat shim (`ArduboyEeprom.{h,cpp}`) and the RAM EEPROM image
+  (`Eeprom.{h,cpp}`) are mishmesh-authored and not part of Arduboy2.

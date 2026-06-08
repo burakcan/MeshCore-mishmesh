@@ -177,4 +177,8 @@ void Canvas::fillStipple(int x, int y, int w, int h, DisplayDriver::Color c) {
       _d->fillRect(_ox + x + i, _oy + y + j, 1, 1);
 }
 
+void Canvas::blit1bpp(const uint8_t* buf, int w, int h) {
+  if (_d != nullptr) _d->blitColumnMajor1bpp(buf, w, h);
+}
+
 }  // namespace mishmesh

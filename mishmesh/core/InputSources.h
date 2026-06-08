@@ -42,6 +42,7 @@ public:
     if (_wasPressed) _suppress = true;
   }
   bool poll(InputReport& out) override;
+  uint16_t heldMask() const override;
 };
 
 // A 5-way joystick / D-pad. Each direction fires on the press edge; holding Up
@@ -72,6 +73,7 @@ public:
     _up.begin(); _down.begin(); _left.begin(); _right.begin(); _press.begin();
   }
   bool poll(InputReport& out) override;
+  uint16_t heldMask() const override;
 };
 
 }  // namespace mishmesh

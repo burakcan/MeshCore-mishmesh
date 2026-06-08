@@ -24,4 +24,18 @@ struct InputReport {
   bool       repeat = false; // true when emitted by auto-repeat (held button), not a fresh press
 };
 
+// Bit position for a semantic button in an InputState mask.
+static inline uint16_t maskBit(InputEvent e) {
+  return (uint16_t)(1u << (uint8_t)e);
+}
+
+// Snapshot of which semantic buttons are currently held (debounced). The host
+// rebuilds this once per loop from every InputSource::heldMask(); a real-time
+// (game) applet polls it via AppletContext::input() instead of waiting for the
+// discrete event stream. Discrete events still fire for edges/Back.
+struct InputState {
+  uint16_t held = 0;
+  bool isDown(InputEvent t) const { return (held & maskBit(t)) != 0; }
+};
+
 }  // namespace mishmesh
