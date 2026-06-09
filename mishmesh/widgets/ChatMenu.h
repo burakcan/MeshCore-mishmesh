@@ -6,21 +6,32 @@
 
 namespace mishmesh {
 
-// Shared chat-level action menu (Clear chat / Mark unread / Delete chat). Used
-// both inline (thread Settings tab) and as an overlay (chat-list long-press), so
-// the item list and the action logic live in exactly one place. The caller owns
-// placement and what to do with the Result (switch tab / pop / refresh).
+// Shared chat-level action menu (Region / Clear chat / Mark unread / Delete chat).
+// Used both inline (thread Settings tab) and as an overlay (chat-list long-press),
+// so the item list and the action logic live in exactly one place. The caller owns
+// placement and what to do with the Result (open region editor / switch tab / pop /
+// refresh).
 //
 // The destructive actions (Clear / Delete) route through an embedded confirm
 // dialog so both call sites get the same guard for free. Flow per Select:
-//   activate() -> Mark unread runs now (Result), Clear/Delete arm the dialog
-//   (confirming()==true). While confirming, feed input to onInput() and poll
-//   takeResult() — it yields the completed Result once the user confirms.
+//   activate() -> Region returns EditRegion (caller opens the keypad), Mark unread
+//   runs now (Result), Clear/Delete arm the dialog (confirming()==true). While
+//   confirming, feed input to onInput() and poll takeResult() — it yields the
+//   completed Result once the user confirms.
+//
+// The Region row's value is supplied by the caller (it owns the per-chat region
+// lookup) via setRegion(); the widget itself just displays it.
 class ChatMenu {
 public:
-  enum class Result { None, Cleared, Deleted };
+  enum class Result { None, Cleared, Deleted, EditRegion };
 
+  ChatMenu() { _model.region = _region; }   // point the model at our buffer once
   void setTarget(const ConvoKey& k) { _key = k; }
+  // Shows `name` in the Region row's value column, or "None" when empty/null.
+  void setRegion(const char* name) {
+    if (name && name[0]) { strncpy(_region, name, sizeof(_region) - 1); _region[sizeof(_region) - 1] = 0; }
+    else strcpy(_region, "None");
+  }
   void reset() {
     _menu.setModel(&_model); _menu.setRowHeight(ROW_H); _menu.resetSelection();
     _confirming = false; _confirm.reset(); _pending = Result::None; _toast = nullptr;
@@ -61,13 +72,17 @@ private:
   bool _confirming = false;
   Result _pending = Result::None;    // latched until takeResult()
   const char* _toast = nullptr;
+  char _region[32] = "None";         // region row value (caller-supplied via setRegion)
   struct Model : ListModel {
-    int count() const override { return 3; }
+    const char* region = "None";     // points at the owner's _region buffer
+    int count() const override { return 4; }
     const char* label(int i) const override {
-      if (i == 0) return "Clear chat";
-      if (i == 1) return "Mark unread";
+      if (i == 0) return "Region";
+      if (i == 1) return "Clear chat";
+      if (i == 2) return "Mark unread";
       return "Delete chat";
     }
+    const char* value(int i) const override { return i == 0 ? region : nullptr; }
   } _model;
 };
 

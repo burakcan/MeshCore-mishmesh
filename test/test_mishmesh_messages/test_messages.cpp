@@ -91,6 +91,7 @@ TEST(MessagesApplet, LongPressDeletesChatFromList) {
   EXPECT_EQ(2, mishmesh::messagesApplet().visibleRowCountForTest());
   host.dispatch(mishmesh::InputEvent::SelectLong);   // open overlay on selected row
   EXPECT_TRUE(mishmesh::messagesApplet().menuOpenForTest());
+  host.dispatch(mishmesh::InputEvent::NavDown);       // Region -> Clear chat
   host.dispatch(mishmesh::InputEvent::NavDown);       // -> Mark unread
   host.dispatch(mishmesh::InputEvent::NavDown);       // -> Delete chat
   host.dispatch(mishmesh::InputEvent::Select);        // arm the confirm dialog
@@ -101,6 +102,23 @@ TEST(MessagesApplet, LongPressDeletesChatFromList) {
   EXPECT_FALSE(mishmesh::messagesApplet().menuOpenForTest());
   EXPECT_EQ(1, svc.convoCount());
   EXPECT_EQ(1, mishmesh::messagesApplet().visibleRowCountForTest());
+}
+
+// Selecting the Region row launches the keypad editor over the still-open overlay.
+TEST(MessagesApplet, LongPressRegionOpensEditor) {
+  FakeMessagesService svc;
+  svc.store.appendInbound(mishmesh::directKey((const uint8_t*)"ALICE!"), "a", 1, 1, 1, 0, nullptr, 0);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  host.loop(0);
+  int d0 = host.depth();
+  host.dispatch(mishmesh::InputEvent::SelectLong);   // open overlay (Region row selected)
+  EXPECT_TRUE(mishmesh::messagesApplet().menuOpenForTest());
+  host.dispatch(mishmesh::InputEvent::Select);       // Region -> launch keypad editor
+  EXPECT_EQ(d0 + 1, host.depth());                   // keypad pushed on top
+  EXPECT_TRUE(mishmesh::messagesApplet().menuOpenForTest());   // overlay stays open underneath
 }
 
 // Back closes the overlay without acting.
@@ -186,7 +204,8 @@ TEST(MessageThread, SettingsTabClearKeepsThread) {
   int d0 = host.depth();
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> Settings tab
   EXPECT_EQ(1, mishmesh::messageThreadApplet().selectedTabForTest());
-  host.dispatch(mishmesh::InputEvent::Select);     // "Clear chat" (first item) -> confirm dialog
+  host.dispatch(mishmesh::InputEvent::NavDown);    // Region -> "Clear chat"
+  host.dispatch(mishmesh::InputEvent::Select);     // "Clear chat" -> confirm dialog
   EXPECT_EQ(2, svc.messageCount(k));               // not emptied yet
   EXPECT_EQ(1, mishmesh::messageThreadApplet().selectedTabForTest());  // still on Settings tab
   host.dispatch(mishmesh::InputEvent::NavRight);   // Cancel -> Confirm
@@ -210,6 +229,7 @@ TEST(MessageThread, SettingsTabDeletePopsToList) {
   host.push(&mishmesh::messageThreadApplet());
   int d0 = host.depth();
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> Settings tab
+  host.dispatch(mishmesh::InputEvent::NavDown);    // Region -> Clear chat
   host.dispatch(mishmesh::InputEvent::NavDown);    // -> Mark unread
   host.dispatch(mishmesh::InputEvent::NavDown);    // -> Delete chat
   host.dispatch(mishmesh::InputEvent::Select);     // arm the confirm dialog

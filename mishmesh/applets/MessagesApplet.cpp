@@ -1,6 +1,7 @@
 #include "MessagesApplet.h"
 #include "MessageThreadApplet.h"
 #include <mishmesh/applets/ContactsApplet.h>
+#include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/widgets/Modal.h>
@@ -134,6 +135,7 @@ bool MessagesApplet::onInput(InputEvent ev) {
     if (ev == InputEvent::Select) {
       const char* toast = nullptr;
       ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete arm confirm
+      if (r == ChatMenu::Result::EditRegion) { openRegionEditor(); return true; }   // keypad over the menu
       if (_host && toast) _host->postToast(toast);
       if (r != ChatMenu::Result::None) syncList();   // chat cleared/removed -> refresh rows
       if (!_chatMenu.confirming()) _menuOpen = false;   // non-destructive (or none) closes the overlay
@@ -175,8 +177,10 @@ bool MessagesApplet::onInput(InputEvent ev) {
   if (ev == InputEvent::SelectLong && _tab == 0) {
     ConvoView v;
     if (_svc && _svc->getConvo(_list.selected(), v)) {
+      _menuKey = v.key;
       _chatMenu.setTarget(v.key);
       _chatMenu.reset();
+      refreshRegion();
       _menuOpen = true;
     }
     return true;
@@ -230,6 +234,27 @@ void MessagesApplet::openJoinHashtag() {
   FormApplet::Field f[1] = { { "Hashtag", _chName, sizeof(_chName), nullptr, "Hashtag required" } };
   formApplet().configure("Join hashtag", f, 1, &MessagesApplet::submitJoinHashtag, this, "Join");
   if (_host) _host->push(&formApplet());
+}
+
+void MessagesApplet::refreshRegion() {
+  _regionBuf[0] = 0;
+  if (_svc) _svc->region(_menuKey, _regionBuf, sizeof(_regionBuf));
+  _chatMenu.setRegion(_regionBuf);   // shows "None" when empty
+}
+
+void MessagesApplet::openRegionEditor() {
+  _regionBuf[0] = 0;
+  if (_svc) _svc->region(_menuKey, _regionBuf, sizeof(_regionBuf));   // seed with current
+  keypadApplet().configure(_regionBuf, sizeof(_regionBuf) - 1, "Region",
+                           &MessagesApplet::onRegionDone, this);
+  if (_host) _host->push(&keypadApplet());
+}
+
+void MessagesApplet::onRegionDone(void* ctx, const char* text) {
+  auto* a = static_cast<MessagesApplet*>(ctx);
+  if (!a->_svc) return;
+  a->_svc->setRegion(a->_menuKey, text);   // empty -> clears to "None"
+  a->refreshRegion();
 }
 
 bool MessagesApplet::submitCreatePrivate(void* ctx) {

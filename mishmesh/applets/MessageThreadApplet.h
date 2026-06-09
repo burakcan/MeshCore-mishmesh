@@ -36,6 +36,9 @@ private:
   void drawActionBar(Canvas& bar);   // two stacked Write/Quick buttons, focus per _barRow
   void startCompose(const char* seed = nullptr);
   static void onComposeDone(void* ctx, const char* text);
+  void openRegionEditor();                          // keypad for the chat's region
+  void refreshRegion();                             // pull current region into the menu
+  static void onRegionDone(void* ctx, const char* text);
 
   AppletHost*      _host = nullptr;
   MessagesService* _svc = nullptr;
@@ -74,6 +77,7 @@ private:
   bool      _composeOnOpen = false;   // one-shot: focus the Write button on next onStart
   Button    _btn;             // reused to draw each stacked action button in turn
   char _composeBuf[KeypadApplet::KP_MAX + 1];   // backs keypad text during compose
+  char _regionBuf[31];                          // backs keypad text while editing region
 };
 
 MessageThreadApplet& messageThreadApplet();

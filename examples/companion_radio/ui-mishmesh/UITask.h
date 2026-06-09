@@ -47,6 +47,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
 
   struct MsgSvc : public mishmesh::MessagesService {
     mishmesh::MessageStore* store = nullptr;
+    mishmesh::AppletStorage* storage = nullptr;   // per-chat region persistence
 
     const char* nameFor(const mishmesh::ConvoKey& k) const;
     int  convoCount() const override;
@@ -65,6 +66,8 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     void markUnread(const mishmesh::ConvoKey& k) override;
     uint32_t seq() const override;
     bool sendText(const mishmesh::ConvoKey& k, const char* text) override;
+    int  region(const mishmesh::ConvoKey& k, char* dst, int cap) const override;
+    void setRegion(const mishmesh::ConvoKey& k, const char* name) override;
     mishmesh::ChanResult createPrivateChannel(const char* name) override;
     mishmesh::ChanResult joinPrivateChannel(const char* name, const char* keyHex) override;
     mishmesh::ChanResult joinPublicChannel() override;

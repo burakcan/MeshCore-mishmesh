@@ -28,6 +28,9 @@ private:
   void openCreatePrivate();
   void openJoinPrivate();
   void openJoinHashtag();
+  void openRegionEditor();                          // keypad for the long-pressed chat's region
+  void refreshRegion();                             // pull current region into the menu
+  static void onRegionDone(void* ctx, const char* text);
   bool applyResult(ChanResult res, const char* okToast);   // true => pop form
   static bool isHexKey(const char* s);
   static bool submitCreatePrivate(void* ctx);
@@ -44,6 +47,8 @@ private:
   TabBar           _tabs;
   ListMenu         _list;
   ChatMenu         _chatMenu;            // long-press chat-action overlay
+  ConvoKey         _menuKey{};           // chat the overlay/region editor targets
+  char             _regionBuf[31] = {0}; // backs keypad text while editing region
   bool             _menuOpen = false;
   int              _tab = 0;             // 0 = Chats, 1 = New
 

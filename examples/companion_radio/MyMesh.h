@@ -156,6 +156,11 @@ public:
   DataStore* getStore() const { return _store; }
   // On-device send mirroring CMD_SEND_TXT_MSG: DM (k.type==0) or channel (k.type==1).
   bool mishmeshSendText(const mishmesh::ConvoKey& k, const char* text);
+  // Same, but applies a per-chat flood-scope override for this one send (mishmesh
+  // per-chat region): scope_key16 = 16-byte TransportKey, or null to fall back to
+  // the node default scope. Any session scope set by the companion is saved and
+  // restored around the send.
+  bool mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16);
   // Seed an (empty) chat for every joined channel (e.g. the default Public
   // channel) so it shows on a fresh device before any message arrives.
   void uiSeedChannels();
@@ -307,6 +312,7 @@ private:
   void markContactsDirty();
   mishmesh::MessageStore* _mm_store = nullptr;
   void logRx(mesh::Packet* pkt, int len, float score) override;
+  bool mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text);  // send body, scope-agnostic
   // [/mishmesh]
 
   TransportKey send_scope;

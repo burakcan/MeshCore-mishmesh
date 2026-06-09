@@ -1021,6 +1021,27 @@ bool MyMesh::uiAddDiscovery(const uint8_t* pubkey) {
 }
 
 bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text) {
+  return mishmeshSendText(k, text, nullptr);
+}
+
+bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16) {
+  // Apply the per-chat region as a one-send scope override, saving/restoring any
+  // session scope the companion app may have set via CMD_SET_FLOOD_SCOPE_KEY.
+  // A null key clears the override -> falls back to the node default scope.
+  TransportKey prev_scope = send_scope;
+  bool prev_unscoped = send_unscoped;
+  send_unscoped = false;
+  if (scope_key16) memcpy(send_scope.key, scope_key16, sizeof(send_scope.key));
+  else memset(send_scope.key, 0, sizeof(send_scope.key));
+
+  bool ok = mishmeshSendTextImpl(k, text);
+
+  send_scope = prev_scope;
+  send_unscoped = prev_unscoped;
+  return ok;
+}
+
+bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text) {
   if (!text || !text[0]) return false;
   uint16_t tlen = (uint16_t)strlen(text);
 

@@ -109,6 +109,7 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
   _tabs.setSelected(0);
   _chatMenu.setTarget(_key);
   _chatMenu.reset();
+  refreshRegion();
 
   if (_svc) _svc->setActiveConvo(_key);
 }
@@ -369,6 +370,7 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
     if (ev == InputEvent::Select) {
       const char* toast = nullptr;
       ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete arm confirm
+      if (r == ChatMenu::Result::EditRegion) { openRegionEditor(); return true; }   // keypad over the menu
       if (_host && toast) _host->postToast(toast);
       if (r == ChatMenu::Result::Deleted) { if (_host) _host->pop(); }   // chat is gone
       else if (!_chatMenu.confirming()) { _tabs.setSelected(0); _pinBottom = true; }  // non-destructive -> conversation
@@ -463,6 +465,27 @@ void MessageThreadApplet::onComposeDone(void* ctx, const char* text) {
   if (!self->_svc->sendText(self->_key, text)) {
     if (self->_host) self->_host->postToast("Send failed");
   }
+}
+
+void MessageThreadApplet::refreshRegion() {
+  _regionBuf[0] = 0;
+  if (_svc) _svc->region(_key, _regionBuf, sizeof(_regionBuf));
+  _chatMenu.setRegion(_regionBuf);   // shows "None" when empty
+}
+
+void MessageThreadApplet::openRegionEditor() {
+  _regionBuf[0] = 0;
+  if (_svc) _svc->region(_key, _regionBuf, sizeof(_regionBuf));   // seed with current
+  keypadApplet().configure(_regionBuf, sizeof(_regionBuf) - 1, "Region",
+                           &MessageThreadApplet::onRegionDone, this);
+  if (_host) _host->push(&keypadApplet());
+}
+
+void MessageThreadApplet::onRegionDone(void* ctx, const char* text) {
+  auto* self = static_cast<MessageThreadApplet*>(ctx);
+  if (!self->_svc) return;
+  self->_svc->setRegion(self->_key, text);   // empty -> clears to "None"
+  self->refreshRegion();
 }
 
 MessageThreadApplet& messageThreadApplet() {

@@ -56,6 +56,14 @@ struct MessagesService {
   // On-device send. type==0 direct (id = 6-byte pubkey prefix), type==1 channel
   // (id[0] = channel index). Returns false on failure (table full / not found).
   virtual bool sendText(const ConvoKey& k, const char* text) = 0;
+  // Per-chat region (MeshCore default flood scope, by name). Adapter-backed and
+  // applied as a per-send scope override; default no-ops so non-adapter impls
+  // (tests) stay inert. region() fills dst (NUL-terminated) and returns the name
+  // length, 0 when unset ("None"). setRegion(name=="" / null) clears it.
+  virtual int  region(const ConvoKey& k, char* dst, int cap) const {
+    (void)k; if (dst && cap > 0) dst[0] = 0; return 0;
+  }
+  virtual void setRegion(const ConvoKey& k, const char* name) { (void)k; (void)name; }
   // v1 no-ops (no on-device input)
   virtual void newMessage() {}
   virtual void newGroup() {}

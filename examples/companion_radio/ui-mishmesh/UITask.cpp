@@ -94,6 +94,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     if (ds && ds->loadMessages(_msgIoBuf, sizeof(_msgIoBuf), n)) _msgStore.deserialize(_msgIoBuf, n);
   }
   _msgSvc.store = &_msgStore;
+  _theStorage.ds = the_mesh.getStore();
+  _msgSvc.storage = &_theStorage;     // per-chat region persistence
   the_mesh.uiSetMessageStore(&_msgStore);
   // Surface joined channels (e.g. the default Public channel) as chats even
   // before any message arrives - the store is otherwise only fed on message capture.
@@ -500,8 +502,53 @@ void UITask::MsgSvc::deleteConvo(const mishmesh::ConvoKey& k) {
 void UITask::MsgSvc::markUnread(const mishmesh::ConvoKey& k) { store->markUnread(k); }
 uint32_t UITask::MsgSvc::seq() const { return store->seq(); }
 
+// Per-chat region storage key: "rgc<idx>" for channels, "rg_<12 hex>" for DMs
+// (the 6-byte pubkey prefix). Empty/absent value means "None" (node default).
+static void regionStorageKey(const mishmesh::ConvoKey& k, char* buf, size_t n) {
+  if (k.type == 1) snprintf(buf, n, "rgc%u", (unsigned)k.id[0]);
+  else snprintf(buf, n, "rg_%02x%02x%02x%02x%02x%02x",
+                k.id[0], k.id[1], k.id[2], k.id[3], k.id[4], k.id[5]);
+}
+
+int UITask::MsgSvc::region(const mishmesh::ConvoKey& k, char* dst, int cap) const {
+  if (dst && cap > 0) dst[0] = 0;
+  if (!storage || !dst || cap <= 1) return 0;
+  char key[20];
+  regionStorageKey(k, key, sizeof(key));
+  uint8_t want = (uint8_t)((cap - 1) < 30 ? (cap - 1) : 30);
+  uint8_t got = storage->load(key, (uint8_t*)dst, want);
+  dst[got] = 0;
+  return (int)strlen(dst);   // a 1-byte 0 "cleared" marker reads back as length 0
+}
+
+void UITask::MsgSvc::setRegion(const mishmesh::ConvoKey& k, const char* name) {
+  if (!storage) return;
+  char key[20];
+  regionStorageKey(k, key, sizeof(key));
+  char tmp[31];
+  int len = 0;
+  if (name) for (; name[len] && len < 30; len++) tmp[len] = name[len];
+  if (len == 0) { uint8_t zero = 0; storage->save(key, &zero, 1); return; }   // cleared marker
+  storage->save(key, (const uint8_t*)tmp, (uint8_t)len);
+}
+
+// Derives the 16-byte flood-scope key for a chat's region, matching the firmware
+// convention (sha256 of "#"+name, truncated to 16B - same as default scope and
+// hashtag channels). Returns false when the chat has no region (use node default).
+static bool resolveRegionScope(const mishmesh::MessagesService& svc,
+                               const mishmesh::ConvoKey& k, uint8_t out16[16]) {
+  char name[31];
+  if (svc.region(k, name, sizeof(name)) <= 0) return false;
+  char named[33];
+  snprintf(named, sizeof(named), "#%s", name);
+  mesh::Utils::sha256(out16, 16, (const uint8_t*)named, (int)strlen(named));
+  return true;
+}
+
 bool UITask::MsgSvc::sendText(const mishmesh::ConvoKey& k, const char* text) {
-  return the_mesh.mishmeshSendText(k, text);
+  uint8_t scope[16];
+  bool scoped = resolveRegionScope(*this, k, scope);
+  return the_mesh.mishmeshSendText(k, text, scoped ? scope : nullptr);
 }
 
 const uint8_t* UITask::MsgSvc::publicPsk() {

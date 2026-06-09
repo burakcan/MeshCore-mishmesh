@@ -3,7 +3,9 @@
 #include <mishmesh/core/MessageStore.h>
 #include <vector>
 #include <string>
+#include <map>
 #include <cstdio>
+#include <cstring>
 
 struct FakeMessagesService : mishmesh::MessagesService {
   mishmesh::MessageStore store;
@@ -65,6 +67,18 @@ struct FakeMessagesService : mishmesh::MessagesService {
   void clearConvo(const mishmesh::ConvoKey& k) override { store.clearConvo(k); }
   void deleteConvo(const mishmesh::ConvoKey& k) override { store.deleteConvo(k); }
   void markUnread(const mishmesh::ConvoKey& k) override { store.markUnread(k); }
+  std::map<std::string, std::string> regions;   // per-chat region store
+  int region(const mishmesh::ConvoKey& k, char* dst, int cap) const override {
+    if (dst && cap > 0) dst[0] = 0;
+    auto it = regions.find(keyName(k));
+    if (it == regions.end() || !dst || cap <= 1) return 0;
+    std::strncpy(dst, it->second.c_str(), cap - 1); dst[cap - 1] = 0;
+    return (int)std::strlen(dst);
+  }
+  void setRegion(const mishmesh::ConvoKey& k, const char* name) override {
+    if (name && name[0]) regions[keyName(k)] = name;
+    else regions.erase(keyName(k));
+  }
   bool sendText(const mishmesh::ConvoKey& k, const char* text) override {
     lastSent = text ? text : "";
     lastSentKey = k;
