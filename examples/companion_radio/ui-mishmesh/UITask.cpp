@@ -156,13 +156,20 @@ void UITask::notify(UIEventType /*t*/) {
 }
 
 void UITask::loop() {
-  // [mishmesh] debounced message-store persistence
+  // [mishmesh] debounced message-store persistence. Each change pushes the quiet
+  // window out, but _msgDirtySince caps total deferral so a continuously-active
+  // convo can't starve the write forever (which would lose mark-as-read across a
+  // restart). Flush on whichever fires first.
+  static const uint32_t MSG_FLUSH_DEBOUNCE_MS = 8000;   // quiet period before writing
+  static const uint32_t MSG_FLUSH_MAX_DEFER_MS = 15000;  // hard cap on deferral under load
   if (_msgStore.seq() != _msgDirtySeq) {
     _msgDirtySeq = _msgStore.seq();
-    _msgFlushAt  = millis() + 8000;
+    _msgFlushAt  = millis() + MSG_FLUSH_DEBOUNCE_MS;
+    if (_msgDirtySince == 0) _msgDirtySince = millis();   // start the cap on first dirty
   }
-  if (_msgFlushAt && millis() >= _msgFlushAt) {
-    _msgFlushAt = 0;
+  bool capHit = _msgDirtySince && (millis() - _msgDirtySince >= MSG_FLUSH_MAX_DEFER_MS);
+  if ((_msgFlushAt && millis() >= _msgFlushAt) || capHit) {
+    _msgFlushAt = 0; _msgDirtySince = 0;
     DataStore* ds = the_mesh.getStore();
     if (ds) {
       size_t n = _msgStore.serialize(_msgIoBuf, sizeof(_msgIoBuf));
@@ -235,6 +242,11 @@ bool UITask::getFavourite(int index, mishmesh::ContactView& out) const {
 
 bool UITask::setFavourite(const uint8_t* pk, bool fav) { return the_mesh.uiSetFavourite(pk, fav); }
 bool UITask::renameContact(const uint8_t* pk, const char* name) { return the_mesh.uiRenameContact(pk, name); }
+// mishmesh TelemetryPerm bits == firmware TELEM_PERM_* values, so pass straight through.
+uint8_t UITask::getTelemetryPerms(const uint8_t* pk) const { return the_mesh.uiGetTelemetryPerms(pk); }
+bool UITask::setTelemetryPerm(const uint8_t* pk, uint8_t mask, bool on) { return the_mesh.uiSetTelemetryPerm(pk, mask, on); }
+bool UITask::getPath(const uint8_t* pk, uint8_t* out, uint8_t& len) const { return the_mesh.uiGetPath(pk, out, len); }
+bool UITask::setPath(const uint8_t* pk, const uint8_t* path, uint8_t len) { return the_mesh.uiSetPath(pk, path, len); }
 
 int UITask::countDiscovered() const { return the_mesh.uiDiscoveryCount(); }
 bool UITask::getDiscovered(int index, mishmesh::ContactView& out) const {

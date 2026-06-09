@@ -867,6 +867,67 @@ bool MyMesh::uiSetFavourite(const uint8_t* pubkey, bool fav) {
   return true;
 }
 
+// Per-contact telemetry permissions live in flags bits1-3 (TELEM_PERM_* << 1);
+// bit0 is the favourite flag. onContactRequest() consults these when the matching
+// global telemetry_mode_* is TELEM_MODE_ALLOW_FLAGS.
+uint8_t MyMesh::uiGetTelemetryPerms(const uint8_t* pubkey) {
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);
+  if (!c) return 0;
+  return (c->flags >> 1) & 0x07;
+}
+
+bool MyMesh::uiSetTelemetryPerm(const uint8_t* pubkey, uint8_t perm_mask, bool on) {
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);
+  if (!c) return false;
+  uint8_t bits = (uint8_t)((perm_mask & 0x07) << 1);   // shift TELEM_PERM_* into flags space
+  if (on) c->flags |= bits; else c->flags &= ~bits;
+  saveContacts();   // persist immediately, like favourite/rename
+
+  // Per-contact flags are only consulted when the matching global mode is
+  // ALLOW_FLAGS. Default is DENY, so enabling a per-contact permission would
+  // otherwise do nothing. Open the gate to flags-mode (without downgrading an
+  // existing ALLOW_ALL) so the toggle actually takes effect.
+  if (on) {
+    bool prefsChanged = false;
+    if ((perm_mask & TELEM_PERM_BASE) && _prefs.telemetry_mode_base == TELEM_MODE_DENY) {
+      _prefs.telemetry_mode_base = TELEM_MODE_ALLOW_FLAGS; prefsChanged = true;
+    }
+    if ((perm_mask & TELEM_PERM_LOCATION) && _prefs.telemetry_mode_loc == TELEM_MODE_DENY) {
+      _prefs.telemetry_mode_loc = TELEM_MODE_ALLOW_FLAGS; prefsChanged = true;
+    }
+    if ((perm_mask & TELEM_PERM_ENVIRONMENT) && _prefs.telemetry_mode_env == TELEM_MODE_DENY) {
+      _prefs.telemetry_mode_env = TELEM_MODE_ALLOW_FLAGS; prefsChanged = true;
+    }
+    if (prefsChanged) savePrefs();
+  }
+  return true;
+}
+
+// Manual routing path. out_path_len is the encoded path_len byte (top 2 bits =
+// hash size-1, low 6 bits = hop count); out_path holds hop_count*hash_size raw
+// hash bytes. Used by the on-device "Set Path" screen.
+bool MyMesh::uiGetPath(const uint8_t* pubkey, uint8_t* out_path, uint8_t& out_path_len) {
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);
+  if (!c || c->out_path_len == OUT_PATH_UNKNOWN) return false;
+  out_path_len = c->out_path_len;
+  memcpy(out_path, c->out_path, MAX_PATH_SIZE);
+  return true;
+}
+
+bool MyMesh::uiSetPath(const uint8_t* pubkey, const uint8_t* path, uint8_t path_len) {
+  ContactInfo* c = lookupContactByPubKey(pubkey, 6);
+  if (!c) return false;
+  if ((path_len & 63) == 0) {                       // no hops -> reset to flood
+    c->out_path_len = OUT_PATH_UNKNOWN;
+  } else {
+    if (!mesh::Packet::isValidPathLen(path_len)) return false;
+    c->out_path_len = path_len;
+    mesh::Packet::writePath(c->out_path, path, path_len);   // copies hop_count*hash_size bytes
+  }
+  saveContacts();   // persist immediately, like favourite/rename
+  return true;
+}
+
 bool MyMesh::uiRenameContact(const uint8_t* pubkey, const char* name) {
   if (!name || !name[0]) return false;
   ContactInfo* c = lookupContactByPubKey(pubkey, 6);

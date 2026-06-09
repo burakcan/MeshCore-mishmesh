@@ -28,11 +28,10 @@ bool HopperApplet::onInput(InputEvent ev) {
   }
   if (ev == InputEvent::Back) {
     _runtime.saveIfDirty();
-    if (hopperInGame()) {
-      hopperReturnToTitle();  // playing -> drop to Hopper's own title screen, stay in the app
-      return true;
+    if (hopperHandleBack()) {
+      return true;   // Hopper consumed Back (unwound one level), stay in the app
     }
-    return false;  // at the title/logo -> let the host pop this applet to the mishmesh menu
+    return false;    // at Hopper's top (title menu / logo) -> let the host pop to the mishmesh menu
   }
   return false;
 }

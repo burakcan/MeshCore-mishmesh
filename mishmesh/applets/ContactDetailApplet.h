@@ -14,7 +14,7 @@ namespace mishmesh {
 
 class ContactDetailApplet : public Applet, public ListModel {
 public:
-  enum Action { View, Favourite, Telemetry, Ping, ResetPath, ClearConvo, Delete, Message, Rename, ACTION_KINDS };
+  enum Action { View, Favourite, Telemetry, Ping, ResetPath, ClearConvo, Delete, Message, Rename, Permissions, SetPath, ACTION_KINDS };
 private:
   AppletHost*      _host;
   ContactsService* _svc;

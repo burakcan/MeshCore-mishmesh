@@ -1,4 +1,6 @@
 #include <mishmesh/applets/ContactDetailApplet.h>
+#include <mishmesh/applets/ContactPermissionsApplet.h>
+#include <mishmesh/applets/SetPathApplet.h>
 #include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/ContactsService.h>
@@ -17,7 +19,7 @@ static const uint32_t TELEM_TIMEOUT_MS = 12000;
 // Favourite's label is dynamic (see label()); this slot is a placeholder.
 static const char* ACTION_LABELS[ContactDetailApplet::ACTION_KINDS] = {
   "View details", "", "Telemetry", "Ping (0 hop)", "Reset path", "Clear conversation", "Delete contact",
-  "Send message", "Rename",
+  "Send message", "Rename", "Permissions", "Set path",
 };
 
 static const char* typeName(uint8_t t) { return contactTypeName(t); }
@@ -50,7 +52,9 @@ void ContactDetailApplet::buildActions() {
   _actions[_actionCount++] = Rename;     // local display label, all contact types
   _actions[_actionCount++] = Favourite;
   _actions[_actionCount++] = Telemetry;
+  _actions[_actionCount++] = Permissions;   // who may pull telemetry from us
   if (_type == (uint8_t)ContactKind::Repeater) _actions[_actionCount++] = Ping;
+  _actions[_actionCount++] = SetPath;       // manual routing path
   _actions[_actionCount++] = ResetPath;
   // Clear conversation only makes sense for conversational contacts.
   if (_type == (uint8_t)ContactKind::Chat || _type == (uint8_t)ContactKind::Room)
@@ -270,6 +274,14 @@ bool ContactDetailApplet::onInput(InputEvent ev) {
         _pingStartMs = 0; _pingDone = false;
         _ping.setWaiting();
         _pinging = true;
+        return true;
+      case Permissions:
+        contactPermissionsApplet().setTarget(_pubkey, _displayName, _infoLine, _favourite);
+        if (_host) _host->push(&contactPermissionsApplet());
+        return true;
+      case SetPath:
+        setPathApplet().setTarget(_pubkey, _displayName, _infoLine, _favourite);
+        if (_host) _host->push(&setPathApplet());
         return true;
       case ResetPath: _svc->resetPath(_pubkey); if (_host) _host->postToast("Path reset"); return true;
       case ClearConvo:

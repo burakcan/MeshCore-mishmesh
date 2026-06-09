@@ -6,7 +6,18 @@ namespace mishmesh {
 
 enum class ContactKind : uint8_t { Chat = 1, Repeater = 2, Room = 3, Sensor = 4 };  // == ADV_TYPE_*
 
+// Per-contact telemetry permissions: which of our telemetry a contact may pull
+// when it asks. Bit values match the firmware's TELEM_PERM_* so the adapter can
+// pass them straight through. A bit is honored only when the matching global
+// telemetry mode is "allow by per-contact flags".
+enum TelemetryPerm : uint8_t {
+  TelemPermBase        = 0x01,   // allow telemetry requests at all (battery / base)
+  TelemPermLocation    = 0x02,   // include GPS location
+  TelemPermEnvironment = 0x04,   // include environment sensors
+};
+
 static const int PUBKEY_LEN = 32;   // ContactView::pubKey points to this many bytes
+static const int PATH_MAX_BYTES = 64;   // == firmware MAX_PATH_SIZE; out_path buffer size
 
 struct ContactView {
   const char*    name;        // valid until the next service call
@@ -86,7 +97,27 @@ struct ContactsService {
   virtual bool selfLocation(int32_t& lat1e6, int32_t& lon1e6) const = 0;
 
   virtual bool requestTelemetry(const uint8_t* pubKey) = 0;
+
+  // Per-contact telemetry permission bits (a TelemetryPerm mask). Non-pure so
+  // existing implementers/fakes keep compiling; defaults to "no permissions".
+  virtual uint8_t getTelemetryPerms(const uint8_t* pubKey) const { (void)pubKey; return 0; }
+  virtual bool setTelemetryPerm(const uint8_t* pubKey, uint8_t permMask, bool on) {
+    (void)pubKey; (void)permMask; (void)on; return false;
+  }
+
   virtual bool resetPath(const uint8_t* pubKey) = 0;
+
+  // Manual outbound routing path. encodedLen is the firmware out_path_len byte:
+  // top 2 bits = hashSize-1 (1..3 bytes/hop), low 6 bits = hop count. `path` holds
+  // hopCount*hashSize raw hash bytes (leading bytes of each repeater's key). A path
+  // with 0 hops resets the contact to flood. pathOut must hold PATH_MAX_BYTES.
+  // Non-pure so existing implementers/fakes keep compiling.
+  virtual bool getPath(const uint8_t* pubKey, uint8_t* pathOut, uint8_t& encodedLenOut) const {
+    (void)pubKey; (void)pathOut; (void)encodedLenOut; return false;
+  }
+  virtual bool setPath(const uint8_t* pubKey, const uint8_t* path, uint8_t encodedLen) {
+    (void)pubKey; (void)path; (void)encodedLen; return false;
+  }
   virtual bool clearConversation(const uint8_t* pubKey) = 0;
   virtual bool deleteContact(const uint8_t* pubKey) = 0;
 

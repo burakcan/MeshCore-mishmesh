@@ -10,7 +10,8 @@ class FakeContactsService : public mishmesh::ContactsService {
 public:
   struct Row { std::string name; uint8_t pubkey[mishmesh::PUBKEY_LEN]={0}; bool favourite=false; bool hasPath=true;
                uint32_t lastAdvert=0; uint32_t heardAt=0;
-               bool hasLocation=false; int32_t gpsLat=0, gpsLon=0; uint8_t type=1; };
+               bool hasLocation=false; int32_t gpsLat=0, gpsLon=0; uint8_t type=1; uint8_t telemPerms=0;
+               bool hasPathBytes=false; uint8_t pathEncoded=0; uint8_t pathBytes[mishmesh::PATH_MAX_BYTES]={0}; };
   std::vector<Row> chats, repeaters, rooms, sensors, discovered, recent;
   bool hasSelfLoc=false; int32_t selfLat=0, selfLon=0;
 
@@ -76,6 +77,45 @@ public:
     for (auto* l : {&chats, &repeaters, &rooms, &sensors})
       for (Row& r : *const_cast<std::vector<Row>*>(l))
         if (keyStr(r.pubkey) == keyStr(pk)) { r.name = name; lastRenamed = keyStr(pk); calls.push_back("rename"); return true; }
+    return false;
+  }
+  uint8_t getTelemetryPerms(const uint8_t* pk) const override {
+    for (auto* l : {&chats, &repeaters, &rooms, &sensors})
+      for (const Row& r : *l) if (keyStr(r.pubkey) == keyStr(pk)) return r.telemPerms;
+    return 0;
+  }
+  bool setTelemetryPerm(const uint8_t* pk, uint8_t mask, bool on) override {
+    for (auto* l : {&chats, &repeaters, &rooms, &sensors})
+      for (Row& r : *const_cast<std::vector<Row>*>(l))
+        if (keyStr(r.pubkey) == keyStr(pk)) {
+          if (on) r.telemPerms |= mask; else r.telemPerms &= ~mask;
+          calls.push_back("setperm");
+          return true;
+        }
+    return false;
+  }
+  std::string lastPathSet;
+  bool getPath(const uint8_t* pk, uint8_t* out, uint8_t& len) const override {
+    for (auto* l : {&chats, &repeaters, &rooms, &sensors})
+      for (const Row& r : *l) if (keyStr(r.pubkey) == keyStr(pk)) {
+        if (!r.hasPathBytes) return false;
+        len = r.pathEncoded; memcpy(out, r.pathBytes, mishmesh::PATH_MAX_BYTES); return true;
+      }
+    return false;
+  }
+  bool setPath(const uint8_t* pk, const uint8_t* path, uint8_t len) override {
+    for (auto* l : {&chats, &repeaters, &rooms, &sensors})
+      for (Row& r : *const_cast<std::vector<Row>*>(l))
+        if (keyStr(r.pubkey) == keyStr(pk)) {
+          calls.push_back("setpath"); lastPathSet = keyStr(pk);
+          uint8_t hops = len & 63;
+          if (hops == 0) { r.hasPathBytes = false; r.pathEncoded = 0; }
+          else {
+            r.hasPathBytes = true; r.pathEncoded = len;
+            memcpy(r.pathBytes, path, (size_t)hops * ((len >> 6) + 1));
+          }
+          return true;
+        }
     return false;
   }
   int countDiscovered() const override { return (int)discovered.size(); }

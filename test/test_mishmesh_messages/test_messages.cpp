@@ -758,6 +758,26 @@ TEST(MessagesApplet, JoinHashtagHappyPath) {
   EXPECT_EQ(1, host->depth());
 }
 
+// Regression: a message containing a word longer than wrapText's internal line
+// buffer (followed by more text) used to drive a negative-length memcpy and hang
+// the device on open. Rendering must complete without crashing.
+TEST(MessageThread, LongUnbrokenWordRendersWithoutHang) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  std::string text(120, 'A');     // > 80-byte line buffer
+  text += " tail";                // a trailing word triggers the candidate overflow
+  svc.store.appendInbound(k, text.c_str(), (uint16_t)text.size(), 1, 1, 0, nullptr, 0);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.loop(0);                   // layoutFocus -> blockHeight -> wrapText
+  host.loop(0);                   // a second frame also exercises the draw loop
+  SUCCEED();                      // reaching here (no crash/hang) is the assertion
+}
+
 // Frees the last openNewTab() host once the suite finishes (ASan hygiene).
 class MessagesNewTabEnv : public ::testing::Environment {
  public:

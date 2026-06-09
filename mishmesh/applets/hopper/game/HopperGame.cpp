@@ -73,16 +73,18 @@ void hopperLoopStep()
     }
 }
 
-// [mishmesh] Back-button support for the mishmesh applet (see HopperGame.h). The applet
-// drives these from onInput(); they run between gated frames, which is safe under the
-// cooperative single-threaded loop (onInput dispatches before onRender in the same pass).
-bool hopperInGame()
+// [mishmesh] Back-button support for the mishmesh applet (see HopperGame.h). Driven from
+// onInput() between gated frames, which is safe under the cooperative single-threaded loop
+// (onInput dispatches before onRender in the same pass).
+bool hopperHandleBack()
 {
-    return mode == GAME_MODE;
-}
-
-void hopperReturnToTitle()
-{
-    mode = TITLE_MODE;
-    moduleTable[TITLE_MODE].initFunc();
+    if (mode == GAME_MODE) {        // playing -> drop to Hopper's own title screen
+        mode = TITLE_MODE;
+        moduleTable[TITLE_MODE].initFunc();
+        return true;
+    }
+    if (mode == TITLE_MODE) {       // record/credit sub-screen -> menu; menu -> not consumed
+        return titleHandleBack();
+    }
+    return false;                   // logo -> exit to the mishmesh menu
 }

@@ -135,6 +135,10 @@ public:
   bool uiDeleteContact(const uint8_t* pubkey);
   bool uiClearConversation(const uint8_t* pubkey);
   bool uiSetFavourite(const uint8_t* pubkey, bool fav);   // flags bit0 = favourite
+  uint8_t uiGetTelemetryPerms(const uint8_t* pubkey);     // flags bits1-3 (TELEM_PERM_* mask)
+  bool uiSetTelemetryPerm(const uint8_t* pubkey, uint8_t perm_mask, bool on);
+  bool uiGetPath(const uint8_t* pubkey, uint8_t* out_path, uint8_t& out_path_len);   // false = flood/unknown
+  bool uiSetPath(const uint8_t* pubkey, const uint8_t* path, uint8_t path_len);      // 0 hops = reset to flood
   bool uiRenameContact(const uint8_t* pubkey, const char* name);  // local display label
   void uiPersistContacts();
 

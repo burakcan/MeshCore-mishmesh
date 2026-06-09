@@ -25,6 +25,7 @@ void drawLogo(void);
 void initTitle(void);
 bool updateTitle(void);
 void drawTitle(void);
+bool titleHandleBack(void);   // [mishmesh] sub-screen (record/credit) -> menu; true if consumed
 uint8_t setLastScore(int score, uint32_t time);
 
 void initGame(void);

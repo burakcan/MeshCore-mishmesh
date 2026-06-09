@@ -204,6 +204,19 @@ bool updateTitle(void)
     return ret;
 }
 
+// [mishmesh] Device Back button within the title: a record/credit sub-screen returns to
+// the menu (consumed, returns true); at the menu there is nowhere further to go (false, so
+// the applet exits to the mishmesh app menu).
+bool titleHandleBack(void)
+{
+    if (state != STATE_MENU) {
+        state = STATE_MENU;
+        toDraw = true;
+        return true;
+    }
+    return false;
+}
+
 void drawTitle(void)
 {
     if (toDraw) {

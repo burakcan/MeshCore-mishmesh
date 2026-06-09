@@ -40,6 +40,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   mishmesh::MessageStore _msgStore;
   uint32_t _msgDirtySeq = 0;
   uint32_t _msgFlushAt  = 0;
+  uint32_t _msgDirtySince = 0;   // when the store first went dirty; caps flush deferral
   // Shared load/save scratch — load runs once in begin(), save later in loop();
   // never concurrent, so one BSS buffer serves both (saves ~8 KB vs. two).
   static uint8_t _msgIoBuf[mishmesh::ARENA_BYTES + 2048];
@@ -138,6 +139,10 @@ public:
   bool getFavourite(int index, mishmesh::ContactView& out) const override;
   bool setFavourite(const uint8_t* pubKey, bool fav) override;
   bool renameContact(const uint8_t* pubKey, const char* name) override;
+  uint8_t getTelemetryPerms(const uint8_t* pubKey) const override;
+  bool setTelemetryPerm(const uint8_t* pubKey, uint8_t permMask, bool on) override;
+  bool getPath(const uint8_t* pubKey, uint8_t* pathOut, uint8_t& encodedLenOut) const override;
+  bool setPath(const uint8_t* pubKey, const uint8_t* path, uint8_t encodedLen) override;
   int  countDiscovered() const override;
   bool getDiscovered(int index, mishmesh::ContactView& out) const override;
   bool addDiscovered(const uint8_t* pubKey) override;

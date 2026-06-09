@@ -4,6 +4,8 @@
 #include "FakeDisplayDriver.h"
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/ContactDetailApplet.h>
+#include <mishmesh/applets/ContactPermissionsApplet.h>
+#include <mishmesh/applets/SetPathApplet.h>
 #include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/widgets/TelemetryDialog.h>
@@ -69,8 +71,8 @@ TEST(ContactDetail, DeleteConfirmCallsServiceAndPops) {
   host.dispatch(mishmesh::InputEvent::Select);
   EXPECT_EQ(2, host.depth());
 
-  // Move to "Delete contact" (row 7): Send message, View, Rename, Favourite, Telemetry, Reset path, Clear, Delete.
-  for (int i = 0; i < 7; i++) host.dispatch(mishmesh::InputEvent::NavDown);
+  // Move to "Delete contact" (row 9): Send message, View, Rename, Favourite, Telemetry, Permissions, Set path, Reset path, Clear, Delete.
+  for (int i = 0; i < 9; i++) host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::Select);     // opens confirm
   host.dispatch(mishmesh::InputEvent::NavRight);   // select Confirm
   host.dispatch(mishmesh::InputEvent::Select);     // confirm
@@ -93,9 +95,11 @@ TEST(ContactDetail, ChatHasClearConversation) {
   mishmesh::AppletHost host(&d, ctx);
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::Select);   // open Alice (chat)
-  EXPECT_EQ(8, mishmesh::contactDetailApplet().count());
+  EXPECT_EQ(10, mishmesh::contactDetailApplet().count());
   EXPECT_TRUE(detailHasAction("Clear conversation"));
   EXPECT_TRUE(detailHasAction("Add to favorites"));
+  EXPECT_TRUE(detailHasAction("Permissions"));
+  EXPECT_TRUE(detailHasAction("Set path"));
 }
 
 TEST(ContactDetail, RepeaterHasPingNotClearConversation) {
@@ -107,8 +111,8 @@ TEST(ContactDetail, RepeaterHasPingNotClearConversation) {
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::NavRight);  // -> repeaters tab
   host.dispatch(mishmesh::InputEvent::Select);    // open Rep1
-  // View, Rename, Favourite, Telemetry, Ping, Reset path, Delete (no Clear conversation)
-  EXPECT_EQ(7, mishmesh::contactDetailApplet().count());
+  // View, Rename, Favourite, Telemetry, Permissions, Ping, Set path, Reset path, Delete (no Clear conversation)
+  EXPECT_EQ(9, mishmesh::contactDetailApplet().count());
   EXPECT_FALSE(detailHasAction("Clear conversation"));
   EXPECT_TRUE(detailHasAction("Ping (0 hop)"));
   EXPECT_TRUE(detailHasAction("Delete contact"));
@@ -164,7 +168,8 @@ TEST(ContactDetail, PingOpensModalAndFires) {
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> repeaters tab
   host.dispatch(mishmesh::InputEvent::Select);     // open Rep1 detail
-  // Move to "Ping (0 hop)" (index 4: View, Rename, Favourite, Telemetry, Ping) and select it.
+  // Move to "Ping (0 hop)" (index 5: View, Rename, Favourite, Telemetry, Permissions, Ping) and select it.
+  host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
@@ -216,6 +221,134 @@ TEST(ContactDetail, FavouriteToggleAddsToFavouritesTab) {
   EXPECT_EQ(2, host.depth());
 }
 
+// ---- Contact telemetry permissions ----------------------------------------
+
+TEST(ContactPermissions, TogglesReflectAndPersistBits) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6);
+  a.telemPerms = mishmesh::TelemPermBase;   // start with base already granted
+  svc.chats.push_back(a);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+
+  auto& perms = mishmesh::contactPermissionsApplet();
+  perms.setTarget((const uint8_t*)"ALICE!", "Alice");
+  host.setRoot(&perms);
+
+  // Three toggle rows; the first ("Allow telemetry") reflects the seeded base bit.
+  ASSERT_EQ(3, perms.count());
+  EXPECT_TRUE(perms.toggleState(mishmesh::ContactPermissionsApplet::AllowRequests));
+  EXPECT_FALSE(perms.toggleState(mishmesh::ContactPermissionsApplet::IncludeLocation));
+
+  // Select the location row -> sets TelemPermLocation on the contact.
+  host.dispatch(mishmesh::InputEvent::NavDown);   // -> Include location
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_TRUE(perms.toggleState(mishmesh::ContactPermissionsApplet::IncludeLocation));
+  EXPECT_EQ(mishmesh::TelemPermBase | mishmesh::TelemPermLocation, svc.chats[0].telemPerms);
+
+  // Toggle base off -> clears just that bit, leaving location set.
+  host.dispatch(mishmesh::InputEvent::NavUp);     // -> Allow telemetry
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_FALSE(perms.toggleState(mishmesh::ContactPermissionsApplet::AllowRequests));
+  EXPECT_EQ(mishmesh::TelemPermLocation, svc.chats[0].telemPerms);
+}
+
+TEST(ContactPermissions, OpenedFromContactDetailPushes) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); svc.chats.push_back(a);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  host.dispatch(mishmesh::InputEvent::Select);   // open Alice detail (depth 2)
+  // Chat order: Message, View, Rename, Favourite, Telemetry, Permissions(5), ...
+  for (int i = 0; i < 5; i++) host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::Select);   // push permissions
+  EXPECT_EQ(3, host.depth());
+}
+
+// ---- Set path --------------------------------------------------------------
+
+TEST(SetPath, ParseHexHops) {
+  uint8_t out[mishmesh::PATH_MAX_BYTES];
+  // 1-byte hops
+  int n = mishmesh::SetPathApplet::parseHexPath("3f,a1,bb", 1, out, sizeof(out));
+  ASSERT_EQ(3, n);
+  EXPECT_EQ(0x3f, out[0]); EXPECT_EQ(0xa1, out[1]); EXPECT_EQ(0xbb, out[2]);
+  // uppercase + spaces tolerated
+  EXPECT_EQ(2, mishmesh::SetPathApplet::parseHexPath("AA, BB", 1, out, sizeof(out)));
+  // empty => flood (0 hops)
+  EXPECT_EQ(0, mishmesh::SetPathApplet::parseHexPath("", 1, out, sizeof(out)));
+  // 2-byte hops
+  n = mishmesh::SetPathApplet::parseHexPath("aabb,ccdd", 2, out, sizeof(out));
+  ASSERT_EQ(2, n);
+  EXPECT_EQ(0xaa, out[0]); EXPECT_EQ(0xbb, out[1]); EXPECT_EQ(0xcc, out[2]); EXPECT_EQ(0xdd, out[3]);
+  // malformed: bad hex, and wrong token length for the hash size
+  EXPECT_EQ(-1, mishmesh::SetPathApplet::parseHexPath("zz", 1, out, sizeof(out)));
+  EXPECT_EQ(-1, mishmesh::SetPathApplet::parseHexPath("aaa", 1, out, sizeof(out)));
+  EXPECT_EQ(-1, mishmesh::SetPathApplet::parseHexPath("aa", 2, out, sizeof(out)));   // need 2 bytes/hop
+}
+
+TEST(SetPath, SaveEncodesAndPersists) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Aras"; memcpy(a.pubkey, "ARAS01", 6); svc.chats.push_back(a);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+
+  auto& sp = mishmesh::setPathApplet();
+  sp.setTarget((const uint8_t*)"ARAS01", "Aras");
+  host.setRoot(&sp);
+
+  sp.setPathTextForTest("3f,a1", 1);
+  host.dispatch(mishmesh::InputEvent::NavDown);   // Hash size -> Path
+  host.dispatch(mishmesh::InputEvent::NavDown);   // Path -> Save
+  host.dispatch(mishmesh::InputEvent::Select);    // save + pop
+
+  EXPECT_EQ("ARAS01", svc.lastPathSet);
+  ASSERT_TRUE(svc.chats[0].hasPathBytes);
+  EXPECT_EQ(2, svc.chats[0].pathEncoded & 63);          // 2 hops
+  EXPECT_EQ(0, svc.chats[0].pathEncoded >> 6);          // 1-byte hash size
+  EXPECT_EQ(0x3f, svc.chats[0].pathBytes[0]);
+  EXPECT_EQ(0xa1, svc.chats[0].pathBytes[1]);
+}
+
+TEST(SetPath, EmptyTextClearsToFlood) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Aras"; memcpy(a.pubkey, "ARAS01", 6);
+  a.hasPathBytes = true; a.pathEncoded = 1; a.pathBytes[0] = 0x3f;   // existing 1-hop path
+  svc.chats.push_back(a);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+
+  auto& sp = mishmesh::setPathApplet();
+  sp.setTarget((const uint8_t*)"ARAS01", "Aras");
+  host.setRoot(&sp);
+
+  sp.setPathTextForTest("", 1);
+  host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::Select);    // save empty -> flood
+
+  EXPECT_FALSE(svc.chats[0].hasPathBytes);
+}
+
+TEST(SetPath, OpenedFromContactDetailPushes) {
+  FakeContactsService svc;
+  FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); svc.chats.push_back(a);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  host.dispatch(mishmesh::InputEvent::Select);   // open Alice detail (depth 2)
+  // Chat order: Message, View, Rename, Favourite, Telemetry, Permissions, Set path(6), ...
+  for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::Select);   // push set-path
+  EXPECT_EQ(3, host.depth());
+}
+
 TEST(ContactsApplet, OpensOnFavouritesTabWhenFavouritesExist) {
   FakeContactsService svc;
   FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); svc.chats.push_back(a);  // not fav, first chat
@@ -248,7 +381,7 @@ TEST(ContactsApplet, KeepsListPositionAfterDrillInAndBack) {
 
   // Re-open the selected row and delete it; the target reveals which row was kept.
   host.dispatch(mishmesh::InputEvent::Select);
-  for (int i = 0; i < 7; i++) host.dispatch(mishmesh::InputEvent::NavDown);  // -> Delete contact
+  for (int i = 0; i < 9; i++) host.dispatch(mishmesh::InputEvent::NavDown);  // -> Delete contact
   host.dispatch(mishmesh::InputEvent::Select);    // confirm dialog
   host.dispatch(mishmesh::InputEvent::NavRight);  // Confirm
   host.dispatch(mishmesh::InputEvent::Select);

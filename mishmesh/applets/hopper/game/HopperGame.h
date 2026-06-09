@@ -10,7 +10,8 @@
 void hopperSetup();
 void hopperLoopStep();
 
-// [mishmesh] State access for the applet's Back button: while a game is being played,
-// Back returns to Hopper's own title screen (its menu); at the title, Back exits the applet.
-bool hopperInGame();
-void hopperReturnToTitle();
+// [mishmesh] Device Back button. Unwinds one level and returns true if Hopper consumed it
+// (in-game -> title screen; title record/credit sub-screen -> title menu); returns false
+// when there is nowhere left to go (already at the title menu, or on the logo), so the
+// applet then exits to the mishmesh app menu.
+bool hopperHandleBack();

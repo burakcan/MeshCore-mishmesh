@@ -36,12 +36,17 @@ static int wrapText(Canvas& c, int x, int y, int maxW, const char* text,
     const char* w0 = p;
     while (*p && *p != ' ' && *p != '\n') p++;
     int wlen = (int)(p - w0);
+    if (wlen > (int)sizeof(line) - 1) wlen = (int)sizeof(line) - 1;   // clamp a word to the line buffer
 
     char cand[80];
     int  clen = 0;
-    if (lineLen > 0) { memcpy(cand, line, lineLen); clen = lineLen; cand[clen++] = ' '; }
-    int copy = wlen;
-    if (copy > (int)sizeof(cand) - clen - 1) copy = (int)sizeof(cand) - clen - 1;
+    if (lineLen > 0) {
+      memcpy(cand, line, lineLen); clen = lineLen;
+      if (clen < (int)sizeof(cand) - 1) cand[clen++] = ' ';
+    }
+    int room = (int)sizeof(cand) - 1 - clen;        // bytes left for the word (never negative below)
+    int copy = wlen < room ? wlen : room;
+    if (copy < 0) copy = 0;
     memcpy(cand + clen, w0, copy); clen += copy; cand[clen] = 0;
 
     if (lineLen > 0 && c.textWidth(f, cand) > maxW) {
