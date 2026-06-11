@@ -172,10 +172,11 @@ void UITask::notify(UIEventType t) {
   // [mishmesh]
   using namespace mishmesh::sound;
   switch (t) {
-    case UIEventType::contactMessage:
-    case UIEventType::newContactMessage: _sound.play(SoundId::MsgChime);   break;
-    case UIEventType::channelMessage:    _sound.play(SoundId::MsgKerplop); break;
-    case UIEventType::ack:               _sound.play(SoundId::MsgAck);     break;
+    // newContactMessage fires on every overheard advert (MyMesh.cpp), not a real
+    // message — keep it silent (matches the stock UI) to avoid phantom beeps.
+    case UIEventType::contactMessage: _sound.play(SoundId::MsgChime);   break;
+    case UIEventType::channelMessage: _sound.play(SoundId::MsgKerplop); break;
+    case UIEventType::ack:            _sound.play(SoundId::MsgAck);     break;
     default: break;
   }
   // [/mishmesh]
