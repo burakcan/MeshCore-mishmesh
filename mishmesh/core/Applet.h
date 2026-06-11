@@ -9,6 +9,9 @@ namespace mishmesh {
 class Canvas;
 class AppletHost;
 struct ContactsService;   // mishmesh/core/ContactsService.h
+// [mishmesh]
+namespace sound { class SoundEngine; }
+// [/mishmesh]
 
 // Snapshot of device health for the System stats screen. Plain integers so the
 // framework stays free of companion/platform types. 0 (or nullptr) means
@@ -64,6 +67,7 @@ struct AppletContext {
   struct MessagesService* messages = nullptr;
   const InputState* inputState = nullptr;   // host-owned; updated once per loop
   AppletStorage* storage = nullptr;   // generic key->blob persistence (may be null)
+  sound::SoundEngine* sound = nullptr;   // buzzer/sound subsystem (may be null)
   // Live held-button snapshot for real-time applets. Safe before the host wires
   // it up: returns an all-released state.
   const InputState& input() const {

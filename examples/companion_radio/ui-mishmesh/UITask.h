@@ -18,6 +18,8 @@
 // [mishmesh]
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/core/AppletStorage.h>
+#include <mishmesh/sound/SoundEngine.h>
+#include <mishmesh/sound/Sounds.h>
 // [/mishmesh]
 
 class UITask : public AbstractUITask, public mishmesh::AppServices, public mishmesh::ContactsService {
@@ -86,6 +88,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     uint8_t load(const char* key, uint8_t* dst, uint8_t cap) override;
     bool    save(const char* key, const uint8_t* src, uint8_t len) override;
   } _theStorage;
+  mishmesh::sound::SoundEngine _sound;
   // [/mishmesh]
 
 #ifdef UI_HAS_JOYSTICK

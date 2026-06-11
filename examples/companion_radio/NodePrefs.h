@@ -42,4 +42,8 @@ struct NodePrefs {  // persisted to file
   uint8_t autoadd_max_hops;  // 0 = no limit, 1 = direct (0 hops), N = up to N-1 hops (max 64)
   char default_scope_name[31];
   uint8_t default_scope_key[16];
+  // [mishmesh] mishmesh sound prefs (appended at tail for back-compat).
+  uint8_t sound_volume;     // mishmesh::sound::VolumeLevel (0=Mute..3=High)
+  uint8_t sound_mute_mask;  // SoundEngine category enable bits (1=enabled)
+  // [/mishmesh]
 };

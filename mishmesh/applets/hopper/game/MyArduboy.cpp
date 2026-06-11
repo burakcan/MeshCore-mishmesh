@@ -1,4 +1,5 @@
 #include "MyArduboy.h"
+#include <mishmesh/sound/SoundEngine.h>
 
 PROGMEM static const uint32_t imgFont[] = {
     0x00000000, 0x00017000, 0x000C00C0, 0x0A7CA7CA, 0x0855F542, 0x19484253, 0x1251F55E, 0x00003000,
@@ -317,12 +318,15 @@ void MyArduboy::saveAudioOnOff(void)
     myAudio.saveOnOff();
 }
 
-// [mishmesh] playScore2/stopScore2: no-op (audio out of scope; pTunes removed).
+// [mishmesh] route Arduboy scores to the mishmesh sound engine (1:1).
 void MyArduboy::playScore2(const byte *score, uint8_t priority)
 {
-    (void)score; (void)priority;
+    (void)priority;   // engine arbitration handles priority via the exclusive lock
+    if (!isAudioEnabled()) return;   // honor the game's SOUND on/off toggle (audio.begin/saveOnOff)
+    if (auto* e = ::mishmesh::sound::activeEngine())
+        e->playScore((const uint8_t *)score, ::mishmesh::sound::SoundCategory::Game);
 }
-
 void MyArduboy::stopScore2(void)
 {
+    if (auto* e = ::mishmesh::sound::activeEngine()) e->stop();
 }

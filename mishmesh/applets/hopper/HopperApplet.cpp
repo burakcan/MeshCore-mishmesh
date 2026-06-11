@@ -1,4 +1,5 @@
 #include <mishmesh/applets/hopper/HopperApplet.h>
+#include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
@@ -8,6 +9,7 @@ namespace mishmesh {
 
 void HopperApplet::onStart(AppletContext& ctx) {
   _runtime.begin(ctx, "hopper");
+  if (ctx.sound) ctx.sound->acquireExclusive(this);   // [mishmesh] game owns the buzzer
   hopperSetup();
 }
 
@@ -34,6 +36,15 @@ bool HopperApplet::onInput(InputEvent ev) {
     return false;    // at Hopper's top (title menu / logo) -> let the host pop to the mishmesh menu
   }
   return false;
+}
+
+void HopperApplet::onStop() {
+  // [mishmesh]
+  if (auto* e = ::mishmesh::sound::activeEngine()) {
+    e->stop();
+    e->releaseExclusive(this);
+  }
+  // [/mishmesh]
 }
 
 static HopperApplet s_hopper;

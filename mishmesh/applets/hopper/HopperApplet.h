@@ -13,6 +13,7 @@ public:
   void onStart(AppletContext& ctx) override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
+  void onStop() override;   // [mishmesh] release the sound exclusive lock
 
 private:
   ::mishmesh::arduboy::ArduboyRuntime _runtime;

@@ -102,6 +102,18 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   the_mesh.uiSeedChannels();
   // [/mishmesh]
 
+  // [mishmesh] bring up the sound subsystem and restore persisted prefs.
+  _sound.begin(mishmesh::sound::defaultToneOutput());
+  _sound.setVolume((mishmesh::sound::VolumeLevel)_node_prefs->sound_volume);
+  _sound.setCategoryMask(_node_prefs->sound_mute_mask);
+  // Master mute is intentionally NOT restored from the legacy buzzer_quiet pref:
+  // mishmesh has no on-device mute toggle yet, so honoring a stale muted flag left by a
+  // previously-flashed firmware would strand the device silent with no way to unmute.
+  // Default audible; a future mishmesh sound-settings screen will own master mute.
+  _sound.setMasterMute(false);
+  mishmesh::sound::setActiveEngine(&_sound);
+  // [/mishmesh]
+
   mishmesh::AppletContext ctx;
   ctx.app = this;
   ctx.contacts = this;
@@ -109,6 +121,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   ctx.messages = &_msgSvc;
   _theStorage.ds = the_mesh.getStore();
   ctx.storage = &_theStorage;
+  ctx.sound = &_sound;          // [mishmesh]
   // [/mishmesh]
   _host = new mishmesh::AppletHost(_display, ctx);
 
@@ -140,6 +153,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _userBtn->begin();
   _host->addSource(_userBtn);
 #endif
+  _sound.play(mishmesh::sound::SoundId::BootJingle);   // [mishmesh]
 }
 
 void UITask::msgRead(int /*msgcount*/) {
@@ -154,7 +168,17 @@ void UITask::newMsg(uint8_t /*path_len*/, const char* /*from_name*/,
   // [/mishmesh]
 }
 
-void UITask::notify(UIEventType /*t*/) {
+void UITask::notify(UIEventType t) {
+  // [mishmesh]
+  using namespace mishmesh::sound;
+  switch (t) {
+    case UIEventType::contactMessage:
+    case UIEventType::newContactMessage: _sound.play(SoundId::MsgChime);   break;
+    case UIEventType::channelMessage:    _sound.play(SoundId::MsgKerplop); break;
+    case UIEventType::ack:               _sound.play(SoundId::MsgAck);     break;
+    default: break;
+  }
+  // [/mishmesh]
 }
 
 void UITask::loop() {
@@ -180,6 +204,7 @@ void UITask::loop() {
   }
   // [/mishmesh]
   if (_host != nullptr) {
+    _sound.tick(millis());   // [mishmesh]
     _host->loop(millis());
   }
 }
