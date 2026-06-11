@@ -55,6 +55,9 @@ struct AppServices {
   // Defaults keep the framework companion-agnostic (off, not settable).
   virtual bool shareLocationInAdvert() const { return false; }
   virtual void setShareLocationInAdvert(bool) {}
+  // Set + persist the global sound volume (0=Mute,1=Low,2=Mid,3=High). The adapter
+  // applies it to the engine and writes it to NodePrefs. Default no-op.
+  virtual void setSoundVolume(uint8_t level) { (void)level; }
   // [/mishmesh]
 };
 

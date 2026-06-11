@@ -136,6 +136,13 @@ public:
     p->advert_loc_policy = on ? ADVERT_LOC_SHARE : ADVERT_LOC_NONE;
     the_mesh.savePrefs();
   }
+  void setSoundVolume(uint8_t level) override {
+    _sound.setVolume((mishmesh::sound::VolumeLevel)level);
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->sound_volume = level;
+    the_mesh.savePrefs();
+  }
   // [/mishmesh]
 
   // mishmesh::ContactsService

@@ -112,6 +112,27 @@ TEST(CanvasStipple, ParityStaysStableWhenClipped) {
   }
 }
 
+TEST(CanvasFallback, UnrenderableGlyphDrawsBlockNotQuestionMark) {
+  // A codepoint the font can't render (emoji, out-of-range BMP) must show a solid
+  // block, not mcufont's '?' fallback. Normal glyph rows are 1px-tall fills, so the
+  // block is the only fill with height > 1.
+  FakeDisplayDriver d(128, 64);
+  mishmesh::Canvas c(&d);
+  const Font* f = fontBody();
+  c.drawText(f, 0, 0, "\xE2\x98\x83", DisplayDriver::LIGHT);  // U+2603, valid UTF-8, not in font
+  int blockH = c.fontHeight(f) - 2;
+  int qWidth = c.textWidth(f, "?");  // the fallback advance the block must match
+  int blocks = 0;
+  for (auto& r : d.fills) {
+    if (r.h > 1) {
+      blocks++;
+      EXPECT_EQ(blockH, r.h);
+      EXPECT_EQ(qWidth - 1, r.w);
+    }
+  }
+  EXPECT_EQ(1, blocks);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

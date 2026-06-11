@@ -92,6 +92,17 @@ void mm_pixel(int16_t x, int16_t y, uint8_t count, uint8_t alpha, void* state) {
 
 uint8_t mm_char(int16_t x, int16_t y, mf_char ch, void* state) {
   TextState* s = (TextState*)state;
+  // Glyphs the font can't render (emoji, other non-BMP/out-of-range codepoints)
+  // would otherwise be drawn as mcufont's '?' fallback. Show a solid block
+  // instead, advancing by the fallback width so layout/wrapping is unchanged.
+  if (s->font->character_width(s->font, ch) == 0) {
+    uint8_t adv = s->font->character_width(s->font, s->font->fallback_character);
+    if (adv == 0) return 0;
+    int16_t top = 1, h = (int16_t)s->font->height - 2;   // 1px inset top/bottom
+    int16_t w = adv > 1 ? adv - 1 : adv;                  // 1px gap to next glyph
+    if (h > 0 && w > 0) s->c->fillRect(x, y + top, w, h, s->col);
+    return adv;
+  }
   return mf_render_character(s->font, x, y, ch, mm_pixel, state);
 }
 
