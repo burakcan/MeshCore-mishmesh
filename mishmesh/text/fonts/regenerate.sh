@@ -19,13 +19,23 @@ gen_text() {  # role size filter...
   "$ENC" bwfont_export "$role.dat"
   rm -f "nokiafc22${sz}bw.dat" "$role.dat"
 }
-gen_text Body  8  0x20-0xFF        # lists, status bar, hints, message body (default)
-gen_text Num   24 0x20 0x2E-0x3A   # clock/stopwatch: space . / 0-9 :
+gen_text Body     8  0x20-0xFF     # lists, status bar, hints, message body (default)
+gen_text Subtitle 12 0x20-0xFF     # contact-detail header card
+gen_text Num      24 0x20 0x2E-0x3A   # clock/stopwatch: space . / 0-9 :
+
+# --- Latin Extended-A (Common EU Latin: Polish, Czech/Slovak, Hungarian,
+#     Croatian, Romanian, Turkish). The Nokia TTF lacks these glyphs, so we
+#     synthesize them by compositing diacritics onto the base letters and append
+#     a char range to Body.c/Subtitle.c (existing glyph arrays are untouched). ---
+python3 build_exta.py Body.c     --emit
+python3 build_exta.py Subtitle.c --emit
 
 # --- Caption: Tom Thumb 3x6 (CC0/public-domain), vendored tom-thumb.bdf - the
-#     recessive metadata tier (status, sender labels, View-Path rows). ---
+#     recessive metadata tier (status, sender labels, View-Path rows). Latin-1
+#     included so accented sender names (de/fr/...) render; Extended-A is omitted
+#     (illegible at 3x6, falls back to the block placeholder). ---
 "$ENC" import_bdf tom-thumb.bdf            # -> tom-thumb.dat
-"$ENC" filter tom-thumb.dat 0x20-0x7E      # printable ASCII only (keeps it small)
+"$ENC" filter tom-thumb.dat 0x20-0xFF      # printable ASCII + Latin-1
 cp tom-thumb.dat Caption.dat
 "$ENC" bwfont_export Caption.dat           # -> Caption.c (mf_bwfont_Caption)
 rm -f tom-thumb.dat Caption.dat
@@ -36,4 +46,4 @@ python3 build_icons.py                # writes Icons16.bdf (downloads SVGs)
 "$ENC" bwfont_export Icons16.dat
 rm -f Icons16.dat Icons16.bdf
 
-echo "Regenerated Body.c Num.c Caption.c Icons16.c"
+echo "Regenerated Body.c Subtitle.c Num.c Caption.c Icons16.c"
