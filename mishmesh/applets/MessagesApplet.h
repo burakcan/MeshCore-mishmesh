@@ -48,6 +48,8 @@ private:
   ListMenu         _list;
   ChatMenu         _chatMenu;            // long-press chat-action overlay
   ConvoKey         _menuKey{};           // chat the overlay/region editor targets
+  ConvoKey         _openedKey{};         // chat just opened, to reselect by key on return
+  bool             _hasOpened = false;   // _openedKey is valid (consumed on next foreground)
   char             _regionBuf[31] = {0}; // backs keypad text while editing region
   bool             _menuOpen = false;
   int              _tab = 0;             // 0 = Chats, 1 = New

@@ -97,6 +97,13 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
   _animReady = false;   // snap (no slide-in) on the opening frame
   _pinBottom = true;    // first render scrolls to the newest message
   _lastSeq = _svc ? _svc->seq() : 0;
+  _prevCount = n;
+  _lastMsgTime = 0;        // seed from the newest message so the open frame isn't seen as an arrival
+  if (n > 0 && _svc) {
+    MessageView mv;
+    if (_svc->getMessage(_key, n - 1, mv)) _lastMsgTime = mv.localTime ? mv.localTime : mv.senderTime;
+  }
+  _unseenBelow = false;    // we open pinned to the newest message
   _menuOpen = false;
   _barRow = _composeOnOpen ? 0 : -1;   // open focused on the Write button when requested
   _composeOnOpen = false;              // one-shot
@@ -119,7 +126,14 @@ void MessageThreadApplet::onForeground() {
   if (_svc) _svc->setActiveConvo(_key);
 }
 void MessageThreadApplet::onBackground() { if (_svc) _svc->clearActiveConvo(); }
-void MessageThreadApplet::onStop()       { if (_svc) _svc->clearActiveConvo(); }
+void MessageThreadApplet::onStop() {
+  if (!_svc) return;
+  // Leaving the chat with a message still below the fold (chevron showing) means it
+  // was never actually read - being the active convo had suppressed its unread
+  // badge, so restore one on the way out.
+  if (_unseenBelow) _svc->markUnread(_key);
+  _svc->clearActiveConvo();
+}
 
 const char* MessageThreadApplet::resolveTitle() const {
   ConvoView cv;
@@ -223,9 +237,33 @@ void MessageThreadApplet::drawActionBar(Canvas& bar) {
 
 int MessageThreadApplet::onRender(Canvas& c) {
   int n = _svc ? _svc->messageCount(_key) : 0;
+
+  // Detect a genuinely new message by the newest message's timestamp, not by count.
+  // At the per-chat cap an arrival evicts the oldest, so messageCount() stays flat
+  // and a count test would miss it entirely. localTime is our receive clock; fall
+  // back to senderTime when the RTC is unset. The count test is kept as a secondary
+  // signal for the (common) below-cap case so same-second arrivals still register.
+  uint32_t newestTime = 0;
+  if (n > 0 && _svc) {
+    MessageView mv;
+    if (_svc->getMessage(_key, n - 1, mv)) newestTime = mv.localTime ? mv.localTime : mv.senderTime;
+  }
+  bool newArrived = (n > _prevCount) || (newestTime > _lastMsgTime);
+
+  if (newArrived) {
+    // The caret never follows an arrival - the user's reading position stays put.
+    // But if the cap evicted the oldest to make room, every index shifted down, so
+    // step the caret down by however many were dropped to keep it on the SAME
+    // message instead of letting it jump to the next one. (Assumes one new message
+    // per step, which holds in practice - the UI repaints between arrivals.)
+    int evicted = (_prevCount + 1) - n;
+    if (evicted > 0) { _focus -= evicted; if (_focus < 0) _focus = 0; }
+  }
+  _prevCount = n;
+  _lastMsgTime = newestTime;
   if (_svc && _svc->seq() != _lastSeq) {
     _lastSeq = _svc->seq();
-    if (_focus >= n) _focus = n > 0 ? n - 1 : 0;
+    if (_focus >= n) _focus = n > 0 ? n - 1 : 0;   // clamp after deletions
   }
 
   // Header: tab bar ([0] conversation, [1] Settings) with a floating battery %.
@@ -271,6 +309,18 @@ int MessageThreadApplet::onRender(Canvas& c) {
   }
   adjustScroll();
 
+  // New-message chevron, decided from actual visibility (the caret is never moved).
+  // The newest message's bottom sits BTN_H above the content end - the action bar
+  // always trails it - so test against that, not the absolute bottom. Raise the
+  // marker only when a message *arrived* below the fold; clear it the moment the
+  // newest message is back in view. Plain scrolling through history never raises it.
+  {
+    int newestBottom = _contentH - BTN_H;
+    bool newestVisible = (n == 0) || (newestBottom <= _scrollTarget + _bodyH);
+    if (newArrived && !newestVisible) _unseenBelow = true;
+    if (newestVisible)                _unseenBelow = false;
+  }
+
   // Ease the current scroll toward the target (same feel as ListMenu/ScrollText).
   if (!_animReady) { _scrollY = _scrollTarget; _animReady = true; }
   else {
@@ -305,6 +355,22 @@ int MessageThreadApplet::onRender(Canvas& c) {
     int maxScroll = _contentH - _bodyH;
     int thumbY = maxScroll > 0 ? (_bodyH - thumbH) * _scrollY / maxScroll : 0;
     body.fillRect(body.width() - 2, thumbY, 2, thumbH, DisplayDriver::LIGHT);
+  }
+
+  // New-message chevron: a small downward marker pinned to the bottom-centre of
+  // the viewport while there's unread content below the fold. Slow blink to draw
+  // the eye; clears itself (above) once the user scrolls back down.
+  if (_unseenBelow) {
+    const int bw = 13, bh = 8;
+    int bx = (body.width() - bw) / 2, by = _bodyH - bh;
+    body.fillRect(bx, by, bw, bh, DisplayDriver::DARK);
+    body.drawRoundRect(bx, by, bw, bh, DisplayDriver::LIGHT);
+    if (((body.now() / 500) & 1) == 0) {           // blink at ~1 Hz
+      int cx = bx + bw / 2, ty = by + 2;
+      body.fillRect(cx - 2, ty,     5, 1, DisplayDriver::LIGHT);
+      body.fillRect(cx - 1, ty + 1, 3, 1, DisplayDriver::LIGHT);
+      body.fillRect(cx,     ty + 2, 1, 1, DisplayDriver::LIGHT);
+    }
   }
 
   // Per-message action menu: a bare box over the live conversation.

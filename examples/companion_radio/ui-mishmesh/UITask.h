@@ -89,6 +89,14 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     bool    save(const char* key, const uint8_t* src, uint8_t len) override;
   } _theStorage;
   mishmesh::sound::SoundEngine _sound;
+
+  // Notification routing is deferred from notify() to the next loop(): notify()
+  // fires from a mesh recv callback that runs BEFORE MyMesh appends the message to
+  // the store, so the store (unread totals, latest message) is only fresh one step
+  // later. loop() drains this and dispatches against the up-to-date store.
+  bool        _notifyPending = false;
+  UIEventType _notifyEvent = UIEventType::none;
+  void dispatchNotification(UIEventType t);
   // [/mishmesh]
 
 #ifdef UI_HAS_JOYSTICK

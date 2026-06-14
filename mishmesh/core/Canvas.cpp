@@ -54,6 +54,14 @@ void Canvas::drawRect(int x, int y, int w, int h, DisplayDriver::Color c) {
   }
 }
 
+void Canvas::drawRoundRect(int x, int y, int w, int h, DisplayDriver::Color c) {
+  if (w < 3 || h < 3) { drawRect(x, y, w, h, c); return; }
+  fillRect(x + 1, y,         w - 2, 1, c);   // top
+  fillRect(x + 1, y + h - 1, w - 2, 1, c);   // bottom
+  fillRect(x,         y + 1, 1, h - 2, c);   // left
+  fillRect(x + w - 1, y + 1, 1, h - 2, c);   // right
+}
+
 void Canvas::text(int x, int y, const char* str, DisplayDriver::Color c) {
   if (!_d || str == nullptr) return;
   if (x < _cl || y < _ct || x >= _cr || y >= _cb) return;

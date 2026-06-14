@@ -54,6 +54,9 @@ private:
   int              _focusBot = 0;
   int              _contentH = 0;
   bool             _pinBottom = false;// on next render, scroll to the newest message
+  bool             _unseenBelow = false; // a message arrived below the fold -> show a chevron
+  int              _prevCount = 0;    // message count last frame, to detect new arrivals
+  uint32_t         _lastMsgTime = 0;  // newest message's time; detects arrivals even at the cap
   uint32_t         _lastSeq = 0;
   bool             _menuOpen = false; // per-message action menu overlay (Reply/Delete/Path)
   char             _titleBuf[40] = {0};  // stable backing for the conversation tab label

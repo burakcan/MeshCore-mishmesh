@@ -50,11 +50,24 @@ public:
   // pops (e.g. "Contact deleted" shown after a detail screen closes itself).
   void postToast(const char* msg);
 
+  // A small message badge that slides in at the top-right corner for ~2s, over
+  // whatever applet is foreground. Used for low-priority new-message alerts when
+  // the user is busy in some other screen. `unread` is shown beside the glyph.
+  void postBubble(uint16_t unread);
+
+  // Display power, for the notification router: wake the panel without delivering
+  // an input event (an incoming message can wake the screen to show a banner).
+  bool isDisplayOn() const;
+  void wakeDisplay();
+  // Force a repaint on the next loop (e.g. after state changed outside an applet).
+  void requestRender() { _dirty = true; }
+
   // Test/inspection accessor for the live held-button snapshot.
   const InputState& ctxInput() const { return _input_state; }
 
 private:
   void renderIfDue(uint32_t now_ms);
+  void drawBubble(uint32_t now_ms);   // top-right new-message badge overlay
   // Push the foreground applet's input preferences (currently wantsBackRepeat())
   // to every source. Called after each foreground change.
   void applyInputContext();
@@ -94,6 +107,11 @@ private:
   char _toast_msg[28];
   uint32_t _toast_until;
   bool _toast_pending;
+
+  uint32_t _bubble_start;     // stamped when the bubble first shows
+  uint32_t _bubble_until;     // bubble cleared once now passes this
+  bool     _bubble_pending;   // posted during dispatch; stamped on the next loop
+  uint16_t _bubble_unread;
 
   InputState _input_state;
 };

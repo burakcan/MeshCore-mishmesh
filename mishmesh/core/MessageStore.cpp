@@ -8,6 +8,7 @@ ConvoKey channelKey(uint8_t idx)       { ConvoKey k; k.type = 1; memset(k.id, 0,
 void MessageStore::reset() {
   _used = 0; _deadBytes = 0; _seq = 0; _convoCount = 0;
   _hasActive = false;
+  _hasLastInbound = false;
   memset(_tracked, 0, sizeof(_tracked));
 }
 
@@ -59,7 +60,15 @@ int MessageStore::ensureConvo(const ConvoKey& key) {
 }
 
 void MessageStore::touchConvo(int ci, uint32_t time) {
-  if (time > _convos[ci].lastTime) _convos[ci].lastTime = time;
+  // lastTime drives recency sort (getConvo) and LRU eviction — it is never shown.
+  // Make the touched convo always become the newest: use the real timestamp when
+  // it's actually ahead, else one past the current maximum. This keeps ordering by
+  // true receive order even when the RTC is unset (time==0) or senders' clocks are
+  // skewed (a per-sender senderTime would otherwise misorder the list).
+  uint32_t maxT = 0;
+  for (int i = 0; i < _convoCount; i++) if (_convos[i].lastTime > maxT) maxT = _convos[i].lastTime;
+  uint32_t nt = time > maxT ? time : maxT + 1;
+  if (nt > _convos[ci].lastTime) _convos[ci].lastTime = nt;
 }
 
 // writes a header + text into _arena at _used; returns offset, advances _used.
@@ -95,6 +104,7 @@ void MessageStore::appendInbound(const ConvoKey& key, const char* text, uint16_t
   if (_convos[ci].count > PER_CHAT_CAP) tombstoneOldestOf(key);
   if (!(_hasActive && _active.equals(key))) _convos[ci].unread++;
   touchConvo(ci, recvTime ? recvTime : senderTime);
+  _lastInbound = key; _hasLastInbound = true;   // subject of the next notification
   _seq++;
 }
 
@@ -183,6 +193,14 @@ void MessageStore::setActiveConvo(const ConvoKey& key) {
   if (ci >= 0 && _convos[ci].unread) { _convos[ci].unread = 0; _seq++; }
 }
 void MessageStore::clearActiveConvo() { _hasActive = false; }
+bool MessageStore::activeConvo(ConvoKey& out) const {
+  if (!_hasActive) return false;
+  out = _active; return true;
+}
+bool MessageStore::lastInbound(ConvoKey& out) const {
+  if (!_hasLastInbound) return false;
+  out = _lastInbound; return true;
+}
 int  MessageStore::repeatCount(const ConvoKey& key, int msgIndex) const {
   MsgRecord r; if (!getMessage(key, msgIndex, r)) return 0;
   if (r.kind != KIND_OUT_CHAN) return 0;

@@ -1,5 +1,6 @@
 #include "UITask.h"
 #include "target.h"   // rtc_clock
+#include <mishmesh/applets/NotificationApplet.h>
 #include <mishmesh/core/TelemetryDecode.h>
 #include <helpers/AdvertDataHelpers.h>   // ADV_TYPE_CHAT
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -169,16 +170,67 @@ void UITask::newMsg(uint8_t /*path_len*/, const char* /*from_name*/,
 }
 
 void UITask::notify(UIEventType t) {
-  // [mishmesh]
+  // [mishmesh] Runs inside a mesh recv callback, BEFORE MyMesh appends the message
+  // to the store. Delivery acks have no store dependency, so chirp now; message
+  // notifications are deferred to loop() so the router sees the fresh store.
   using namespace mishmesh::sound;
-  switch (t) {
-    // newContactMessage fires on every overheard advert (MyMesh.cpp), not a real
-    // message — keep it silent (matches the stock UI) to avoid phantom beeps.
-    case UIEventType::contactMessage: _sound.play(SoundId::MsgChime);   break;
-    case UIEventType::channelMessage: _sound.play(SoundId::MsgKerplop); break;
-    case UIEventType::ack:            _sound.play(SoundId::MsgAck);     break;
-    default: break;
+  if (t == UIEventType::ack) {
+    _sound.play(SoundId::MsgAck);
+    if (_host) _host->requestRender();
+    return;
   }
+  if (t == UIEventType::contactMessage || t == UIEventType::channelMessage) {
+    _notifyPending = true;
+    _notifyEvent = t;
+  }
+  // [/mishmesh]
+}
+
+void UITask::dispatchNotification(UIEventType t) {
+  // [mishmesh] The notification router. Picks the least-intrusive visual level for
+  // an incoming message based on what the user is doing, and gates the alert sound
+  // the same way (silent while the relevant chat is open). Called from loop(), so
+  // the store already reflects the just-arrived message.
+  using namespace mishmesh::sound;
+
+  bool inbound = (t == UIEventType::contactMessage || t == UIEventType::channelMessage);
+  if (!inbound) return;
+  SoundId chime = (t == UIEventType::channelMessage) ? SoundId::MsgKerplop : SoundId::MsgChime;
+
+  mishmesh::ConvoKey c;
+  if (!_msgStore.lastInbound(c)) {                 // shouldn't happen post-capture
+    _sound.play(chime);
+    if (_host) _host->requestRender();
+    return;
+  }
+
+  mishmesh::ConvoKey active;
+  bool inThisChat = _msgStore.activeConvo(active) && active.equals(c);
+  bool sleeping   = _host && !_host->isDisplayOn();
+
+  // Reading this very chat (and awake): no sound, no overlay. The thread surfaces
+  // the arrival itself — auto-following at the bottom, or a chevron when scrolled up.
+  if (inThisChat && !sleeping) {
+    if (_host) _host->requestRender();
+    return;
+  }
+
+  _sound.play(chime);
+  if (!_host) return;
+
+  bool atHome = _host->foreground() == _home;
+  if (sleeping || atHome) {
+    // Idle device: full banner. Wake the panel if it was asleep; refresh in place
+    // if a banner is already up rather than stacking a second one.
+    mishmesh::notificationApplet().raise(&_msgSvc, c);
+    if (sleeping) _host->wakeDisplay();
+    if (_host->foreground() != &mishmesh::notificationApplet())
+      _host->push(&mishmesh::notificationApplet());
+  } else {
+    // Busy in some other screen: a small, transient top-right badge.
+    _host->postBubble(_msgSvc.totalUnread());
+  }
+  _host->requestRender();
   // [/mishmesh]
 }
 
@@ -202,6 +254,11 @@ void UITask::loop() {
       size_t n = _msgStore.serialize(_msgIoBuf, sizeof(_msgIoBuf));
       if (n) ds->saveMessages(_msgIoBuf, n);
     }
+  }
+  // Drain a deferred message notification now that the store is up to date.
+  if (_notifyPending) {
+    _notifyPending = false;
+    dispatchNotification(_notifyEvent);
   }
   // [/mishmesh]
   if (_host != nullptr) {

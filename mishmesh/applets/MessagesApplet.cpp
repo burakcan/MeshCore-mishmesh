@@ -89,6 +89,16 @@ void MessagesApplet::onForeground() {
   _chats.svc = _svc;
   _new.svc = _svc;
   syncList();
+  // Returning from a chat: the recency sort may have reordered the list, so the
+  // stored row index would now land on a different chat. Reselect the chat we
+  // opened by key so the highlight stays on it.
+  if (_hasOpened && _tab == 0 && _svc) {
+    ConvoView v;
+    for (int i = 0; i < _svc->convoCount(); i++) {
+      if (_svc->getConvo(i, v) && v.key.equals(_openedKey)) { _list.setSelected(i); break; }
+    }
+    _hasOpened = false;
+  }
 }
 
 void MessagesApplet::syncList() {
@@ -155,6 +165,7 @@ bool MessagesApplet::onInput(InputEvent ev) {
     if (_tab == 0) {
       ConvoView v;
       if (_svc && _svc->getConvo(_list.selected(), v)) {
+        _openedKey = v.key; _hasOpened = true;   // reselect this chat by key on return
         messageThreadApplet().setTarget(v.key);
         if (_host) _host->push(&messageThreadApplet());
       }

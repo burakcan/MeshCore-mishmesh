@@ -3,10 +3,16 @@
 #include <mishmesh/text/Fonts.h>
 #include <helpers/ui/DisplayDriver.h>
 #include <string.h>
+#include <stdio.h>
 
 namespace mishmesh {
 
 static const uint32_t TOAST_MS = 1400;
+
+// Top-right new-message bubble: slides in, holds, slides back out.
+static const uint32_t BUBBLE_MS      = 2200;
+static const uint32_t BUBBLE_SLIDE_MS = 160;
+static const uint32_t BUBBLE_TICK_MS  = 40;   // animation cadence while sliding
 
 AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
     : _display(display), _canvas(display), _ctx(ctx),
@@ -14,7 +20,8 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
       _next_render_at(0), _last_flush_ms(0), _has_rendered(false), _dirty(true),
       _auto_off_ms(30000), _last_activity(0), _activity_init(false),
       _last_input_event(InputEvent::None), _last_input_ms(0), _input_seen(false),
-      _toast_until(0), _toast_pending(false) {
+      _toast_until(0), _toast_pending(false),
+      _bubble_start(0), _bubble_until(0), _bubble_pending(false), _bubble_unread(0) {
   for (int i = 0; i < MAX_STACK; i++) _stack[i] = nullptr;
   for (int i = 0; i < MAX_SOURCES; i++) _sources[i] = nullptr;
   _toast_msg[0] = 0;
@@ -26,6 +33,25 @@ void AppletHost::postToast(const char* msg) {
   strncpy(_toast_msg, msg ? msg : "", sizeof(_toast_msg) - 1);
   _toast_msg[sizeof(_toast_msg) - 1] = 0;
   _toast_pending = true;   // stamped with a deadline on the next loop (needs now)
+  _dirty = true;
+}
+
+void AppletHost::postBubble(uint16_t unread) {
+  _bubble_unread = unread;
+  _bubble_pending = true;   // stamped with a deadline on the next loop (needs now)
+  _dirty = true;
+}
+
+bool AppletHost::isDisplayOn() const {
+  return _display != nullptr && _display->isOn();
+}
+
+void AppletHost::wakeDisplay() {
+  if (_display != nullptr && !_display->isOn()) _display->turnOn();
+  // Restart the auto-off window so the panel we just woke isn't blanked again on
+  // the next loop: clearing _activity_init makes loop() restamp _last_activity to
+  // the current now (same path used at first boot).
+  _activity_init = false;
   _dirty = true;
 }
 
@@ -152,6 +178,13 @@ void AppletHost::loop(uint32_t now_ms) {
     _dirty = true;
   }
 
+  if (_bubble_pending) {           // posted from notify() (mesh callback); stamp it now
+    _bubble_start = now_ms;
+    _bubble_until = now_ms + BUBBLE_MS;
+    _bubble_pending = false;
+    _dirty = true;
+  }
+
   if (_auto_off_ms > 0 && _display != nullptr && _display->isOn() &&
       now_ms - _last_activity > _auto_off_ms) {
     _display->turnOff();
@@ -189,6 +222,16 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
     uint32_t rem = _toast_until - now_ms;          // re-render to clear it when it expires
     if (delay < 0 || (uint32_t)delay > rem) delay = (int)rem;
   }
+  if (now_ms < _bubble_until) {
+    drawBubble(now_ms);
+    uint32_t elapsed = now_ms - _bubble_start;
+    uint32_t remaining = _bubble_until - now_ms;
+    uint32_t wake;
+    if (elapsed < BUBBLE_SLIDE_MS)            wake = BUBBLE_TICK_MS;                  // sliding in
+    else if (remaining > BUBBLE_SLIDE_MS)     wake = remaining - BUBBLE_SLIDE_MS;     // hold, then wake to slide out
+    else                                      wake = BUBBLE_TICK_MS;                  // sliding out (+ final clear)
+    if (delay < 0 || (uint32_t)delay > wake) delay = (int)wake;
+  }
   if (exclusive) {
     uint32_t interval = 1000u / MISHMESH_GAME_MAX_FLUSH_FPS;
     if (!_has_rendered || (uint32_t)(now_ms - _last_flush_ms) >= interval) {
@@ -203,6 +246,41 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
   }
   _has_rendered = true;
   _dirty = false;
+}
+
+void AppletHost::drawBubble(uint32_t now_ms) {
+  const mf_font_s* icon = iconFont();
+  const mf_font_s* num  = fontBody();
+
+  char cnt[6];
+  if (_bubble_unread > 0) snprintf(cnt, sizeof(cnt), "%u", (unsigned)_bubble_unread);
+  else cnt[0] = 0;
+
+  const int iconW = 12, pad = 3, gap = 2, bh = 15;
+  int glyphH = _canvas.fontHeight(icon); if (glyphH <= 0) glyphH = 12;
+  int cntW = cnt[0] ? _canvas.textWidth(num, cnt) : 0;
+  int bw = iconW + (cnt[0] ? gap + cntW : 0) + 2 * pad;
+  int baseX = _canvas.width() - 1 - bw;   // 1px margin from the right edge
+  const int by = 1;                       // 1px margin from the top edge
+
+  // Slide in from off the right edge, hold, then slide back out the same way.
+  uint32_t elapsed = now_ms - _bubble_start;
+  uint32_t remaining = _bubble_until - now_ms;
+  int travel = bw + 2;
+  int slide = 0;
+  if (elapsed < BUBBLE_SLIDE_MS)
+    slide = (int)((uint32_t)travel * (BUBBLE_SLIDE_MS - elapsed) / BUBBLE_SLIDE_MS);
+  else if (remaining < BUBBLE_SLIDE_MS)
+    slide = (int)((uint32_t)travel * (BUBBLE_SLIDE_MS - remaining) / BUBBLE_SLIDE_MS);
+  int bx = baseX + slide;
+
+  _canvas.fillRect(bx, by, bw, bh, DisplayDriver::DARK);       // mask the content behind
+  _canvas.drawRoundRect(bx, by, bw, bh, DisplayDriver::LIGHT);
+  _canvas.drawGlyph(icon, bx + pad, by + (bh - glyphH) / 2,
+                    (uint16_t)Icon::Message, DisplayDriver::LIGHT);
+  if (cnt[0])
+    _canvas.drawText(num, bx + pad + iconW + gap,
+                     by + (bh - _canvas.fontHeight(num)) / 2, cnt, DisplayDriver::LIGHT);
 }
 
 }  // namespace mishmesh

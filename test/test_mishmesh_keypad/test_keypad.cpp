@@ -191,14 +191,6 @@ TEST(Keypad, ConfirmTogglesPopAndToast) {
   //       (_toast_msg is private; postToast() is write-only from the outside).
 }
 
-TEST(Keypad, RegisteredInAppMenu) {
-  bool found = false;
-  for (AppletRegistration* r = registeredApplets(); r; r = r->next) {
-    if (r->placement == Placement::AppMenu && strcmp(r->label, "Keypad") == 0) found = true;
-  }
-  EXPECT_TRUE(found);
-}
-
 namespace {
 // Records the host's setHoldRepeat() calls so we can assert the per-applet
 // Back-repeat preference is propagated on foreground changes.

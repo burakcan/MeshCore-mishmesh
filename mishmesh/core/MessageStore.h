@@ -83,6 +83,12 @@ public:
   bool getMessage(const ConvoKey& key, int index, MsgRecord& out) const;  // index 0 = oldest
   void setActiveConvo(const ConvoKey& key);
   void clearActiveConvo();
+  // The chat currently open on screen, if any (set by the thread view on
+  // foreground). The notification router uses it to stay silent for the open chat.
+  bool activeConvo(ConvoKey& out) const;
+  // The chat that received the most recent inbound message — the subject of a
+  // notification. Valid once any inbound message has been captured.
+  bool lastInbound(ConvoKey& out) const;
 
   int  repeatCount(const ConvoKey& key, int msgIndex) const;              // 0 if summary-only
   bool getRepeat(const ConvoKey& key, int msgIndex, int r, RepeatRec& out) const;
@@ -125,6 +131,8 @@ private:
 
   bool _hasActive;
   ConvoKey _active;
+  bool _hasLastInbound;
+  ConvoKey _lastInbound;
 
   // helpers (implemented across tasks)
   int  findConvo(const ConvoKey& key) const;

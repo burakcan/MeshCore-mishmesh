@@ -64,6 +64,29 @@ TEST(MessageStore, ActiveConvoSuppressesAndClears) {
   EXPECT_EQ(2u, s.totalUnread());
 }
 
+TEST(MessageStore, LastInboundTracksSubjectChat) {
+  MessageStore s;
+  ConvoKey k;
+  EXPECT_FALSE(s.lastInbound(k));                 // nothing captured yet
+  s.appendInbound(dm("ALICE!"), "a", 1, 1, 1, 0, nullptr, 0);
+  EXPECT_TRUE(s.lastInbound(k));
+  EXPECT_TRUE(k.equals(dm("ALICE!")));
+  s.appendInbound(dm("BOBBBB"), "b", 1, 2, 2, 0, nullptr, 0);
+  EXPECT_TRUE(s.lastInbound(k));
+  EXPECT_TRUE(k.equals(dm("BOBBBB")));            // follows the newest arrival
+}
+
+TEST(MessageStore, ActiveConvoReportsOpenChat) {
+  MessageStore s;
+  ConvoKey k;
+  EXPECT_FALSE(s.activeConvo(k));                 // no chat open
+  s.setActiveConvo(dm("ALICE!"));
+  EXPECT_TRUE(s.activeConvo(k));
+  EXPECT_TRUE(k.equals(dm("ALICE!")));
+  s.clearActiveConvo();
+  EXPECT_FALSE(s.activeConvo(k));
+}
+
 TEST(MessageStore, PerChatCapDropsOwnOldest) {
   MessageStore s;
   for (int i = 0; i < PER_CHAT_CAP + 5; i++)
