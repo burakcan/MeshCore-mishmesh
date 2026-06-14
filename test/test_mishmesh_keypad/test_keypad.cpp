@@ -123,12 +123,13 @@ TEST(Keypad, MovingFocusCommitsPending) {
   EXPECT_STREQ("bd", k.text());
 }
 
-TEST(Keypad, BackspaceDeletesBeforeCursor) {
+TEST(Keypad, DelCellDeletesBeforeCursor) {
   KeypadApplet k; Harness h(&k);                  // opens focused on "abc"
   k.onInput(InputEvent::Select);                  // 'a'
   k.onInput(InputEvent::NavRight);                // commit, focus def
   k.onInput(InputEvent::Select);                  // 'd' -> "ad"
-  EXPECT_TRUE(k.onInput(InputEvent::Back));       // backspace
+  k.setFocusForTest(0, 3);                        // DEL cell (backspace lives here now)
+  k.onInput(InputEvent::Select);                  // delete before cursor
   EXPECT_STREQ("a", k.text());
   EXPECT_EQ(1, k.cursor());
 }
@@ -220,30 +221,21 @@ TEST(Keypad, UnconsumedSelectLongFallsBackToSelect) {
   EXPECT_EQ(1, a.selects);                  // falls back to Select instead of doing nothing
 }
 
-TEST(Keypad, BackRepeatPreferencePropagatesOnForegroundChange) {
+TEST(Keypad, KeypadDoesNotRequestBackRepeat) {
   FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
   RecordingSource src; host.addSource(&src);
   PlainApplet root; host.setRoot(&root);
   EXPECT_FALSE(src.holdRepeat);          // normal screen: Back must not repeat
   KeypadApplet kp; host.push(&kp);
-  EXPECT_TRUE(src.holdRepeat);           // keypad wants Back to repeat-delete
-  host.pop();
-  EXPECT_FALSE(src.holdRepeat);          // revealed normal screen again
+  EXPECT_FALSE(src.holdRepeat);          // Back is exit now, not repeat-delete
 }
 
-TEST(Keypad, HeldBackStopsAtEmptyFreshBackExits) {
+TEST(Keypad, FreshBackOnEmptyExits) {
   FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
   PlainApplet root; host.setRoot(&root);
   KeypadApplet kp; host.push(&kp);
   EXPECT_EQ(2, host.depth());
-  host.dispatch(InputEvent::Select);                  // type 'a' (focused on "abc")
-  EXPECT_STREQ("a", kp.text());
-  host.dispatch(InputEvent::Back, /*repeat=*/true);   // held delete -> empties buffer
-  EXPECT_STREQ("", kp.text());
-  EXPECT_EQ(2, host.depth());                          // still in the keypad
-  host.dispatch(InputEvent::Back, /*repeat=*/true);   // held Back at empty must NOT exit
-  EXPECT_EQ(2, host.depth());
-  host.dispatch(InputEvent::Back, /*repeat=*/false);  // a fresh Back click exits
+  host.dispatch(InputEvent::Back);                    // empty (clean) -> exit straight away
   EXPECT_EQ(1, host.depth());
 }
 
@@ -289,6 +281,106 @@ TEST(Keypad, StandaloneConfirmDoesNotCallback) {
   k.setFocusForTest(3, 3);
   k.onInput(InputEvent::Select);   // confirm
   EXPECT_EQ(1, host.depth());      // still pops, as before
+}
+
+// ---- working-buffer model + discard-confirm (new behavior) -----------------
+
+TEST(Keypad, ConfiguredSeedsWorkingBufferFromSource) {
+  KeypadApplet k;
+  char buf[KeypadApplet::KP_MAX + 1]; strcpy(buf, "hi");
+  k.configure(buf, KeypadApplet::KP_MAX, "T");
+  EXPECT_STREQ("hi", k.text());          // working copy seeded from source
+  EXPECT_EQ(2, k.cursor());
+}
+
+TEST(Keypad, EditsDoNotTouchSourceBeforeOk) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+  KeypadApplet k;
+  char buf[KeypadApplet::KP_MAX + 1]; strcpy(buf, "hi");
+  k.configure(buf, KeypadApplet::KP_MAX, "T");
+  host.push(&k);
+  k.onInput(InputEvent::Select);         // 'a' appended to working copy -> "hia"
+  EXPECT_STREQ("hia", k.text());
+  EXPECT_STREQ("hi", buf);               // source untouched until OK
+}
+
+TEST(Keypad, OkCommitsWorkingBufferToSource) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+  KeypadApplet k;
+  char buf[KeypadApplet::KP_MAX + 1]; buf[0] = 0;
+  k.configure(buf, KeypadApplet::KP_MAX, "T");   // no onConfirm: write-back path (FormApplet)
+  host.push(&k);
+  k.onInput(InputEvent::Select);         // 'a'
+  k.setFocusForTest(3, 3);               // OK cell
+  k.onInput(InputEvent::Select);         // confirm
+  EXPECT_STREQ("a", buf);                // committed to source
+  EXPECT_EQ(1, host.depth());            // popped
+}
+
+TEST(Keypad, BackWhenCleanPopsWithoutDialog) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+  KeypadApplet k;
+  char buf[KeypadApplet::KP_MAX + 1]; strcpy(buf, "hi");
+  k.configure(buf, KeypadApplet::KP_MAX, "T");
+  host.push(&k);
+  host.dispatch(InputEvent::Back);       // unchanged -> exit immediately
+  EXPECT_EQ(1, host.depth());            // popped, no discard dialog
+}
+
+TEST(Keypad, BackWhenDirtyOpensDiscardConfirm) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+  KeypadApplet k;
+  char buf[KeypadApplet::KP_MAX + 1]; strcpy(buf, "hi");
+  k.configure(buf, KeypadApplet::KP_MAX, "T");
+  host.push(&k);
+  k.onInput(InputEvent::Select);         // edit -> dirty
+  host.dispatch(InputEvent::Back);
+  EXPECT_EQ(2, host.depth());            // NOT popped: discard dialog is up
+}
+
+TEST(Keypad, BackLongAlsoConfirmsWhenDirty) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+  KeypadApplet k;
+  char buf[KeypadApplet::KP_MAX + 1]; strcpy(buf, "hi");
+  k.configure(buf, KeypadApplet::KP_MAX, "T");
+  host.push(&k);
+  k.onInput(InputEvent::Select);         // dirty
+  host.dispatch(InputEvent::BackLong);   // behaves like Back: confirm, don't bypass
+  EXPECT_EQ(2, host.depth());
+}
+
+TEST(Keypad, DiscardConfirmedPopsWithoutCommitting) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+  KeypadApplet k;
+  char buf[KeypadApplet::KP_MAX + 1]; strcpy(buf, "hi");
+  k.configure(buf, KeypadApplet::KP_MAX, "T");
+  host.push(&k);
+  k.onInput(InputEvent::Select);         // "hia", dirty
+  host.dispatch(InputEvent::Back);       // discard dialog (default sel = Cancel)
+  host.dispatch(InputEvent::NavRight);   // move to Confirm
+  host.dispatch(InputEvent::Select);     // confirm discard
+  EXPECT_EQ(1, host.depth());            // popped
+  EXPECT_STREQ("hi", buf);               // source never written
+}
+
+TEST(Keypad, DiscardCancelledStaysAndKeepsText) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+  KeypadApplet k;
+  char buf[KeypadApplet::KP_MAX + 1]; strcpy(buf, "hi");
+  k.configure(buf, KeypadApplet::KP_MAX, "T");
+  host.push(&k);
+  k.onInput(InputEvent::Select);         // "hia", dirty
+  host.dispatch(InputEvent::Back);       // discard dialog
+  host.dispatch(InputEvent::Select);     // default sel = Cancel -> dismiss dialog
+  EXPECT_EQ(2, host.depth());            // still editing
+  EXPECT_STREQ("hia", k.text());         // text preserved
 }
 
 int main(int argc, char** argv) {

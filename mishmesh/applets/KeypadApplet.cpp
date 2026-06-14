@@ -8,12 +8,17 @@
 namespace mishmesh {
 
 KeypadApplet::KeypadApplet()
-    : Applet("Keypad"), _ctx(nullptr), _buf(_own), _cap(KP_MAX), _title("Text"),
+    : Applet("Keypad"), _ctx(nullptr), _buf(_own), _src(nullptr), _cap(KP_MAX), _title("Text"),
       _len(0), _cursor(0), _mode(Mode::Lower), _symPage(false),
       _pending(false), _pendingPos(0), _tapGroupCell(-1), _tapIndex(0),
-      _lastTapMs(0), _tapStampPending(false), _now(0),
+      _lastTapMs(0), _tapStampPending(false), _now(0), _confirming(false),
       _onConfirm(nullptr), _onConfirmCtx(nullptr) {
   _own[0] = 0;
+}
+
+bool KeypadApplet::isDirty() const {
+  const char* orig = _src ? _src : "";   // standalone: original was empty
+  return strcmp(_buf, orig) != 0;
 }
 
 const char* KeypadApplet::groupAt(int i) const {
@@ -136,10 +141,13 @@ void KeypadApplet::onStart(AppletContext& ctx) {
   _ctx = &ctx;
   _grid.setModel(this);
   _grid.setFocus(0, 1);            // start on "abc" - the natural first target for typing
-  if (_buf == _own) { _own[0] = 0; _len = 0; _cursor = 0; }  // standalone reset
+  if (!_src) { _own[0] = 0; _len = 0; _cursor = 0; }  // standalone: fresh buffer (configure() already seeded)
+  _buf = _own;
   _mode = Mode::Lower;
   _symPage = false;
   commitPending();
+  _confirming = false;
+  _confirm.reset();
   _tapStampPending = false;
   _now = 0;
 }
@@ -169,10 +177,26 @@ int KeypadApplet::onRender(Canvas& c) {
   c.drawText(fontCaption(), c.width(), 3, tag, DisplayDriver::LIGHT, TextAlign::Right);
 
   _grid.draw(c, 0, topH, c.width(), c.height() - topH);
+
+  if (_confirming) {                       // discard dialog overlays the keypad
+    _confirm.draw(c, 0, 0, c.width(), c.height());
+    return 100;
+  }
   return _pending ? 80 : 1000;
 }
 
 bool KeypadApplet::onInput(InputEvent ev) {
+  if (_confirming) {                       // discard dialog is modal: route input to it
+    if (_confirm.onInput(ev)) {
+      ConfirmResult r = _confirm.result();
+      if (r != ConfirmResult::None) {
+        bool discard = (r == ConfirmResult::Confirmed);
+        _confirming = false; _confirm.reset();
+        if (discard && _ctx && _ctx->host) _ctx->host->pop();   // drop edits, exit
+      }
+    }
+    return true;                           // swallow everything while the dialog is up
+  }
   switch (ev) {
     case InputEvent::NavUp:
     case InputEvent::NavDown:
@@ -183,12 +207,11 @@ bool KeypadApplet::onInput(InputEvent ev) {
     case InputEvent::Select:
       handleSelect();
       return true;
-    case InputEvent::Back:
+    case InputEvent::Back:                  // Back = exit, like every other screen;
+    case InputEvent::BackLong:              // backspace lives on the DEL cell now
       commitPending();
-      if (_cursor > 0) { deleteCharAt(_cursor - 1); _cursor--; return true; }
-      return _len != 0;            // empty -> false (host pops); non-empty at col 0 -> no-op
-    case InputEvent::BackLong:
-      return false;                // host pops (exit)
+      if (isDirty()) { _confirm.configure("Discard changes?"); _confirming = true; return true; }
+      return false;                         // unchanged -> host pops (exit)
     default:
       return false;
   }
@@ -196,7 +219,12 @@ bool KeypadApplet::onInput(InputEvent ev) {
 
 void KeypadApplet::confirmAndExit() {
   commitPending();
-  if (_onConfirm) _onConfirm(_onConfirmCtx, _buf);
+  if (_src && _src != _buf) {            // commit the working copy to the source on OK
+    memcpy(_src, _buf, _len);
+    _src[_len] = 0;
+  }
+  const char* result = _src ? _src : _buf;
+  if (_onConfirm) _onConfirm(_onConfirmCtx, result);
   if (_ctx && _ctx->host) {
     if (!_onConfirm) _ctx->host->postToast(_len ? "Saved" : "(empty)");
     _ctx->host->pop();
@@ -205,10 +233,13 @@ void KeypadApplet::confirmAndExit() {
 
 void KeypadApplet::onStop() {
   _buf = _own;
+  _src = nullptr;
   _cap = KP_MAX;
   _title = "Text";
   _onConfirm = nullptr;
   _onConfirmCtx = nullptr;
+  _confirming = false;
+  _confirm.reset();
 }
 
 void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
@@ -248,9 +279,15 @@ void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
 
 void KeypadApplet::configure(char* dst, uint16_t cap, const char* title,
                              KeypadConfirmFn onConfirm, void* ctx) {
-  _buf = dst; _cap = cap; _title = title;
+  _src = dst;                                  // written only on OK; never during editing
+  _cap = cap < KP_MAX ? cap : KP_MAX;
+  _title = title;
   _onConfirm = onConfirm; _onConfirmCtx = ctx;
-  _len = (uint16_t)strlen(dst); _cursor = _len;
+  _buf = _own;                                 // seed the working copy from the source
+  uint16_t n = 0;
+  if (dst) while (dst[n] && n < _cap) { _own[n] = dst[n]; n++; }
+  _own[n] = 0;
+  _len = n; _cursor = n;
 }
 
 KeypadApplet& keypadApplet() {

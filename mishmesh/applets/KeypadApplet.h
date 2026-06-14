@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/widgets/GridView.h>
+#include <mishmesh/widgets/ConfirmDialog.h>
 
 namespace mishmesh {
 
@@ -33,7 +34,6 @@ public:
   void onStop() override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
-  bool wantsBackRepeat() const override { return true; }  // hold Back = repeat-delete
 
   // Future integration seam (unused by the menu launch). Call before push().
   // onConfirm (if set) receives the buffer on OK, before the host pops.
@@ -53,8 +53,9 @@ public:
 
 private:
   AppletContext* _ctx;
-  char  _own[KP_MAX + 1];
-  char* _buf;            // _own, unless configure() points it elsewhere
+  char  _own[KP_MAX + 1];  // the working buffer; the keypad only ever edits this
+  char* _buf;            // always points at _own (kept for call-site brevity)
+  char* _src;            // configure() destination; written only on OK. null = standalone
   uint16_t _cap;
   const char* _title;
   KeypadConfirmFn _onConfirm;
@@ -74,6 +75,12 @@ private:
   bool _tapStampPending; // a tap occurred; (re)stamp _lastTapMs on the next render (fresh clock)
   uint32_t _now;         // cached frame clock, for input-time timing
 
+  // Discard-changes guard. Back exits the keypad (like everywhere else); if the
+  // working buffer differs from the untouched source, confirm before dropping it.
+  ConfirmDialog _confirm;
+  bool _confirming;
+
+  bool isDirty() const;
   const char* groupAt(int charIndex) const;   // group string for char cell 0..8
   void insertCharAt(uint16_t pos, char ch);
   void deleteCharAt(uint16_t pos);
