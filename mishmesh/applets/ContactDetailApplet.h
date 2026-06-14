@@ -9,6 +9,7 @@
 #include <mishmesh/widgets/ScrollText.h>
 #include <mishmesh/widgets/Card.h>
 #include <mishmesh/applets/KeypadApplet.h>
+#include <mishmesh/applets/FormApplet.h>
 
 namespace mishmesh {
 
@@ -53,14 +54,24 @@ private:
   int              _pendingAction;
 
   char             _renameBuf[32];   // backs the keypad while renaming (ContactInfo.name is [32])
+  char             _pathBuf[160];    // hex path text, edited by the keypad via the form
+  int              _hashSize;        // 1..3 bytes per hop, picked via the form's stepper
 
   void refresh();        // pull current contact into the detail fields + cards
   void buildActions();   // fill _actions from _type
   void buildInfo();      // build _displayName / _infoLine / _details from the fields
   static void onRenameDone(void* ctx, const char* text);   // keypad confirm -> rename + refresh
+  static bool submitSetPath(void* ctx);   // form submit: parse + persist the path
 public:
   ContactDetailApplet();
   void setTarget(const uint8_t* pubKey);
+  // Parse comma-separated hex hops ("aa,bb" / "aabb,ccdd") into raw bytes, with
+  // `hashSize` bytes per hop. Returns the hop count, or -1 on malformed input.
+  // `out` must hold PATH_MAX_BYTES. Empty/whitespace text => 0 hops. (static for tests)
+  static int parseHexPath(const char* text, uint8_t hashSize, uint8_t* out, int outCap);
+  void openSetPath();                                      // build + push the set-path form
+  void openSetPathForTest() { openSetPath(); }             // test seam
+  void setSetPathTextForTest(const char* s, uint8_t hashSize);   // test seam
   void onStart(AppletContext& ctx) override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;

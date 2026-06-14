@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <gtest/gtest.h>
 #include <mishmesh/applets/FormApplet.h>
 #include <mishmesh/core/AppletHost.h>
@@ -115,6 +116,39 @@ TEST(FormApplet, SelectingFieldPushesKeypad) {
   host.loop(0);
   host.dispatch(InputEvent::Select);    // field row 0 -> push keypad
   EXPECT_EQ(3, host.depth());           // stub + form + keypad
+}
+
+namespace {
+void stepLabel(int v, char* out, uint16_t cap) { snprintf(out, cap, "v=%d", v); }
+}
+
+TEST(FormApplet, StepperFieldOpensModalAndWritesValue) {
+  g_submitCalls = 0; g_submitRet = true;
+  int hops = 1;
+  FormApplet::Field f[1] = {
+    { "Size", nullptr, 0, nullptr, nullptr, nullptr,
+      FormApplet::Stepper, &hops, 1, 3, stepLabel },
+  };
+  formApplet().configure("T", f, 1, submitSpy, nullptr);
+
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  StubApplet stub; host.setRoot(&stub);
+  host.push(&formApplet());
+  host.loop(0);
+
+  // Select on the stepper field opens the modal (no keypad pushed: depth stays 2).
+  host.dispatch(InputEvent::Select);
+  EXPECT_EQ(2, host.depth());
+  host.dispatch(InputEvent::NavRight);   // 1 -> 2
+  host.dispatch(InputEvent::NavRight);   // 2 -> 3
+  host.dispatch(InputEvent::Select);     // confirm
+  EXPECT_EQ(3, hops);                     // caller-owned int updated
+
+  // Now move to the submit button and submit succeeds.
+  host.dispatch(InputEvent::NavDown);    // field 0 -> button
+  host.dispatch(InputEvent::Select);
+  EXPECT_EQ(1, g_submitCalls);
+  EXPECT_EQ(1, host.depth());            // popped back to stub
 }
 
 int main(int argc, char** argv) {

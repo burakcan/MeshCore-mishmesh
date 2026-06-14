@@ -25,11 +25,16 @@ void StatusBar::draw(Canvas& c, int x, int y, int w, int h) {
 
   int ty = (h - 1 - bar.fontHeight(fontBody())) / 2;
   if (ty < 0) ty = 0;
-  bar.drawText(fontBody(), 0, ty, _title, DisplayDriver::LIGHT);
 
+  // Battery % on the right; title ellipsized into whatever space is left.
   char pct[8];
   snprintf(pct, sizeof(pct), "%d%%", batteryPercent(_millivolts));
   bar.drawText(fontBody(), w, ty, pct, DisplayDriver::LIGHT, TextAlign::Right);
+
+  const int pctW = bar.textWidth(fontBody(), pct);
+  const int titleW = w - pctW - 4;   // 4px gap before the battery %
+  if (titleW > 0)
+    bar.drawTextEllipsized(fontBody(), 0, ty, titleW, _title, DisplayDriver::LIGHT);
 }
 
 }  // namespace mishmesh

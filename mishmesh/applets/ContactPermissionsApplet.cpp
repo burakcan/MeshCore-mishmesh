@@ -1,5 +1,7 @@
 #include <mishmesh/applets/ContactPermissionsApplet.h>
 #include <mishmesh/core/AppletHost.h>
+#include <mishmesh/core/Canvas.h>
+#include <mishmesh/text/Fonts.h>
 #include <string.h>
 
 namespace mishmesh {
@@ -9,8 +11,8 @@ static const char* ROW_LABELS[ContactPermissionsApplet::ROW_COUNT] = {
 };
 
 ContactPermissionsApplet::ContactPermissionsApplet()
-    : Applet("Permissions"), _host(nullptr), _svc(nullptr), _favourite(false), _perms(0) {
-  _pubkey[0] = 0; _name[0] = 0; _info[0] = 0;
+    : Applet("Permissions"), _host(nullptr), _app(nullptr), _svc(nullptr), _perms(0) {
+  _pubkey[0] = 0; _name[0] = 0;
 }
 
 uint8_t ContactPermissionsApplet::bitFor(int row) {
@@ -22,14 +24,10 @@ uint8_t ContactPermissionsApplet::bitFor(int row) {
   }
 }
 
-void ContactPermissionsApplet::setTarget(const uint8_t* pubKey, const char* name,
-                                         const char* info, bool favourite) {
+void ContactPermissionsApplet::setTarget(const uint8_t* pubKey, const char* name) {
   memcpy(_pubkey, pubKey, 6);
   strncpy(_name, name ? name : "", sizeof(_name) - 1);
   _name[sizeof(_name) - 1] = 0;
-  strncpy(_info, info ? info : "", sizeof(_info) - 1);
-  _info[sizeof(_info) - 1] = 0;
-  _favourite = favourite;
 }
 
 const char* ContactPermissionsApplet::label(int i) const {
@@ -42,10 +40,9 @@ bool ContactPermissionsApplet::toggleState(int i) const {
 
 void ContactPermissionsApplet::onStart(AppletContext& ctx) {
   _host = ctx.host;
+  _app = ctx.app;
   _svc = ctx.contacts;
   _perms = _svc ? _svc->getTelemetryPerms(_pubkey) : 0;
-  _card.set(_name, _info);          // same name+info card as the contact detail page
-  _card.setFavourite(_favourite);
   _list.setRowHeight(12);
   _list.setModel(this);
   _list.resetSelection();   // shared static applet: always reopen at the first row
@@ -53,10 +50,12 @@ void ContactPermissionsApplet::onStart(AppletContext& ctx) {
 
 int ContactPermissionsApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
-  _list.setHeader(&_card, _card.height(c));   // card scrolls with the rows
-  _list.draw(c, 0, 0, w, h);
-  bool anim = _card.needsAnimation() || _list.needsAnimation();
-  return anim ? ListMenu::TICK_MS : 500;
+  const int barH = c.fontHeight(fontBody()) + 3;
+  _bar.setTitle(_name);
+  if (_app) _bar.setBattery(_app->batteryMillivolts());
+  _bar.draw(c, 0, 0, w, barH);
+  _list.draw(c, 0, barH, w, h - barH);
+  return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool ContactPermissionsApplet::onInput(InputEvent ev) {

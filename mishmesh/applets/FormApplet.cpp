@@ -7,9 +7,9 @@
 namespace mishmesh {
 
 // Compact layout (px): one row per field — label on the left, a boxed value on
-// the right — then a centred button. Focus is shown by inverting (filling) the
-// focused box/button. Tall forms scroll to keep the focused item visible.
-static const int TITLE_H = 13;   // title bar height (matches TabBar)
+// the right — then a centred button, under a StatusBar top bar. Focus inverts
+// (fills) the focused box/button. Tall forms scroll to keep the focused item
+// visible. A Stepper field's value is picked via a modal StepperDialog overlay.
 static const int ROW_H   = 17;   // field row pitch
 static const int BOX_H   = 14;   // input box height
 static const int BTN_H   = 14;   // button height
@@ -30,20 +30,25 @@ void FormApplet::configure(const char* title, const Field* fields, int n,
 
 void FormApplet::onStart(AppletContext& ctx) {
   _host = ctx.host;
+  _app = ctx.app;
   _focus = 0;
   _scroll = 0;
+  _editingStepper = false;
+  _stepperField = -1;
 }
 
 int FormApplet::onRender(Canvas& c) {
   const int w = c.width(), h = c.height();
   const mf_font_s* lf = fontCaption();   // field labels
-  const mf_font_s* vf = fontBody();       // values / button
+  const mf_font_s* vf = fontBody();      // values / button
 
-  // Title + divider.
-  c.drawText(fontBody(), PAD, 2, _title, DisplayDriver::LIGHT);
-  c.fillRect(0, TITLE_H - 1, w, 1, DisplayDriver::LIGHT);
+  // Top bar (title + battery), mirroring HomeApplet.
+  const int barH = c.fontHeight(fontBody()) + 3;
+  _bar.setTitle(_title);
+  if (_app) _bar.setBattery(_app->batteryMillivolts());
+  _bar.draw(c, 0, 0, w, barH);
 
-  const int bodyY = TITLE_H + 2;
+  const int bodyY = barH + 2;
   const int bodyH = h - bodyY;
 
   // Label column = widest label, clamped to a third of the screen.
@@ -86,7 +91,17 @@ int FormApplet::onRender(Canvas& c) {
     c.drawText(lf, PAD, rowY + (BOX_H - lh) / 2, _fields[i].label, DisplayDriver::LIGHT);
     if (foc) c.fillRect(boxX, rowY, boxW, BOX_H, DisplayDriver::LIGHT);
     else     c.drawRect(boxX, rowY, boxW, BOX_H, DisplayDriver::LIGHT);
+
+    char tmp[24];
     const char* val = _fields[i].buf;
+    if (_fields[i].kind == Stepper) {
+      if (_fields[i].ifmt && _fields[i].ival) _fields[i].ifmt(*_fields[i].ival, tmp, sizeof(tmp));
+      else tmp[0] = 0;
+      val = tmp;
+    } else if (_fields[i].display) {
+      _fields[i].display(_fields[i].buf ? _fields[i].buf : "", tmp, sizeof(tmp));
+      val = tmp;
+    }
     if (val && val[0]) {
       c.drawTextEllipsized(vf, boxX + 3, rowY + (BOX_H - vh) / 2, boxW - 6, val,
                            foc ? DisplayDriver::DARK : DisplayDriver::LIGHT);
@@ -101,11 +116,14 @@ int FormApplet::onRender(Canvas& c) {
   c.drawTextEllipsized(vf, btnX + btnW / 2, btnY + (BTN_H - vh) / 2, btnW - 6,
                        _submitLabel, bfoc ? DisplayDriver::DARK : DisplayDriver::LIGHT,
                        TextAlign::Center);
+
+  if (_editingStepper) { _stepper.draw(c, 0, 0, w, h); return 100; }
   return 500;
 }
 
 bool FormApplet::submit() {
   for (int i = 0; i < _n; i++) {
+    if (_fields[i].kind == Stepper) continue;   // clamped by the modal; always valid
     const char* s = _fields[i].buf;
     bool ok = _fields[i].validate ? _fields[i].validate(s) : (s && s[0] != 0);
     if (!ok) {
@@ -118,11 +136,30 @@ bool FormApplet::submit() {
 }
 
 bool FormApplet::onInput(InputEvent ev) {
+  if (_editingStepper) {
+    if (_stepper.onInput(ev)) {
+      StepperResult r = _stepper.result();
+      if (r != StepperResult::None) {
+        if (r == StepperResult::Confirmed && _stepperField >= 0 && _fields[_stepperField].ival)
+          *_fields[_stepperField].ival = _stepper.value();
+        _editingStepper = false;
+        _stepperField = -1;
+        _stepper.reset();
+      }
+    }
+    return true;   // swallow everything while modal
+  }
+
   switch (ev) {
     case InputEvent::NavUp:   if (_focus > 0)  _focus--; return true;
     case InputEvent::NavDown: if (_focus < _n) _focus++; return true;
     case InputEvent::Select:
-      if (_focus < _n) {
+      if (_focus < _n && _fields[_focus].kind == Stepper) {
+        const Field& f = _fields[_focus];
+        _stepper.configure(f.label, f.ival ? *f.ival : f.imin, f.imin, f.imax, f.ifmt);
+        _editingStepper = true;
+        _stepperField = _focus;
+      } else if (_focus < _n) {
         keypadApplet().configure(_fields[_focus].buf, _fields[_focus].cap,
                                  _fields[_focus].label, &FormApplet::noopConfirm, nullptr);
         if (_host) _host->push(&keypadApplet());

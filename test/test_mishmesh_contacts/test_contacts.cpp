@@ -5,7 +5,6 @@
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/applets/ContactPermissionsApplet.h>
-#include <mishmesh/applets/SetPathApplet.h>
 #include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/widgets/TelemetryDialog.h>
@@ -273,21 +272,21 @@ TEST(ContactPermissions, OpenedFromContactDetailPushes) {
 TEST(SetPath, ParseHexHops) {
   uint8_t out[mishmesh::PATH_MAX_BYTES];
   // 1-byte hops
-  int n = mishmesh::SetPathApplet::parseHexPath("3f,a1,bb", 1, out, sizeof(out));
+  int n = mishmesh::ContactDetailApplet::parseHexPath("3f,a1,bb", 1, out, sizeof(out));
   ASSERT_EQ(3, n);
   EXPECT_EQ(0x3f, out[0]); EXPECT_EQ(0xa1, out[1]); EXPECT_EQ(0xbb, out[2]);
   // uppercase + spaces tolerated
-  EXPECT_EQ(2, mishmesh::SetPathApplet::parseHexPath("AA, BB", 1, out, sizeof(out)));
+  EXPECT_EQ(2, mishmesh::ContactDetailApplet::parseHexPath("AA, BB", 1, out, sizeof(out)));
   // empty => flood (0 hops)
-  EXPECT_EQ(0, mishmesh::SetPathApplet::parseHexPath("", 1, out, sizeof(out)));
+  EXPECT_EQ(0, mishmesh::ContactDetailApplet::parseHexPath("", 1, out, sizeof(out)));
   // 2-byte hops
-  n = mishmesh::SetPathApplet::parseHexPath("aabb,ccdd", 2, out, sizeof(out));
+  n = mishmesh::ContactDetailApplet::parseHexPath("aabb,ccdd", 2, out, sizeof(out));
   ASSERT_EQ(2, n);
   EXPECT_EQ(0xaa, out[0]); EXPECT_EQ(0xbb, out[1]); EXPECT_EQ(0xcc, out[2]); EXPECT_EQ(0xdd, out[3]);
   // malformed: bad hex, and wrong token length for the hash size
-  EXPECT_EQ(-1, mishmesh::SetPathApplet::parseHexPath("zz", 1, out, sizeof(out)));
-  EXPECT_EQ(-1, mishmesh::SetPathApplet::parseHexPath("aaa", 1, out, sizeof(out)));
-  EXPECT_EQ(-1, mishmesh::SetPathApplet::parseHexPath("aa", 2, out, sizeof(out)));   // need 2 bytes/hop
+  EXPECT_EQ(-1, mishmesh::ContactDetailApplet::parseHexPath("zz", 1, out, sizeof(out)));
+  EXPECT_EQ(-1, mishmesh::ContactDetailApplet::parseHexPath("aaa", 1, out, sizeof(out)));
+  EXPECT_EQ(-1, mishmesh::ContactDetailApplet::parseHexPath("aa", 2, out, sizeof(out)));   // need 2 bytes/hop
 }
 
 TEST(SetPath, SaveEncodesAndPersists) {
@@ -297,13 +296,14 @@ TEST(SetPath, SaveEncodesAndPersists) {
   mishmesh::AppletContext ctx; ctx.contacts = &svc;
   mishmesh::AppletHost host(&d, ctx);
 
-  auto& sp = mishmesh::setPathApplet();
-  sp.setTarget((const uint8_t*)"ARAS01", "Aras");
-  host.setRoot(&sp);
+  auto& cd = mishmesh::contactDetailApplet();
+  cd.setTarget((const uint8_t*)"ARAS01");
+  host.setRoot(&cd);
 
-  sp.setPathTextForTest("3f,a1", 1);
+  cd.openSetPathForTest();                    // configures + pushes the form
+  cd.setSetPathTextForTest("3f,a1", 1);
   host.dispatch(mishmesh::InputEvent::NavDown);   // Hash size -> Path
-  host.dispatch(mishmesh::InputEvent::NavDown);   // Path -> Save
+  host.dispatch(mishmesh::InputEvent::NavDown);   // Path -> Save button
   host.dispatch(mishmesh::InputEvent::Select);    // save + pop
 
   EXPECT_EQ("ARAS01", svc.lastPathSet);
@@ -323,11 +323,12 @@ TEST(SetPath, EmptyTextClearsToFlood) {
   mishmesh::AppletContext ctx; ctx.contacts = &svc;
   mishmesh::AppletHost host(&d, ctx);
 
-  auto& sp = mishmesh::setPathApplet();
-  sp.setTarget((const uint8_t*)"ARAS01", "Aras");
-  host.setRoot(&sp);
+  auto& cd = mishmesh::contactDetailApplet();
+  cd.setTarget((const uint8_t*)"ARAS01");
+  host.setRoot(&cd);
 
-  sp.setPathTextForTest("", 1);
+  cd.openSetPathForTest();
+  cd.setSetPathTextForTest("", 1);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::Select);    // save empty -> flood
@@ -345,7 +346,7 @@ TEST(SetPath, OpenedFromContactDetailPushes) {
   host.dispatch(mishmesh::InputEvent::Select);   // open Alice detail (depth 2)
   // Chat order: Message, View, Rename, Favourite, Telemetry, Permissions, Set path(6), ...
   for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavDown);
-  host.dispatch(mishmesh::InputEvent::Select);   // push set-path
+  host.dispatch(mishmesh::InputEvent::Select);   // push the form
   EXPECT_EQ(3, host.depth());
 }
 
