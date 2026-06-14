@@ -91,7 +91,8 @@ TEST(MessagesApplet, LongPressDeletesChatFromList) {
   EXPECT_EQ(2, mishmesh::messagesApplet().visibleRowCountForTest());
   host.dispatch(mishmesh::InputEvent::SelectLong);   // open overlay on selected row
   EXPECT_TRUE(mishmesh::messagesApplet().menuOpenForTest());
-  host.dispatch(mishmesh::InputEvent::NavDown);       // Region -> Clear chat
+  host.dispatch(mishmesh::InputEvent::NavDown);       // Region -> Notifications
+  host.dispatch(mishmesh::InputEvent::NavDown);       // -> Clear chat
   host.dispatch(mishmesh::InputEvent::NavDown);       // -> Mark unread
   host.dispatch(mishmesh::InputEvent::NavDown);       // -> Delete chat
   host.dispatch(mishmesh::InputEvent::Select);        // arm the confirm dialog
@@ -204,7 +205,8 @@ TEST(MessageThread, SettingsTabClearKeepsThread) {
   int d0 = host.depth();
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> Settings tab
   EXPECT_EQ(1, mishmesh::messageThreadApplet().selectedTabForTest());
-  host.dispatch(mishmesh::InputEvent::NavDown);    // Region -> "Clear chat"
+  host.dispatch(mishmesh::InputEvent::NavDown);    // Region -> Notifications
+  host.dispatch(mishmesh::InputEvent::NavDown);    // -> "Clear chat"
   host.dispatch(mishmesh::InputEvent::Select);     // "Clear chat" -> confirm dialog
   EXPECT_EQ(2, svc.messageCount(k));               // not emptied yet
   EXPECT_EQ(1, mishmesh::messageThreadApplet().selectedTabForTest());  // still on Settings tab
@@ -229,7 +231,8 @@ TEST(MessageThread, SettingsTabDeletePopsToList) {
   host.push(&mishmesh::messageThreadApplet());
   int d0 = host.depth();
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> Settings tab
-  host.dispatch(mishmesh::InputEvent::NavDown);    // Region -> Clear chat
+  host.dispatch(mishmesh::InputEvent::NavDown);    // Region -> Notifications
+  host.dispatch(mishmesh::InputEvent::NavDown);    // -> Clear chat
   host.dispatch(mishmesh::InputEvent::NavDown);    // -> Mark unread
   host.dispatch(mishmesh::InputEvent::NavDown);    // -> Delete chat
   host.dispatch(mishmesh::InputEvent::Select);     // arm the confirm dialog
@@ -460,7 +463,7 @@ TEST(MessageThread, ReplyOnDmOpensEmptyCompose) {
   EXPECT_STREQ("", mishmesh::keypadApplet().text());
 }
 
-// Reply on a channel message seeds "@<sender> " into the compose buffer.
+// Reply on a channel message seeds "@[<sender>] " (the app's mention format) into compose.
 TEST(MessageThread, ReplyOnChannelSeedsMention) {
   FakeMessagesService svc;
   svc.senderName = "Bob";
@@ -474,7 +477,7 @@ TEST(MessageThread, ReplyOnChannelSeedsMention) {
   host.push(&mishmesh::messageThreadApplet());
   host.dispatch(mishmesh::InputEvent::Select);    // open per-message menu
   host.dispatch(mishmesh::InputEvent::Select);    // invoke Reply (index 0)
-  EXPECT_STREQ("@Bob ", mishmesh::keypadApplet().text());
+  EXPECT_STREQ("@[Bob] ", mishmesh::keypadApplet().text());
 }
 
 // "New message" (New tab, row 0) opens the contacts picker in pick mode.

@@ -1,5 +1,6 @@
 #include "MessagesApplet.h"
 #include "MessageThreadApplet.h"
+#include "ChatNotifyApplet.h"
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/AppletHost.h>
@@ -99,6 +100,7 @@ void MessagesApplet::onForeground() {
     }
     _hasOpened = false;
   }
+  if (_menuOpen) refreshRegion();   // re-sync the overlay's Region/Notifications values on return from an editor
 }
 
 void MessagesApplet::syncList() {
@@ -146,6 +148,16 @@ bool MessagesApplet::onInput(InputEvent ev) {
       const char* toast = nullptr;
       ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete arm confirm
       if (r == ChatMenu::Result::EditRegion) { openRegionEditor(); return true; }   // keypad over the menu
+      if (r == ChatMenu::Result::EditNotify) {
+        ConvoView cv;
+        const char* nm = "";
+        for (int idx = 0; idx < _svc->convoCount(); idx++) {
+          if (_svc->getConvo(idx, cv) && cv.key.equals(_menuKey)) { nm = cv.name; break; }
+        }
+        chatNotifyApplet().setTarget(_menuKey, nm);
+        if (_host) _host->push(&chatNotifyApplet());
+        return true;
+      }
       if (_host && toast) _host->postToast(toast);
       if (r != ChatMenu::Result::None) syncList();   // chat cleared/removed -> refresh rows
       if (!_chatMenu.confirming()) _menuOpen = false;   // non-destructive (or none) closes the overlay
@@ -251,6 +263,7 @@ void MessagesApplet::refreshRegion() {
   _regionBuf[0] = 0;
   if (_svc) _svc->region(_menuKey, _regionBuf, sizeof(_regionBuf));
   _chatMenu.setRegion(_regionBuf);   // shows "None" when empty
+  if (_svc) _chatMenu.setNotifyLabel(mishmesh::notifyLevelShortLabel(_svc->notifyLevel(_menuKey)));
 }
 
 void MessagesApplet::openRegionEditor() {

@@ -1,6 +1,7 @@
 // mishmesh/applets/MessageThreadApplet.cpp
 #include "MessageThreadApplet.h"
 #include "MessagePathApplet.h"
+#include "ChatNotifyApplet.h"
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
@@ -124,6 +125,7 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
 void MessageThreadApplet::onForeground() {
   snprintf(_titleBuf, sizeof(_titleBuf), "%s", resolveTitle());
   if (_svc) _svc->setActiveConvo(_key);
+  refreshRegion();   // re-sync the menu's Region/Notifications values on return from an editor
 }
 void MessageThreadApplet::onBackground() { if (_svc) _svc->clearActiveConvo(); }
 void MessageThreadApplet::onStop() {
@@ -395,13 +397,13 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
         _menuOpen = false;
         messagePathApplet().setTarget(_key, _focus);
         if (_host) _host->push(&messagePathApplet());
-      } else if (sel == 0) {                 // Reply -> compose, seeding @sender for channels
+      } else if (sel == 0) {                 // Reply -> compose, seeding @[sender] for channels
         _menuOpen = false;
-        char seed[40] = {0};
+        char seed[48] = {0};
         MessageView m;
         if (_key.type == 1 && _svc && _svc->getMessage(_key, _focus, m) &&
             m.senderName && m.senderName[0])
-          snprintf(seed, sizeof(seed), "@%s ", m.senderName);
+          snprintf(seed, sizeof(seed), "@[%s] ", m.senderName);   // app's mention format
         startCompose(seed);
       } else {
         _menuOpen = false;
@@ -437,6 +439,11 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
       const char* toast = nullptr;
       ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete arm confirm
       if (r == ChatMenu::Result::EditRegion) { openRegionEditor(); return true; }   // keypad over the menu
+      if (r == ChatMenu::Result::EditNotify) {
+        chatNotifyApplet().setTarget(_key, _titleBuf);
+        if (_host) _host->push(&chatNotifyApplet());
+        return true;
+      }
       if (_host && toast) _host->postToast(toast);
       if (r == ChatMenu::Result::Deleted) { if (_host) _host->pop(); }   // chat is gone
       else if (!_chatMenu.confirming()) { _tabs.setSelected(0); _pinBottom = true; }  // non-destructive -> conversation
@@ -537,6 +544,7 @@ void MessageThreadApplet::refreshRegion() {
   _regionBuf[0] = 0;
   if (_svc) _svc->region(_key, _regionBuf, sizeof(_regionBuf));
   _chatMenu.setRegion(_regionBuf);   // shows "None" when empty
+  if (_svc) _chatMenu.setNotifyLabel(mishmesh::notifyLevelShortLabel(_svc->notifyLevel(_key)));
 }
 
 void MessageThreadApplet::openRegionEditor() {

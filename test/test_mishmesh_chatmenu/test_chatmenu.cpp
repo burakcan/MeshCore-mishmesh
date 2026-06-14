@@ -31,8 +31,8 @@ TEST(ChatMenu, RegionRowRequestsEditor) {
 TEST(ChatMenu, ClearKeepsChatEmptiesMessages) {
   FakeMessagesService svc = twoChats();
   ChatMenu m; m.setTarget(dm("ALICE!")); m.reset();
-  m.onInput(InputEvent::NavDown);                   // Region -> "Clear chat"
-  EXPECT_EQ(1, m.selected());
+  m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown);   // Region -> Notifications -> "Clear chat"
+  EXPECT_EQ(2, m.selected());
   const char* toast = nullptr;
   EXPECT_EQ(ChatMenu::Result::None, m.activate(&svc, toast));   // arms the confirm dialog
   EXPECT_TRUE(m.confirming());
@@ -48,7 +48,7 @@ TEST(ChatMenu, ClearKeepsChatEmptiesMessages) {
 TEST(ChatMenu, CancelLeavesChatUntouched) {
   FakeMessagesService svc = twoChats();
   ChatMenu m; m.setTarget(dm("ALICE!")); m.reset();
-  m.onInput(InputEvent::NavDown);                   // Region -> "Clear chat"
+  m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown);   // Region -> Notifications -> "Clear chat"
   const char* toast = nullptr;
   m.activate(&svc, toast);                          // Clear chat -> confirm dialog
   EXPECT_TRUE(m.confirming());
@@ -63,8 +63,8 @@ TEST(ChatMenu, MarkUnreadFlagsChat) {
   FakeMessagesService svc = twoChats();
   svc.setActiveConvo(dm("ALICE!")); svc.clearActiveConvo();   // unread -> 0
   ChatMenu m; m.setTarget(dm("ALICE!")); m.reset();
-  m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown);   // -> "Mark unread"
-  EXPECT_EQ(2, m.selected());
+  m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown);   // Region -> Notifications -> Clear -> "Mark unread"
+  EXPECT_EQ(3, m.selected());
   const char* toast = nullptr;
   EXPECT_EQ(ChatMenu::Result::None, m.activate(&svc, toast));
   EXPECT_STREQ("Marked unread", toast);
@@ -75,8 +75,8 @@ TEST(ChatMenu, DeleteRemovesChatFromList) {
   FakeMessagesService svc = twoChats();
   ChatMenu m; m.setTarget(dm("ALICE!")); m.reset();
   m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown);
-  m.onInput(InputEvent::NavDown);                  // Region/Clear/Mark -> "Delete chat"
-  EXPECT_EQ(3, m.selected());
+  m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown);   // Region/Notifications/Clear/Mark -> "Delete chat"
+  EXPECT_EQ(4, m.selected());
   const char* toast = nullptr;
   EXPECT_EQ(ChatMenu::Result::None, m.activate(&svc, toast));   // arms the confirm dialog
   EXPECT_TRUE(m.confirming());
@@ -85,6 +85,17 @@ TEST(ChatMenu, DeleteRemovesChatFromList) {
   EXPECT_STREQ("Chat deleted", toast);
   EXPECT_EQ(1, svc.convoCount());                  // ALICE gone, BOBBBB remains
   EXPECT_EQ(1, svc.messageCount(dm("BOBBBB")));
+}
+
+TEST(ChatMenu, NotificationsRowReturnsEditNotify) {
+  ChatMenu m;
+  m.setTarget(dm("ALICE!"));
+  m.reset();
+  m.setNotifyLabel("Mute");
+  m.onInput(InputEvent::NavDown);   // row 0 (Region) -> row 1 (Notifications)
+  const char* toast = nullptr;
+  FakeMessagesService svc;
+  EXPECT_EQ(ChatMenu::Result::EditNotify, m.activate(&svc, toast));
 }
 
 int main(int argc, char** argv) {

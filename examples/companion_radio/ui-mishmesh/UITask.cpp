@@ -2,6 +2,7 @@
 #include "target.h"   // rtc_clock
 #include <mishmesh/applets/NotificationApplet.h>
 #include <mishmesh/core/TelemetryDecode.h>
+#include <mishmesh/core/Mention.h>
 #include <helpers/AdvertDataHelpers.h>   // ADV_TYPE_CHAT
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   #include <malloc.h>
@@ -208,27 +209,48 @@ void UITask::dispatchNotification(UIEventType t) {
   bool inThisChat = _msgStore.activeConvo(active) && active.equals(c);
   bool sleeping   = _host && !_host->isDisplayOn();
 
-  // Reading this very chat (and awake): no sound, no overlay. The thread surfaces
-  // the arrival itself — auto-following at the bottom, or a chevron when scrolled up.
+  // Reading this very chat (awake): the thread surfaces the arrival itself.
   if (inThisChat && !sleeping) {
     if (_host) _host->requestRender();
     return;
   }
 
+  // Per-chat notification level gate. DMs only ever store All or Mute, so the
+  // MentionsOnly branch is effectively channel-only.
+  mishmesh::NotifyLevel lvl = _msgSvc.notifyLevel(c);
+  bool mention = false;
+  if (c.type == 1 && lvl == mishmesh::NotifyLevel::MentionsOnly) {
+    int mc = _msgStore.messageCount(c);
+    mishmesh::MsgRecord mr;
+    if (mc > 0 && _msgStore.getMessage(c, mc - 1, mr) && mr.text) {
+      char body[mishmesh::MAX_TEXT + 1];
+      uint16_t bl = mr.textLen < mishmesh::MAX_TEXT ? mr.textLen : mishmesh::MAX_TEXT;
+      memcpy(body, mr.text, bl); body[bl] = 0;
+      mention = mishmesh::textMentions(body, nodeName());
+    }
+  }
+  bool alerts = (lvl == mishmesh::NotifyLevel::All) ||
+                (lvl == mishmesh::NotifyLevel::MentionsOnly && mention);
+
+  if (!alerts) {
+    // Mute, or a non-mention in a mentions-only chat: list badge already updated
+    // at capture; stay silent and out of the global count.
+    if (_host) _host->requestRender();
+    return;
+  }
+
+  _msgStore.markNotifiable(c);   // feeds totalNotifyUnread() (global indicator/bubble)
   _sound.play(chime);
   if (!_host) return;
 
   bool atHome = _host->foreground() == _home;
   if (sleeping || atHome) {
-    // Idle device: full banner. Wake the panel if it was asleep; refresh in place
-    // if a banner is already up rather than stacking a second one.
     mishmesh::notificationApplet().raise(&_msgSvc, c);
     if (sleeping) _host->wakeDisplay();
     if (_host->foreground() != &mishmesh::notificationApplet())
       _host->push(&mishmesh::notificationApplet());
   } else {
-    // Busy in some other screen: a small, transient top-right badge.
-    _host->postBubble(_msgSvc.totalUnread());
+    _host->postBubble(_msgSvc.totalNotifyUnread());
   }
   _host->requestRender();
   // [/mishmesh]
@@ -502,6 +524,7 @@ bool UITask::MsgSvc::getConvo(int i, mishmesh::ConvoView& out) const {
 }
 
 uint16_t UITask::MsgSvc::totalUnread() const { return store->totalUnread(); }
+uint16_t UITask::MsgSvc::totalNotifyUnread() const { return store->totalNotifyUnread(); }
 int  UITask::MsgSvc::messageCount(const mishmesh::ConvoKey& k) const { return store->messageCount(k); }
 
 bool UITask::MsgSvc::getMessage(const mishmesh::ConvoKey& k, int i, mishmesh::MessageView& out) const {
@@ -613,6 +636,30 @@ void UITask::MsgSvc::setRegion(const mishmesh::ConvoKey& k, const char* name) {
   if (name) for (; name[len] && len < 30; len++) tmp[len] = name[len];
   if (len == 0) { uint8_t zero = 0; storage->save(key, &zero, 1); return; }   // cleared marker
   storage->save(key, (const uint8_t*)tmp, (uint8_t)len);
+}
+
+// Per-chat notification-level storage key: "nfc<idx>" for channels,
+// "nf_<12 hex>" for DMs. Absent value means All (the default).
+static void notifyStorageKey(const mishmesh::ConvoKey& k, char* buf, size_t n) {
+  if (k.type == 1) snprintf(buf, n, "nfc%u", (unsigned)k.id[0]);
+  else snprintf(buf, n, "nf_%02x%02x%02x%02x%02x%02x",
+                k.id[0], k.id[1], k.id[2], k.id[3], k.id[4], k.id[5]);
+}
+
+mishmesh::NotifyLevel UITask::MsgSvc::notifyLevel(const mishmesh::ConvoKey& k) const {
+  if (!storage) return mishmesh::NotifyLevel::All;
+  char key[20]; notifyStorageKey(k, key, sizeof(key));
+  uint8_t b = 0;
+  uint8_t got = storage->load(key, &b, 1);
+  if (got == 0 || b > (uint8_t)mishmesh::NotifyLevel::Mute) return mishmesh::NotifyLevel::All;
+  return (mishmesh::NotifyLevel)b;
+}
+
+void UITask::MsgSvc::setNotifyLevel(const mishmesh::ConvoKey& k, mishmesh::NotifyLevel lvl) {
+  if (!storage) return;
+  char key[20]; notifyStorageKey(k, key, sizeof(key));
+  uint8_t b = (uint8_t)lvl;
+  storage->save(key, &b, 1);   // All writes a 0 byte that loads back as the default
 }
 
 // Derives the 16-byte flood-scope key for a chat's region, matching the firmware

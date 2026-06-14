@@ -55,7 +55,8 @@ int MessageStore::ensureConvo(const ConvoKey& key) {
     // _convoCount is now < MAX_CONVOS; fall through to allocate the new slot
   }
   ci = _convoCount++;
-  _convos[ci].key = key; _convos[ci].lastTime = 0; _convos[ci].unread = 0; _convos[ci].count = 0;
+  _convos[ci].key = key; _convos[ci].lastTime = 0; _convos[ci].unread = 0;
+  _convos[ci].notifyUnread = 0; _convos[ci].count = 0;
   return ci;
 }
 
@@ -190,7 +191,9 @@ int  MessageStore::convoCount() const { return _convoCount; }
 void MessageStore::setActiveConvo(const ConvoKey& key) {
   _active = key; _hasActive = true;
   int ci = findConvo(key);
-  if (ci >= 0 && _convos[ci].unread) { _convos[ci].unread = 0; _seq++; }
+  if (ci >= 0 && (_convos[ci].unread || _convos[ci].notifyUnread)) {
+    _convos[ci].unread = 0; _convos[ci].notifyUnread = 0; _seq++;
+  }
 }
 void MessageStore::clearActiveConvo() { _hasActive = false; }
 bool MessageStore::activeConvo(ConvoKey& out) const {
@@ -257,7 +260,8 @@ void MessageStore::clearConvo(const ConvoKey& key) {
     off += sz;
   }
   _convos[ci].count = 0;
-  _convos[ci].unread = 0;   // keep lastTime -> chat holds its place in the list
+  _convos[ci].unread = 0;
+  _convos[ci].notifyUnread = 0;   // keep lastTime -> chat holds its place in the list
   _seq++;
 }
 
@@ -275,6 +279,21 @@ void MessageStore::markUnread(const ConvoKey& key) {
   _convos[ci].unread = 1;
   _seq++;
 }
+
+void MessageStore::markNotifiable(const ConvoKey& key) {
+  int ci = findConvo(key);
+  if (ci < 0) return;
+  if (_hasActive && _active.equals(key)) return;   // open chat -> nothing to flag
+  _convos[ci].notifyUnread++;
+  _seq++;
+}
+
+uint16_t MessageStore::totalNotifyUnread() const {
+  uint32_t t = 0;
+  for (int i = 0; i < _convoCount; i++) t += _convos[i].notifyUnread;
+  return t > 0xFFFF ? 0xFFFF : (uint16_t)t;
+}
+
 void MessageStore::ensureChannel(uint8_t channelIdx) {
   ConvoKey k = channelKey(channelIdx);
   if (findConvo(k) >= 0) return;   // already seeded or has messages
@@ -282,30 +301,60 @@ void MessageStore::ensureChannel(uint8_t channelIdx) {
   _seq++;                          // mark dirty: refresh the list + persist the chat
 }
 size_t MessageStore::serialize(uint8_t* out, size_t cap) const {
-  size_t need = 4 + 1 + 4 + 2 + (size_t)_convoCount * sizeof(ConvoSummary) + _used;
+  const size_t CONVO_REC = 16;
+  size_t need = 4 + 1 + 4 + 2 + (size_t)_convoCount * CONVO_REC + _used;
   if (cap < need) return 0;
   size_t i = 0;
   memcpy(out + i, "MMSG", 4); i += 4;
-  out[i++] = 1;
+  out[i++] = 2;                                  // format version 2
   memcpy(out + i, &_used, 4); i += 4;
   uint16_t cc = (uint16_t)_convoCount; memcpy(out + i, &cc, 2); i += 2;
-  memcpy(out + i, _convos, (size_t)_convoCount * sizeof(ConvoSummary)); i += (size_t)_convoCount * sizeof(ConvoSummary);
+  for (int c = 0; c < _convoCount; c++) {
+    out[i++] = _convos[c].key.type;
+    memcpy(out + i, _convos[c].key.id, 6); i += 6;
+    memcpy(out + i, &_convos[c].lastTime, 4); i += 4;
+    memcpy(out + i, &_convos[c].unread, 2); i += 2;
+    out[i++] = _convos[c].count;
+    memcpy(out + i, &_convos[c].notifyUnread, 2); i += 2;
+  }
   memcpy(out + i, _arena, _used); i += _used;
   return i;
 }
 bool MessageStore::deserialize(const uint8_t* in, size_t len) {
-  if (len < 11 || memcmp(in, "MMSG", 4) != 0 || in[4] != 1) return false;
+  if (len < 11 || memcmp(in, "MMSG", 4) != 0) return false;
+  uint8_t ver = in[4];
+  if (ver != 1 && ver != 2) return false;
   size_t i = 5;
   uint32_t used; memcpy(&used, in + i, 4); i += 4;
   uint16_t cc;   memcpy(&cc, in + i, 2);  i += 2;
   if (used > (uint32_t)ARENA_BYTES || cc > (uint16_t)MAX_CONVOS) return false;
-  if (len < i + (size_t)cc * sizeof(ConvoSummary) + used) return false;
+  // v1 wrote whole padded ConvoSummary structs (16-byte stride); v2 writes
+  // 16-byte packed records. Both strides are 16, disambiguated by `ver`.
+  const size_t STRIDE = 16;
+  if (len < i + (size_t)cc * STRIDE + used) return false;
   reset();
   _convoCount = (int)cc;
-  memcpy(_convos, in + i, (size_t)cc * sizeof(ConvoSummary)); i += (size_t)cc * sizeof(ConvoSummary);
+  for (int c = 0; c < (int)cc; c++) {
+    const uint8_t* r = in + i + (size_t)c * STRIDE;
+    ConvoSummary& s = _convos[c];
+    if (ver == 2) {
+      s.key.type = r[0];
+      memcpy(s.key.id, r + 1, 6);
+      memcpy(&s.lastTime, r + 7, 4);
+      memcpy(&s.unread, r + 11, 2);
+      s.count = r[13];
+      memcpy(&s.notifyUnread, r + 14, 2);
+    } else {                                  // ver == 1 (old padded layout)
+      s.key.type = r[0];
+      memcpy(s.key.id, r + 1, 6);
+      memcpy(&s.lastTime, r + 8, 4);          // padded to a 4-byte boundary
+      memcpy(&s.unread, r + 12, 2);
+      s.count = r[14];
+      s.notifyUnread = 0;
+    }
+  }
+  i += (size_t)cc * STRIDE;
   memcpy(_arena, in + i, used); _used = used;
-  // arena may carry tombstoned records (serialize wrote _used incl. dead bytes);
-  // recount so compact()/reserve() can reclaim them instead of evicting live msgs.
   _deadBytes = 0;
   for (uint32_t off = 0; off < _used; ) {
     const uint8_t* r = _arena + off; uint32_t sz = recordSize(r);

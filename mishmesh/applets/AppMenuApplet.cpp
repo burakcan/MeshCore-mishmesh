@@ -54,7 +54,7 @@ bool AppMenuApplet::onInput(InputEvent ev) {
 const char* AppMenuApplet::value(int i) const {
   if (!_ctx_messages || i < 0 || i >= _count) return nullptr;
   if (_entries[i]->applet != &messagesApplet()) return nullptr;
-  uint16_t u = _ctx_messages->totalUnread();
+  uint16_t u = _ctx_messages->totalNotifyUnread();   // global badge excludes muted/non-mention
   if (!u) return nullptr;
   static char buf[8];
   snprintf(buf, sizeof(buf), "%u", u);

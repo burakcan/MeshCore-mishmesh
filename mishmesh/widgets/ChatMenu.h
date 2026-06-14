@@ -23,14 +23,19 @@ namespace mishmesh {
 // lookup) via setRegion(); the widget itself just displays it.
 class ChatMenu {
 public:
-  enum class Result { None, Cleared, Deleted, EditRegion };
+  enum class Result { None, Cleared, Deleted, EditRegion, EditNotify };
 
-  ChatMenu() { _model.region = _region; }   // point the model at our buffer once
+  ChatMenu() { _model.region = _region; _model.notify = _notify; }   // point the model at our buffers once
   void setTarget(const ConvoKey& k) { _key = k; }
   // Shows `name` in the Region row's value column, or "None" when empty/null.
   void setRegion(const char* name) {
     if (name && name[0]) { strncpy(_region, name, sizeof(_region) - 1); _region[sizeof(_region) - 1] = 0; }
     else strcpy(_region, "None");
+  }
+  // Shows `s` in the Notifications row's value column ("All"/"Mentions"/"Mute").
+  void setNotifyLabel(const char* s) {
+    strncpy(_notify, s ? s : "All", sizeof(_notify) - 1);
+    _notify[sizeof(_notify) - 1] = 0;
   }
   void reset() {
     _menu.setModel(&_model); _menu.setRowHeight(ROW_H); _menu.resetSelection();
@@ -73,16 +78,23 @@ private:
   Result _pending = Result::None;    // latched until takeResult()
   const char* _toast = nullptr;
   char _region[32] = "None";         // region row value (caller-supplied via setRegion)
+  char _notify[12] = "All";          // Notifications row value (caller-supplied)
   struct Model : ListModel {
     const char* region = "None";     // points at the owner's _region buffer
-    int count() const override { return 4; }
+    const char* notify = "All";      // points at the owner's _notify buffer
+    int count() const override { return 5; }
     const char* label(int i) const override {
       if (i == 0) return "Region";
-      if (i == 1) return "Clear chat";
-      if (i == 2) return "Mark unread";
+      if (i == 1) return "Notifications";
+      if (i == 2) return "Clear chat";
+      if (i == 3) return "Mark unread";
       return "Delete chat";
     }
-    const char* value(int i) const override { return i == 0 ? region : nullptr; }
+    const char* value(int i) const override {
+      if (i == 0) return region;
+      if (i == 1) return notify;
+      return nullptr;
+    }
   } _model;
 };
 

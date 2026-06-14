@@ -8,6 +8,18 @@ namespace mishmesh {
 // Result of an on-device channel create/join. Drives the applet's toast.
 enum class ChanResult : int8_t { Ok, Full, Invalid, Duplicate, Error };
 
+// Per-chat notification level. All == 0 so an absent/default setting reads as All.
+enum class NotifyLevel : uint8_t { All = 0, MentionsOnly = 1, Mute = 2 };
+
+// Short label for the ChatMenu "Notifications" row value column.
+inline const char* notifyLevelShortLabel(NotifyLevel lvl) {
+  switch (lvl) {
+    case NotifyLevel::Mute:         return "Mute";
+    case NotifyLevel::MentionsOnly: return "Mentions";
+    default:                        return "All";
+  }
+}
+
 struct ConvoView {
   ConvoKey    key;
   bool        isChannel;
@@ -42,6 +54,7 @@ struct MessagesService {
   virtual int  convoCount() const = 0;
   virtual bool getConvo(int i, ConvoView& out) const = 0;
   virtual uint16_t totalUnread() const = 0;
+  virtual uint16_t totalNotifyUnread() const { return 0; }
   virtual int  messageCount(const ConvoKey& k) const = 0;
   virtual bool getMessage(const ConvoKey& k, int i, MessageView& out) const = 0;
   virtual void setActiveConvo(const ConvoKey& k) = 0;
@@ -64,6 +77,10 @@ struct MessagesService {
     (void)k; if (dst && cap > 0) dst[0] = 0; return 0;
   }
   virtual void setRegion(const ConvoKey& k, const char* name) { (void)k; (void)name; }
+  // Per-chat notification level. Adapter-backed; defaults keep non-adapter
+  // impls (tests) inert at All.
+  virtual NotifyLevel notifyLevel(const ConvoKey& k) const { (void)k; return NotifyLevel::All; }
+  virtual void setNotifyLevel(const ConvoKey& k, NotifyLevel lvl) { (void)k; (void)lvl; }
   // v1 no-ops (no on-device input)
   virtual void newMessage() {}
   virtual void newGroup() {}

@@ -42,8 +42,8 @@ int HomeApplet::onRender(Canvas& c) {
                DisplayDriver::LIGHT, TextAlign::Center);
 
   // [mishmesh] total-unread indicator: mail glyph + count in bottom-left corner
-  if (_msgs && _msgs->totalUnread()) {
-    char b[8]; snprintf(b, sizeof(b), "%u", _msgs->totalUnread());
+  if (_msgs && _msgs->totalNotifyUnread()) {
+    char b[8]; snprintf(b, sizeof(b), "%u", _msgs->totalNotifyUnread());
     c.drawGlyph(iconFont(), 2, h - 14, (uint16_t)Icon::Mail, DisplayDriver::LIGHT);
     c.drawText(fontBody(), 16, h - 14, b, DisplayDriver::LIGHT);
   }

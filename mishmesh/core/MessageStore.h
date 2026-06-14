@@ -47,6 +47,7 @@ struct ConvoSummary {
   ConvoKey key;
   uint32_t lastTime;
   uint16_t unread;
+  uint16_t notifyUnread;   // alert-worthy unread (drives the global indicator)
   uint8_t  count;
 };
 
@@ -79,6 +80,7 @@ public:
   int  convoCount() const;                              // recency-sorted (newest first)
   bool getConvo(int index, ConvoSummary& out) const;
   uint16_t totalUnread() const;
+  uint16_t totalNotifyUnread() const;   // sum of notifyUnread across convos
   int  messageCount(const ConvoKey& key) const;
   bool getMessage(const ConvoKey& key, int index, MsgRecord& out) const;  // index 0 = oldest
   void setActiveConvo(const ConvoKey& key);
@@ -97,6 +99,9 @@ public:
   void clearConvo(const ConvoKey& key);    // empties messages, keeps the chat in the list
   void deleteConvo(const ConvoKey& key);   // empties messages AND removes the chat
   void markUnread(const ConvoKey& key);    // flags the chat unread if it isn't already
+  // Bump the chat's alert-worthy unread (driven by the notification router for
+  // messages that pass the chat's notification level). No-op for the open chat.
+  void markNotifiable(const ConvoKey& key);
   // Ensure an (empty) chat exists for a joined channel so it shows in the list
   // before any message arrives. No-op if the convo already exists.
   void ensureChannel(uint8_t channelIdx);

@@ -333,6 +333,47 @@ TEST(MessageStore, DeserializeRecountsDeadBytes) {
   EXPECT_EQ(1, b.convoCount());   // chat kept even when emptied (only delete-chat removes it)
 }
 
+TEST(MessageStore, NotifiableCounterIndependentOfUnread) {
+  MessageStore s;
+  s.appendInbound(dm("ALICE!"), "hi", 2, 1000, 2000, 0, nullptr, 0);
+  s.appendInbound(dm("ALICE!"), "yo", 2, 1001, 2001, 0, nullptr, 0);
+  EXPECT_EQ(2u, s.totalUnread());
+  EXPECT_EQ(0u, s.totalNotifyUnread());   // nothing marked notifiable yet
+  s.markNotifiable(dm("ALICE!"));
+  EXPECT_EQ(1u, s.totalNotifyUnread());
+  EXPECT_EQ(2u, s.totalUnread());          // unread untouched by markNotifiable
+}
+
+TEST(MessageStore, OpeningChatClearsBothCounters) {
+  MessageStore s;
+  s.appendInbound(dm("ALICE!"), "hi", 2, 1000, 2000, 0, nullptr, 0);
+  s.markNotifiable(dm("ALICE!"));
+  s.setActiveConvo(dm("ALICE!"));          // user opens the chat
+  EXPECT_EQ(0u, s.totalUnread());
+  EXPECT_EQ(0u, s.totalNotifyUnread());
+}
+
+TEST(MessageStore, NotifiableSkippedForActiveConvo) {
+  MessageStore s;
+  s.setActiveConvo(dm("ALICE!"));
+  s.appendInbound(dm("ALICE!"), "hi", 2, 1000, 2000, 0, nullptr, 0);
+  s.markNotifiable(dm("ALICE!"));          // chat is open -> no notifiable bump
+  EXPECT_EQ(0u, s.totalNotifyUnread());
+}
+
+TEST(MessageStore, SerializeRoundTripsNotifyUnread) {
+  MessageStore s;
+  s.appendInbound(dm("ALICE!"), "hi", 2, 1000, 2000, 0, nullptr, 0);
+  s.markNotifiable(dm("ALICE!"));
+  uint8_t buf[8192];
+  size_t n = s.serialize(buf, sizeof(buf));
+  ASSERT_GT(n, 0u);
+  MessageStore s2;
+  ASSERT_TRUE(s2.deserialize(buf, n));
+  EXPECT_EQ(1u, s2.totalNotifyUnread());
+  EXPECT_EQ(1u, s2.totalUnread());
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

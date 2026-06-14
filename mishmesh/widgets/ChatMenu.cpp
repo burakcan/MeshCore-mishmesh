@@ -9,8 +9,9 @@ ChatMenu::Result ChatMenu::activate(MessagesService* svc, const char*& toast) {
   if (!svc) return Result::None;
   switch (_menu.selected()) {
     case 0: return Result::EditRegion;   // caller opens the region editor (keypad)
-    case 2: svc->markUnread(_key); toast = "Marked unread"; return Result::None;
-    case 1: _confirm.configure("Clear this chat?");   _confirming = true; return Result::None;
+    case 1: return Result::EditNotify;   // caller opens the notify settings applet
+    case 3: svc->markUnread(_key); toast = "Marked unread"; return Result::None;
+    case 2: _confirm.configure("Clear this chat?");   _confirming = true; return Result::None;
     default: _confirm.configure("Delete this chat?"); _confirming = true; return Result::None;
   }
 }
@@ -21,7 +22,7 @@ bool ChatMenu::onInput(InputEvent ev) {
   if (_confirm.onInput(ev)) {
     ConfirmResult r = _confirm.result();
     if (r == ConfirmResult::Confirmed) {
-      if (_menu.selected() == 1) {        // Clear chat
+      if (_menu.selected() == 2) {        // Clear chat
         if (_svc) _svc->clearConvo(_key);
         _toast = "Chat cleared"; _pending = Result::Cleared;
       } else {                            // Delete chat

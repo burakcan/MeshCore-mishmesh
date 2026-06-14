@@ -55,6 +55,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     int  convoCount() const override;
     bool getConvo(int i, mishmesh::ConvoView& out) const override;
     uint16_t totalUnread() const override;
+    uint16_t totalNotifyUnread() const override;
     int  messageCount(const mishmesh::ConvoKey& k) const override;
     bool getMessage(const mishmesh::ConvoKey& k, int i, mishmesh::MessageView& out) const override;
     void setActiveConvo(const mishmesh::ConvoKey& k) override;
@@ -70,6 +71,8 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     bool sendText(const mishmesh::ConvoKey& k, const char* text) override;
     int  region(const mishmesh::ConvoKey& k, char* dst, int cap) const override;
     void setRegion(const mishmesh::ConvoKey& k, const char* name) override;
+    mishmesh::NotifyLevel notifyLevel(const mishmesh::ConvoKey& k) const override;
+    void setNotifyLevel(const mishmesh::ConvoKey& k, mishmesh::NotifyLevel lvl) override;
     mishmesh::ChanResult createPrivateChannel(const char* name) override;
     mishmesh::ChanResult joinPrivateChannel(const char* name, const char* keyHex) override;
     mishmesh::ChanResult joinPublicChannel() override;
