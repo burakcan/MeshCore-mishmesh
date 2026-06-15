@@ -70,6 +70,33 @@ uint16_t MessagesApplet::NewModel::icon(int i) const {
   }
 }
 
+// ---- SettingsModel ----
+
+const char* MessagesApplet::SettingsModel::label(int i) const {
+  static const char* LABELS[ROW_COUNT] = { "Auto retry", "Auto reset path", "Direct msg acks" };
+  return (i >= 0 && i < ROW_COUNT) ? LABELS[i] : "";
+}
+
+bool MessagesApplet::SettingsModel::toggleState(int i) const {
+  if (!svc) return false;
+  MessagesConfig c = svc->getMessagesConfig();
+  if (i == AutoRetry)     return c.autoRetry;
+  if (i == AutoResetPath) return c.autoResetPath;
+  return false;
+}
+
+const char* MessagesApplet::SettingsModel::value(int i) const {
+  if (i != DirectAcks || !svc) return nullptr;
+  static char buf[4];
+  snprintf(buf, sizeof(buf), "%u", svc->getMessagesConfig().directAcks);
+  return buf;
+}
+
+// Carousel value -> label. Plain count; the row already reads "Direct msg acks".
+static void acksLabel(int v, char* out, uint16_t cap) {
+  snprintf(out, cap, "%d", v);
+}
+
 // ---- MessagesApplet ----
 
 void MessagesApplet::onStart(AppletContext& ctx) {
@@ -78,9 +105,11 @@ void MessagesApplet::onStart(AppletContext& ctx) {
   _app  = ctx.app;
   _chats.svc = _svc;
   _new.svc = _svc;
+  _settings.svc = _svc;
   _tabs.clear();
   _tabs.addTab("Chats", (uint16_t)Icon::Message);
   _tabs.addTab("New", (uint16_t)Icon::Plus);
+  _tabs.addTab("Settings", (uint16_t)Icon::Settings);
   _tab = 0;
   syncList();
 }
@@ -88,6 +117,7 @@ void MessagesApplet::onStart(AppletContext& ctx) {
 void MessagesApplet::onForeground() {
   _chats.svc = _svc;
   _new.svc = _svc;
+  _settings.svc = _svc;
   syncList();
   // Returning from a chat: the recency sort may have reordered the list, so the
   // stored row index would now land on a different chat. Reselect the chat we
@@ -102,13 +132,16 @@ void MessagesApplet::onForeground() {
 }
 
 void MessagesApplet::syncList() {
-  _list.setModel(_tab == 0 ? (ListModel*)&_chats : (ListModel*)&_new);
+  ListModel* m = _tab == 0 ? (ListModel*)&_chats
+               : _tab == 1 ? (ListModel*)&_new
+                           : (ListModel*)&_settings;
+  _list.setModel(m);
   _list.setRowHeight(14);
   _list.setEmptyText(_tab == 0 ? "No messages yet" : "");
 }
 
 int MessagesApplet::visibleRowCountForTest() const {
-  return _tab == 0 ? _chats.count() : _new.count();
+  return _tab == 0 ? _chats.count() : _tab == 1 ? _new.count() : _settings.count();
 }
 
 int MessagesApplet::onRender(Canvas& c) {
@@ -127,10 +160,28 @@ int MessagesApplet::onRender(Canvas& c) {
     if (_chatMenu.modalActive()) _chatMenu.drawModal(c, 0, 0, w, h);   // full-screen guard
     return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
+  if (_editingAcks) { _acks.draw(c, 0, 0, w, h); return 100; }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool MessagesApplet::onInput(InputEvent ev) {
+  // Direct-msg-acks carousel swallows input until confirmed/cancelled.
+  if (_editingAcks) {
+    if (_acks.onInput(ev)) {
+      StepperResult r = _acks.result();
+      if (r != StepperResult::None) {
+        if (r == StepperResult::Confirmed && _svc) {
+          MessagesConfig cfg = _svc->getMessagesConfig();
+          cfg.directAcks = (uint8_t)_acks.value();
+          _svc->setMessagesConfig(cfg);
+        }
+        _editingAcks = false;
+        _acks.reset();
+      }
+    }
+    return true;   // swallow everything while modal
+  }
+
   // Long-press chat-action overlay swallows input until it closes.
   if (_menuOpen) {
     if (_chatMenu.modalActive()) {   // confirm dialog or notify stepper awaiting input
@@ -162,6 +213,19 @@ bool MessagesApplet::onInput(InputEvent ev) {
   }
   if (_list.onInput(ev)) return true;
   if (ev == InputEvent::Select) {
+    if (_tab == 2) {
+      int i = _list.selected();
+      MessagesConfig cfg = _svc ? _svc->getMessagesConfig() : MessagesConfig();
+      if (_settings.isToggle(i) && _svc) {
+        if (i == SettingsModel::AutoRetry)          cfg.autoRetry = !cfg.autoRetry;
+        else if (i == SettingsModel::AutoResetPath) cfg.autoResetPath = !cfg.autoResetPath;
+        _svc->setMessagesConfig(cfg);
+      } else if (i == SettingsModel::DirectAcks && _svc) {
+        _acks.configure("DM acks", cfg.directAcks, 1, 2, acksLabel);
+        _editingAcks = true;
+      }
+      return true;
+    }
     if (_tab == 0) {
       ConvoView v;
       if (_svc && _svc->getConvo(_list.selected(), v)) {

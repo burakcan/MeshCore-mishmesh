@@ -20,6 +20,16 @@ inline const char* notifyLevelShortLabel(NotifyLevel lvl) {
   }
 }
 
+// Global messages-app settings (the Messages "Settings" tab). autoRetry and
+// autoResetPath have no firmware mechanism yet, so the adapter only persists
+// them (stored placeholders). directAcks reuses NodePrefs.multi_acks: 1 = a
+// single ack on receive, 2 = the redundant double-ack.
+struct MessagesConfig {
+  bool    autoRetry     = false;
+  bool    autoResetPath = false;
+  uint8_t directAcks    = 1;   // 1 or 2
+};
+
 struct ConvoView {
   ConvoKey    key;
   bool        isChannel;
@@ -81,6 +91,10 @@ struct MessagesService {
   // impls (tests) inert at All.
   virtual NotifyLevel notifyLevel(const ConvoKey& k) const { (void)k; return NotifyLevel::All; }
   virtual void setNotifyLevel(const ConvoKey& k, NotifyLevel lvl) { (void)k; (void)lvl; }
+  // Global Messages settings. Adapter-backed; defaults keep non-adapter impls
+  // (tests) inert at the struct defaults.
+  virtual MessagesConfig getMessagesConfig() const { return MessagesConfig(); }
+  virtual void setMessagesConfig(const MessagesConfig& cfg) { (void)cfg; }
   // v1 no-ops (no on-device input)
   virtual void newMessage() {}
   virtual void newGroup() {}

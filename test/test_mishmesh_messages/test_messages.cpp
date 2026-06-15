@@ -66,6 +66,57 @@ TEST(MessagesApplet, ListsConversations) {
   EXPECT_EQ(2, mishmesh::messagesApplet().visibleRowCountForTest());
 }
 
+// The Settings tab (Chats -> New -> Settings) lists the three rows and writes
+// each setting back through the service.
+TEST(MessagesApplet, SettingsTabTogglesAndAcks) {
+  FakeMessagesService svc;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  host.loop(0);
+  host.dispatch(mishmesh::InputEvent::NavRight);   // Chats -> New
+  host.dispatch(mishmesh::InputEvent::NavRight);   // New -> Settings
+  EXPECT_EQ(2, mishmesh::messagesApplet().selectedTabForTest());
+  EXPECT_EQ(3, mishmesh::messagesApplet().visibleRowCountForTest());
+
+  // Row 0: Auto retry -> toggle on
+  EXPECT_FALSE(svc.getMessagesConfig().autoRetry);
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_TRUE(svc.getMessagesConfig().autoRetry);
+
+  // Row 1: Auto reset path -> toggle on
+  host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_TRUE(svc.getMessagesConfig().autoResetPath);
+
+  // Row 2: Direct msg acks -> carousel 1 -> 2 -> confirm
+  EXPECT_EQ(1, svc.getMessagesConfig().directAcks);
+  host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::Select);     // open the stepper
+  host.dispatch(mishmesh::InputEvent::NavRight);   // 1 -> 2
+  host.dispatch(mishmesh::InputEvent::Select);     // confirm
+  EXPECT_EQ(2, svc.getMessagesConfig().directAcks);
+}
+
+// Dismissing the acks carousel with Back leaves the value unchanged.
+TEST(MessagesApplet, SettingsAcksCancelKeepsValue) {
+  FakeMessagesService svc;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  host.loop(0);
+  host.dispatch(mishmesh::InputEvent::NavRight);
+  host.dispatch(mishmesh::InputEvent::NavRight);
+  host.dispatch(mishmesh::InputEvent::NavDown);     // -> Auto reset path
+  host.dispatch(mishmesh::InputEvent::NavDown);     // -> Direct msg acks
+  host.dispatch(mishmesh::InputEvent::Select);      // open stepper
+  host.dispatch(mishmesh::InputEvent::NavRight);    // 1 -> 2 (uncommitted)
+  host.dispatch(mishmesh::InputEvent::Back);        // cancel
+  EXPECT_EQ(1, svc.getMessagesConfig().directAcks); // unchanged
+}
+
 TEST(MessagesApplet, NewTabIsNoop) {
   FakeMessagesService svc;
   FakeDisplayDriver d;

@@ -110,5 +110,8 @@ struct FakeMessagesService : mishmesh::MessagesService {
     lastChanOp = OP_JOIN_HASH; lastChanName = hashtag ? hashtag : ""; chanCalls++; return chanResult;
   }
   bool publicChannelJoined() const override { return publicJoined; }
+  mishmesh::MessagesConfig msgConfig;
+  mishmesh::MessagesConfig getMessagesConfig() const override { return msgConfig; }
+  void setMessagesConfig(const mishmesh::MessagesConfig& c) override { msgConfig = c; }
   uint32_t seq() const override { return store.seq(); }
 };

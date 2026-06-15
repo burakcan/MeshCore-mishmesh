@@ -73,6 +73,8 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     void setRegion(const mishmesh::ConvoKey& k, const char* name) override;
     mishmesh::NotifyLevel notifyLevel(const mishmesh::ConvoKey& k) const override;
     void setNotifyLevel(const mishmesh::ConvoKey& k, mishmesh::NotifyLevel lvl) override;
+    mishmesh::MessagesConfig getMessagesConfig() const override;
+    void setMessagesConfig(const mishmesh::MessagesConfig& cfg) override;
     mishmesh::ChanResult createPrivateChannel(const char* name) override;
     mishmesh::ChanResult joinPrivateChannel(const char* name, const char* keyHex) override;
     mishmesh::ChanResult joinPublicChannel() override;

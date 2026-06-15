@@ -4,6 +4,7 @@
 #include <mishmesh/widgets/TabBar.h>
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/ChatMenu.h>
+#include <mishmesh/widgets/StepperDialog.h>
 #include <mishmesh/applets/FormApplet.h>
 
 namespace mishmesh {
@@ -52,7 +53,9 @@ private:
   bool             _hasOpened = false;   // _openedKey is valid (consumed on next foreground)
   char             _regionBuf[31] = {0}; // backs keypad text while editing region
   bool             _menuOpen = false;
-  int              _tab = 0;             // 0 = Chats, 1 = New
+  bool             _editingAcks = false; // direct-msg-acks carousel modal is up
+  StepperDialog    _acks;                // direct-msg-acks value picker (1/2)
+  int              _tab = 0;             // 0 = Chats, 1 = New, 2 = Settings
 
   struct ChatsModel : ListModel {
     MessagesService* svc = nullptr;
@@ -69,6 +72,18 @@ private:
     uint16_t    icon(int i)  const override;
     NewAction   actionAt(int i) const;
   } _new;
+
+  // Global Messages settings rows. Two toggles plus the direct-msg-acks value
+  // row (opens the carousel). Backed by MessagesService::get/setMessagesConfig.
+  struct SettingsModel : ListModel {
+    MessagesService* svc = nullptr;
+    enum Row : int { AutoRetry, AutoResetPath, DirectAcks, ROW_COUNT };
+    int count() const override { return ROW_COUNT; }
+    const char* label(int i) const override;
+    bool isToggle(int i) const override { return i == AutoRetry || i == AutoResetPath; }
+    bool toggleState(int i) const override;
+    const char* value(int i) const override;   // "1"/"2" on the DirectAcks row
+  } _settings;
 };
 
 MessagesApplet& messagesApplet();

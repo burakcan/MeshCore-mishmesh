@@ -662,6 +662,35 @@ void UITask::MsgSvc::setNotifyLevel(const mishmesh::ConvoKey& k, mishmesh::Notif
   storage->save(key, &b, 1);   // All writes a 0 byte that loads back as the default
 }
 
+// Global Messages settings. autoRetry/autoResetPath have no firmware mechanism
+// yet, so they live only as a UI bitmask in AppletStorage ("msgcfg"). directAcks
+// maps onto NodePrefs.multi_acks (0 -> 1 ack, 1 -> 2 acks).
+#define MSGCFG_AUTO_RETRY      0x01
+#define MSGCFG_AUTO_RESET_PATH 0x02
+
+mishmesh::MessagesConfig UITask::MsgSvc::getMessagesConfig() const {
+  mishmesh::MessagesConfig c;
+  uint8_t flags = 0;
+  if (storage) storage->load("msgcfg", &flags, 1);
+  c.autoRetry     = (flags & MSGCFG_AUTO_RETRY) != 0;
+  c.autoResetPath = (flags & MSGCFG_AUTO_RESET_PATH) != 0;
+  NodePrefs* p = the_mesh.getNodePrefs();
+  c.directAcks = (p && p->multi_acks >= 1) ? 2 : 1;
+  return c;
+}
+
+void UITask::MsgSvc::setMessagesConfig(const mishmesh::MessagesConfig& c) {
+  uint8_t flags = 0;
+  if (c.autoRetry)     flags |= MSGCFG_AUTO_RETRY;
+  if (c.autoResetPath) flags |= MSGCFG_AUTO_RESET_PATH;
+  if (storage) storage->save("msgcfg", &flags, 1);
+  NodePrefs* p = the_mesh.getNodePrefs();
+  if (p) {
+    p->multi_acks = (c.directAcks >= 2) ? 1 : 0;
+    the_mesh.savePrefs();
+  }
+}
+
 // Derives the 16-byte flood-scope key for a chat's region, matching the firmware
 // convention (sha256 of "#"+name, truncated to 16B - same as default scope and
 // hashtag channels). Returns false when the chat has no region (use node default).
