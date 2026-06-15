@@ -79,6 +79,14 @@ struct FakeMessagesService : mishmesh::MessagesService {
     if (name && name[0]) regions[keyName(k)] = name;
     else regions.erase(keyName(k));
   }
+  std::map<std::string, mishmesh::NotifyLevel> notifyLevels;   // per-chat notify level
+  mishmesh::NotifyLevel notifyLevel(const mishmesh::ConvoKey& k) const override {
+    auto it = notifyLevels.find(keyName(k));
+    return it == notifyLevels.end() ? mishmesh::NotifyLevel::All : it->second;
+  }
+  void setNotifyLevel(const mishmesh::ConvoKey& k, mishmesh::NotifyLevel l) override {
+    notifyLevels[keyName(k)] = l;
+  }
   bool sendText(const mishmesh::ConvoKey& k, const char* text) override {
     lastSent = text ? text : "";
     lastSentKey = k;

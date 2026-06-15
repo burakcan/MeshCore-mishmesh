@@ -4,21 +4,21 @@
 #include "FakeDisplayDriver.h"
 using namespace mishmesh;
 
-TEST(ConfirmDialog, DefaultsToCancelSelected) {
+TEST(ConfirmDialog, DefaultsToConfirmSelected) {
   ConfirmDialog dlg;
   dlg.configure("Delete Alice?");
   EXPECT_EQ(ConfirmResult::None, dlg.result());
-  // Select with default selection (Cancel) cancels.
-  EXPECT_TRUE(dlg.onInput(InputEvent::Select));
-  EXPECT_EQ(ConfirmResult::Cancelled, dlg.result());
-}
-
-TEST(ConfirmDialog, NavRightThenSelectConfirms) {
-  ConfirmDialog dlg;
-  dlg.configure("Delete Alice?");
-  dlg.onInput(InputEvent::NavRight);     // move to Confirm
+  // Select with default selection (Confirm) confirms.
   EXPECT_TRUE(dlg.onInput(InputEvent::Select));
   EXPECT_EQ(ConfirmResult::Confirmed, dlg.result());
+}
+
+TEST(ConfirmDialog, NavLeftThenSelectCancels) {
+  ConfirmDialog dlg;
+  dlg.configure("Delete Alice?");
+  dlg.onInput(InputEvent::NavLeft);      // move to Cancel
+  EXPECT_TRUE(dlg.onInput(InputEvent::Select));
+  EXPECT_EQ(ConfirmResult::Cancelled, dlg.result());
 }
 
 TEST(ConfirmDialog, BackCancels) {

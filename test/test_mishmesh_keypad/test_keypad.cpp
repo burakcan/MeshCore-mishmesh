@@ -362,8 +362,7 @@ TEST(Keypad, DiscardConfirmedPopsWithoutCommitting) {
   k.configure(buf, KeypadApplet::KP_MAX, "T");
   host.push(&k);
   k.onInput(InputEvent::Select);         // "hia", dirty
-  host.dispatch(InputEvent::Back);       // discard dialog (default sel = Cancel)
-  host.dispatch(InputEvent::NavRight);   // move to Confirm
+  host.dispatch(InputEvent::Back);       // discard dialog (default sel = Confirm)
   host.dispatch(InputEvent::Select);     // confirm discard
   EXPECT_EQ(1, host.depth());            // popped
   EXPECT_STREQ("hi", buf);               // source never written
@@ -377,8 +376,9 @@ TEST(Keypad, DiscardCancelledStaysAndKeepsText) {
   k.configure(buf, KeypadApplet::KP_MAX, "T");
   host.push(&k);
   k.onInput(InputEvent::Select);         // "hia", dirty
-  host.dispatch(InputEvent::Back);       // discard dialog
-  host.dispatch(InputEvent::Select);     // default sel = Cancel -> dismiss dialog
+  host.dispatch(InputEvent::Back);       // discard dialog (default sel = Confirm)
+  host.dispatch(InputEvent::NavLeft);    // move to Cancel
+  host.dispatch(InputEvent::Select);     // dismiss dialog without discarding
   EXPECT_EQ(2, host.depth());            // still editing
   EXPECT_STREQ("hia", k.text());         // text preserved
 }

@@ -56,16 +56,7 @@ void ListMenu::drawRowContent(Canvas& view, int i, int ry, int cw, DisplayDriver
 
   int ty = (_rowH - view.fontHeight(fontBody())) / 2; if (ty < 0) ty = 0;
   int rightW = 0;
-  if (_model->isRadio(i)) {
-    // Single-select: reserve a square slot at the right edge; draw the check only
-    // on the chosen row, so the marker stays put as the cursor moves between rows.
-    int gh = view.fontHeight(iconFont());
-    if (_model->radioOn(i)) {
-      int gy = ry + (_rowH - gh) / 2; if (gy < ry) gy = ry;
-      view.drawGlyph(iconFont(), cw - gh - 2, gy, (uint16_t)Icon::Check, col);
-    }
-    rightW = gh + 4;
-  } else if (_model->isToggle(i)) {
+  if (_model->isToggle(i)) {
     const int PILL_W = 28;
     int ph = _rowH - 2;
     Toggle pill;

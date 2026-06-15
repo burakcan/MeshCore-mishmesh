@@ -2,6 +2,7 @@
 #pragma once
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/ConfirmDialog.h>
+#include <mishmesh/widgets/StepperDialog.h>
 #include <mishmesh/core/MessagesService.h>
 
 namespace mishmesh {
@@ -12,18 +13,21 @@ namespace mishmesh {
 // placement and what to do with the Result (open region editor / switch tab / pop /
 // refresh).
 //
-// The destructive actions (Clear / Delete) route through an embedded confirm
-// dialog so both call sites get the same guard for free. Flow per Select:
-//   activate() -> Region returns EditRegion (caller opens the keypad), Mark unread
-//   runs now (Result), Clear/Delete arm the dialog (confirming()==true). While
-//   confirming, feed input to onInput() and poll takeResult() — it yields the
-//   completed Result once the user confirms.
+// Two embedded modals keep their flows in one place: Clear/Delete route through a
+// confirm dialog, and Notifications opens a value stepper (All/Mentions/Mute).
+// Flow per Select: activate() -> Region returns EditRegion (caller opens the
+// keypad), Mark unread runs now (Result), Clear/Delete arm the confirm dialog,
+// Notifications arms the stepper. While a modal is up (modalActive()==true) the
+// caller draws it via drawModal() and keeps feeding input to onInput(); the confirm
+// dialog's outcome is polled via takeResult(), while the stepper writes the chosen
+// level itself and updates the Notifications row.
 //
-// The Region row's value is supplied by the caller (it owns the per-chat region
-// lookup) via setRegion(); the widget itself just displays it.
+// The Region row's value is supplied by the caller via setRegion(); the
+// Notifications row's via setNotifyLabel() (the widget keeps it in sync after a
+// stepper edit). The widget itself just displays them.
 class ChatMenu {
 public:
-  enum class Result { None, Cleared, Deleted, EditRegion, EditNotify };
+  enum class Result { None, Cleared, Deleted, EditRegion };
 
   ChatMenu() { _model.region = _region; _model.notify = _notify; }   // point the model at our buffers once
   void setTarget(const ConvoKey& k) { _key = k; }
@@ -39,7 +43,8 @@ public:
   }
   void reset() {
     _menu.setModel(&_model); _menu.setRowHeight(ROW_H); _menu.resetSelection();
-    _confirming = false; _confirm.reset(); _pending = Result::None; _toast = nullptr;
+    _confirming = false; _confirm.reset(); _stepping = false; _stepper.reset();
+    _pending = Result::None; _toast = nullptr;
   }
   bool needsAnimation() const { return _menu.needsAnimation(); }
   void draw(Canvas& c, int x, int y, int w, int h) {
@@ -47,13 +52,17 @@ public:
   }
   int selected() const { return _menu.selected(); }
 
-  // True while the confirm dialog is up; the caller should draw it via
-  // drawConfirm() (over the full screen) and keep feeding input to onInput().
-  bool confirming() const { return _confirming; }
-  void drawConfirm(Canvas& c, int x, int y, int w, int h) { _confirm.draw(c, x, y, w, h); }
+  // True while either modal (confirm dialog or notify stepper) is up; the caller
+  // draws it via drawModal() (full screen) and keeps feeding input to onInput().
+  bool modalActive() const { return _confirming || _stepping; }
+  void drawModal(Canvas& c, int x, int y, int w, int h) {
+    if (_stepping) _stepper.draw(c, x, y, w, h);
+    else           _confirm.draw(c, x, y, w, h);
+  }
 
-  // Routes input to the confirm dialog while armed, otherwise to the list menu.
-  // Resolving the dialog runs the action and latches the Result for takeResult().
+  // Routes input to the active modal while armed, otherwise to the list menu.
+  // Resolving the confirm dialog latches a Result for takeResult(); resolving the
+  // stepper writes the chosen notify level and refreshes the row in place.
   bool onInput(InputEvent ev);
 
   // Begins the selected action: non-destructive ones run immediately and return
@@ -73,8 +82,10 @@ private:
   ConvoKey _key{};
   ListMenu _menu;
   ConfirmDialog _confirm;
-  MessagesService* _svc = nullptr;   // remembered from activate() for confirm resolution
+  StepperDialog _stepper;
+  MessagesService* _svc = nullptr;   // remembered from activate() for modal resolution
   bool _confirming = false;
+  bool _stepping = false;
   Result _pending = Result::None;    // latched until takeResult()
   const char* _toast = nullptr;
   char _region[32] = "None";         // region row value (caller-supplied via setRegion)

@@ -1,6 +1,5 @@
 #include "MessagesApplet.h"
 #include "MessageThreadApplet.h"
-#include "ChatNotifyApplet.h"
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/AppletHost.h>
@@ -100,7 +99,6 @@ void MessagesApplet::onForeground() {
     }
     _hasOpened = false;
   }
-  if (_menuOpen) refreshRegion();   // re-sync the overlay's Region/Notifications values on return from an editor
 }
 
 void MessagesApplet::syncList() {
@@ -126,7 +124,7 @@ int MessagesApplet::onRender(Canvas& c) {
   if (_menuOpen) {
     Canvas box = drawModalChrome(c);   // bare box over the live list
     _chatMenu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
-    if (_chatMenu.confirming()) _chatMenu.drawConfirm(c, 0, 0, w, h);   // full-screen guard
+    if (_chatMenu.modalActive()) _chatMenu.drawModal(c, 0, 0, w, h);   // full-screen guard
     return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
@@ -135,32 +133,22 @@ int MessagesApplet::onRender(Canvas& c) {
 bool MessagesApplet::onInput(InputEvent ev) {
   // Long-press chat-action overlay swallows input until it closes.
   if (_menuOpen) {
-    if (_chatMenu.confirming()) {   // destructive action awaiting Confirm/Cancel
+    if (_chatMenu.modalActive()) {   // confirm dialog or notify stepper awaiting input
       _chatMenu.onInput(ev);
       const char* toast = nullptr;
       ChatMenu::Result r = _chatMenu.takeResult(toast);
       if (_host && toast) _host->postToast(toast);
       if (r != ChatMenu::Result::None) { syncList(); _menuOpen = false; }   // confirmed -> done
-      return true;   // cancel just dismisses the dialog, back to the action list
+      return true;   // the stepper / cancel just dismisses, back to the action list
     }
     if (_chatMenu.onInput(ev)) return true;
     if (ev == InputEvent::Select) {
       const char* toast = nullptr;
-      ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete arm confirm
+      ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete/Notify arm a modal
       if (r == ChatMenu::Result::EditRegion) { openRegionEditor(); return true; }   // keypad over the menu
-      if (r == ChatMenu::Result::EditNotify) {
-        ConvoView cv;
-        const char* nm = "";
-        for (int idx = 0; idx < _svc->convoCount(); idx++) {
-          if (_svc->getConvo(idx, cv) && cv.key.equals(_menuKey)) { nm = cv.name; break; }
-        }
-        chatNotifyApplet().setTarget(_menuKey, nm);
-        if (_host) _host->push(&chatNotifyApplet());
-        return true;
-      }
       if (_host && toast) _host->postToast(toast);
       if (r != ChatMenu::Result::None) syncList();   // chat cleared/removed -> refresh rows
-      if (!_chatMenu.confirming()) _menuOpen = false;   // non-destructive (or none) closes the overlay
+      if (!_chatMenu.modalActive()) _menuOpen = false;   // non-destructive (or none) closes the overlay
       return true;
     }
     if (ev == InputEvent::Back || ev == InputEvent::Cancel) { _menuOpen = false; return true; }

@@ -1,7 +1,6 @@
 // mishmesh/applets/MessageThreadApplet.cpp
 #include "MessageThreadApplet.h"
 #include "MessagePathApplet.h"
-#include "ChatNotifyApplet.h"
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
@@ -125,7 +124,6 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
 void MessageThreadApplet::onForeground() {
   snprintf(_titleBuf, sizeof(_titleBuf), "%s", resolveTitle());
   if (_svc) _svc->setActiveConvo(_key);
-  refreshRegion();   // re-sync the menu's Region/Notifications values on return from an editor
 }
 void MessageThreadApplet::onBackground() { if (_svc) _svc->clearActiveConvo(); }
 void MessageThreadApplet::onStop() {
@@ -280,8 +278,8 @@ int MessageThreadApplet::onRender(Canvas& c) {
   if (_tabs.selected() == 1) {
     body.fillRect(0, 0, body.width(), body.height(), DisplayDriver::DARK);
     _chatMenu.draw(body, 4, 2, body.width() - 8, body.height() - 4);
-    if (_chatMenu.confirming())   // full-screen guard over header + menu
-      _chatMenu.drawConfirm(c, 0, 0, c.width(), c.height());
+    if (_chatMenu.modalActive())   // full-screen guard over header + menu
+      _chatMenu.drawModal(c, 0, 0, c.width(), c.height());
     return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
 
@@ -419,7 +417,7 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
   // ahead of the tab bar, same modal-first rule every screen follows (cf.
   // ContactsApplet guarding its confirm before its tabs). Without this the tab
   // bar below would eat NavLeft/NavRight before the dialog's buttons saw them.
-  if (_chatMenu.confirming()) {
+  if (_chatMenu.modalActive()) {
     _chatMenu.onInput(ev);
     const char* toast = nullptr;
     ChatMenu::Result r = _chatMenu.takeResult(toast);
@@ -437,16 +435,11 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
     if (_chatMenu.onInput(ev)) return true;
     if (ev == InputEvent::Select) {
       const char* toast = nullptr;
-      ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete arm confirm
+      ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete/Notify arm a modal
       if (r == ChatMenu::Result::EditRegion) { openRegionEditor(); return true; }   // keypad over the menu
-      if (r == ChatMenu::Result::EditNotify) {
-        chatNotifyApplet().setTarget(_key, _titleBuf);
-        if (_host) _host->push(&chatNotifyApplet());
-        return true;
-      }
       if (_host && toast) _host->postToast(toast);
       if (r == ChatMenu::Result::Deleted) { if (_host) _host->pop(); }   // chat is gone
-      else if (!_chatMenu.confirming()) { _tabs.setSelected(0); _pinBottom = true; }  // non-destructive -> conversation
+      else if (!_chatMenu.modalActive()) { _tabs.setSelected(0); _pinBottom = true; }  // non-destructive -> conversation
       return true;
     }
     return false;   // Back bubbles -> pop the thread
