@@ -96,6 +96,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     if (ds && ds->loadMessages(_msgIoBuf, sizeof(_msgIoBuf), n)) _msgStore.deserialize(_msgIoBuf, n);
   }
   _msgSvc.store = &_msgStore;
+  _msgSvc.retry = &_retry;            // expose live retry counts to the thread view
+  _retryGlue.store = &_msgStore;      // auto-retry acts on the same store
   _theStorage.ds = the_mesh.getStore();
   _msgSvc.storage = &_theStorage;     // per-chat region persistence
   the_mesh.uiSetMessageStore(&_msgStore);
@@ -281,6 +283,28 @@ void UITask::loop() {
   if (_notifyPending) {
     _notifyPending = false;
     dispatchNotification(_notifyEvent);
+  }
+
+  // Auto-retry of undelivered direct messages: every ~2s, re-feed the still-
+  // pending DMs to the engine and let it re-transmit / fail the due ones. The
+  // store is the pending list, so this survives reboots for free.
+  static const uint32_t RETRY_SCAN_MS = 2000;
+  if (_retryScanAt == 0 || millis() >= _retryScanAt) {
+    _retryScanAt = millis() + RETRY_SCAN_MS;
+    mishmesh::MessagesConfig mc = _msgSvc.getMessagesConfig();
+    _retry.configure(mc.autoRetry, mc.autoResetPath);
+    if (mc.autoRetry) {
+      uint32_t now = millis();
+      _retry.beginScan();
+      int pn = _msgStore.pendingDMCount();
+      for (int i = 0; i < pn; i++) {
+        mishmesh::ConvoKey k; uint32_t st;
+        if (_msgStore.getPendingDM(i, k, st)) _retry.see(k, st, now);
+      }
+      _retry.endScan(now, _retryGlue);
+    } else {
+      _retry.reset();
+    }
   }
   // [/mishmesh]
   if (_host != nullptr) {
@@ -542,6 +566,13 @@ bool UITask::MsgSvc::getMessage(const mishmesh::ConvoKey& k, int i, mishmesh::Me
   out.hops        = r.hops;
   out.path        = r.path;
   out.pathLen     = r.pathLen;
+  // Surface the live auto-retry attempt for a still-pending DM (drives the
+  // "Retrying N/5" label in the thread view).
+  out.retryAttempt = 0;
+  if (retry && out.outbound && !out.isChannel && r.status == mishmesh::ST_PENDING) {
+    uint8_t a = 0;
+    if (retry->attemptsFor(k, r.senderTime, a)) out.retryAttempt = a;
+  }
 
   // copy text to null-terminated buffer; for inbound channel split "name: body"
   static char textBuf[mishmesh::MAX_TEXT + 1];
@@ -669,11 +700,14 @@ void UITask::MsgSvc::setNotifyLevel(const mishmesh::ConvoKey& k, mishmesh::Notif
 #define MSGCFG_AUTO_RESET_PATH 0x02
 
 mishmesh::MessagesConfig UITask::MsgSvc::getMessagesConfig() const {
+  if (!_msgFlagsLoaded) {                 // load the file once, then serve from RAM
+    _msgFlags = 0;
+    if (storage) storage->load("msgcfg", &_msgFlags, 1);
+    _msgFlagsLoaded = true;
+  }
   mishmesh::MessagesConfig c;
-  uint8_t flags = 0;
-  if (storage) storage->load("msgcfg", &flags, 1);
-  c.autoRetry     = (flags & MSGCFG_AUTO_RETRY) != 0;
-  c.autoResetPath = (flags & MSGCFG_AUTO_RESET_PATH) != 0;
+  c.autoRetry     = (_msgFlags & MSGCFG_AUTO_RETRY) != 0;
+  c.autoResetPath = (_msgFlags & MSGCFG_AUTO_RESET_PATH) != 0;
   NodePrefs* p = the_mesh.getNodePrefs();
   c.directAcks = (p && p->multi_acks >= 1) ? 2 : 1;
   return c;
@@ -684,11 +718,21 @@ void UITask::MsgSvc::setMessagesConfig(const mishmesh::MessagesConfig& c) {
   if (c.autoRetry)     flags |= MSGCFG_AUTO_RETRY;
   if (c.autoResetPath) flags |= MSGCFG_AUTO_RESET_PATH;
   if (storage) storage->save("msgcfg", &flags, 1);
+  _msgFlags = flags; _msgFlagsLoaded = true;   // keep the cache hot
   NodePrefs* p = the_mesh.getNodePrefs();
   if (p) {
     p->multi_acks = (c.directAcks >= 2) ? 1 : 0;
     the_mesh.savePrefs();
   }
+}
+
+// --- auto-retry glue: the engine's decisions executed against the radio/store ---
+void UITask::RetryGlue::retransmit(const mishmesh::ConvoKey& k, uint32_t senderTime,
+                                   uint8_t attempt, bool resetPath) {
+  the_mesh.mishmeshRetransmit(k, senderTime, attempt, resetPath);
+}
+void UITask::RetryGlue::markFailed(const mishmesh::ConvoKey& k, uint32_t senderTime) {
+  if (store) store->markFailed(k, senderTime);
 }
 
 // Derives the 16-byte flood-scope key for a chat's region, matching the firmware

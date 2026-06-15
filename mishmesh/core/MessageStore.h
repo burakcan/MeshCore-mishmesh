@@ -73,6 +73,11 @@ public:
   void appendOutboundChannel(const ConvoKey& key, const char* text, uint16_t textLen,
                              uint32_t senderTime, uint32_t sendTime);
   void markDelivered(uint32_t expectedAck, uint16_t tripTimeMs);
+  // Auto-retry support. markFailed flips a still-pending DM to ST_FAILED;
+  // updateExpectedAck re-points the delivery match at a re-sent message's new
+  // ack hash so a later ACK still lands on the original record.
+  void markFailed(const ConvoKey& key, uint32_t senderTime);
+  void updateExpectedAck(const ConvoKey& key, uint32_t senderTime, uint32_t newAck);
   void addRepeat(const ConvoKey& key, uint32_t senderTime,
                  int8_t snrx4, const uint8_t* path, uint8_t pathLen);
 
@@ -94,6 +99,14 @@ public:
 
   int  repeatCount(const ConvoKey& key, int msgIndex) const;              // 0 if summary-only
   bool getRepeat(const ConvoKey& key, int msgIndex, int r, RepeatRec& out) const;
+
+  // Undelivered direct messages (KIND_OUT_DM still at ST_PENDING), in arena
+  // order. Drives the auto-retry scan. getDMText copies the (NUL-terminated)
+  // body of a specific pending DM for re-transmission; returns its length, 0 if
+  // not found.
+  int  pendingDMCount() const;
+  bool getPendingDM(int index, ConvoKey& outKey, uint32_t& outSenderTime) const;
+  int  getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const;
 
   void deleteMessage(const ConvoKey& key, int index);
   void clearConvo(const ConvoKey& key);    // empties messages, keeps the chat in the list

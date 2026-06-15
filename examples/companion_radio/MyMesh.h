@@ -164,6 +164,10 @@ public:
   // Seed an (empty) chat for every joined channel (e.g. the default Public
   // channel) so it shows on a fresh device before any message arrives.
   void uiSeedChannels();
+  // Auto-retry: re-send an already-stored, still-undelivered DM (identified by
+  // its original senderTime). attempt bumps the ACK hash; resetPath floods.
+  bool mishmeshRetransmit(const mishmesh::ConvoKey& k, uint32_t senderTime,
+                          uint8_t attempt, bool resetPath);
   // [/mishmesh]
 
 protected:

@@ -73,7 +73,7 @@ uint16_t MessagesApplet::NewModel::icon(int i) const {
 // ---- SettingsModel ----
 
 const char* MessagesApplet::SettingsModel::label(int i) const {
-  static const char* LABELS[ROW_COUNT] = { "Auto retry", "Auto reset path", "Direct msg acks" };
+  static const char* LABELS[ROW_COUNT] = { "Auto retry DMs", "Auto reset DM paths", "Direct msg acks" };
   return (i >= 0 && i < ROW_COUNT) ? LABELS[i] : "";
 }
 

@@ -1078,6 +1078,36 @@ bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text)
   return true;
 }
 
+// Auto-retry: re-transmit an existing (still-undelivered) direct message without
+// adding a new store record. Reuses the original senderTime as the packet
+// timestamp so the message keeps its identity; bumps `attempt` so the recipient
+// computes a fresh ACK hash, which we re-register and re-point the store's
+// delivery match at. resetPath first clears the contact's route -> next send
+// floods (used after a couple of failed direct attempts).
+bool MyMesh::mishmeshRetransmit(const mishmesh::ConvoKey& k, uint32_t senderTime,
+                                uint8_t attempt, bool resetPath) {
+  if (k.type != 0 || !_mm_store) return false;        // direct messages only
+  ContactInfo* recipient = lookupContactByPubKey(k.id, 6);
+  if (!recipient) return false;
+  char text[mishmesh::MAX_TEXT + 1];
+  int tlen = _mm_store->getDMText(k, senderTime, text, sizeof(text));
+  if (tlen <= 0) return false;
+
+  if (resetPath) resetPathTo(*recipient);
+
+  uint32_t expected_ack = 0, est_timeout = 0;
+  int result = sendMessage(*recipient, senderTime, attempt, text, expected_ack, est_timeout);
+  if (result == MSG_SEND_FAILED) return false;
+  if (expected_ack) {
+    expected_ack_table[next_ack_idx].msg_sent = _ms->getMillis();
+    expected_ack_table[next_ack_idx].ack = expected_ack;
+    expected_ack_table[next_ack_idx].contact = recipient;
+    next_ack_idx = (next_ack_idx + 1) % EXPECTED_ACK_TABLE_SIZE;
+    _mm_store->updateExpectedAck(k, senderTime, expected_ack);
+  }
+  return true;
+}
+
 void MyMesh::uiSeedChannels() {
 #ifdef MAX_GROUP_CHANNELS
   if (!_mm_store) return;

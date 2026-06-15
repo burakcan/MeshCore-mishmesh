@@ -5,6 +5,7 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Anim.h>
+#include <mishmesh/core/RetryEngine.h>   // RetryEngine::MAX_RETRIES (retry label)
 #include <mishmesh/text/Fonts.h>
 #include <mishmesh/widgets/StatusBar.h>   // batteryPercent()
 #include <mishmesh/widgets/Modal.h>
@@ -69,7 +70,7 @@ static int wrapText(Canvas& c, int x, int y, int maxW, const char* text,
 }
 
 // Builds the metadata string shown below an outbound bubble.
-static void outboundStatus(const MessageView& m, char* buf, int cap) {
+void MessageThreadApplet::statusLabel(const MessageView& m, char* buf, int cap) {
   if (m.isChannel) {
     if (m.heardCount) snprintf(buf, cap, "Heard %u", (unsigned)m.heardCount);
     else              snprintf(buf, cap, "Sent");
@@ -77,6 +78,8 @@ static void outboundStatus(const MessageView& m, char* buf, int cap) {
     snprintf(buf, cap, "Delivered %.1fs", m.tripTimeMs / 1000.0);
   } else if (m.status == ST_FAILED) {
     snprintf(buf, cap, "Failed");
+  } else if (m.retryAttempt > 0) {
+    snprintf(buf, cap, "Retrying %u/%u", (unsigned)m.retryAttempt, (unsigned)RetryEngine::MAX_RETRIES);
   } else {
     snprintf(buf, cap, "Sent");
   }
@@ -203,7 +206,7 @@ void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int to
     int bubbleH = bodyH + 2 * PAD;
     blk.fillRect(bx, 0, bubbleW, bubbleH, DisplayDriver::LIGHT);
     wrapText(blk, bx + PAD, PAD, bubbleW - 2 * PAD, m.text, DisplayDriver::DARK, true);
-    char st[28]; outboundStatus(m, st, sizeof(st));
+    char st[28]; statusLabel(m, st, sizeof(st));
     blk.drawText(fontCaption(), cw, bubbleH, st, DisplayDriver::LIGHT, TextAlign::Right);
     if (focused) blk.drawText(fontBody(), bx - 6, (bubbleH - adv) / 2, ">", DisplayDriver::LIGHT);
     return;
@@ -387,25 +390,37 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
   if (_menuOpen) {
     if (_menu.onInput(ev)) return true;
     if (ev == InputEvent::Select) {
-      int sel = _menu.selected();
-      if (sel == 1) {
-        if (_svc) _svc->deleteMessage(_key, _focus);
-        _menuOpen = false;
-      } else if (sel == 2 && _msgMenu.hasPath) {
-        _menuOpen = false;
-        messagePathApplet().setTarget(_key, _focus);
-        if (_host) _host->push(&messagePathApplet());
-      } else if (sel == 0) {                 // Reply -> compose, seeding @[sender] for channels
-        _menuOpen = false;
-        char seed[48] = {0};
-        MessageView m;
-        if (_key.type == 1 && _svc && _svc->getMessage(_key, _focus, m) &&
-            m.senderName && m.senderName[0])
-          snprintf(seed, sizeof(seed), "@[%s] ", m.senderName);   // app's mention format
-        startCompose(seed);
-      } else {
-        _menuOpen = false;
-        if (_host) _host->postToast("Not available yet");
+      switch (_msgMenu.actionAt(_menu.selected())) {
+        case MsgMenuModel::Delete:
+          if (_svc) _svc->deleteMessage(_key, _focus);
+          _menuOpen = false;
+          break;
+        case MsgMenuModel::Path:
+          _menuOpen = false;
+          messagePathApplet().setTarget(_key, _focus);
+          if (_host) _host->push(&messagePathApplet());
+          break;
+        case MsgMenuModel::Reply: {            // compose, seeding @[sender] for channels
+          _menuOpen = false;
+          char seed[48] = {0};
+          MessageView m;
+          if (_key.type == 1 && _svc && _svc->getMessage(_key, _focus, m) &&
+              m.senderName && m.senderName[0])
+            snprintf(seed, sizeof(seed), "@[%s] ", m.senderName);   // app's mention format
+          startCompose(seed);
+          break;
+        }
+        case MsgMenuModel::Resend: {           // re-send the body as a fresh outbound message
+          _menuOpen = false;
+          char body[mishmesh::MAX_TEXT + 1] = {0};
+          MessageView m;
+          if (_svc && _svc->getMessage(_key, _focus, m) && m.text) {
+            snprintf(body, sizeof(body), "%s", m.text);
+            bool ok = body[0] && _svc->sendText(_key, body);
+            if (_host) _host->postToast(ok ? "Resending" : "Resend failed");
+          }
+          break;
+        }
       }
       return true;
     }
@@ -502,13 +517,18 @@ bool MessageThreadApplet::onConversationInput(InputEvent ev) {
     return true;
   }
   if (ev == InputEvent::Select && n > 0) {
-    MessageView m; bool hasPath = false, repeats = false;
+    MessageView m; bool hasPath = false, repeats = false, canResend = false;
     if (_svc && _svc->getMessage(_key, _focus, m)) {
       hasPath = (m.kind == KIND_INBOUND) || (m.kind == KIND_OUT_CHAN);
       repeats = (m.kind == KIND_OUT_CHAN);
+      // Offer a manual resend where auto-retry can't help: a DM that ran out of
+      // retries, or our own channel message nobody has echoed back yet.
+      canResend = (m.kind == KIND_OUT_DM   && m.status == ST_FAILED) ||
+                  (m.kind == KIND_OUT_CHAN && m.heardCount == 0);
     }
     _msgMenu.hasPath = hasPath;
     _msgMenu.repeats = repeats;
+    _msgMenu.canResend = canResend;
     _menu.setModel(&_msgMenu); _menu.setRowHeight(14); _menu.resetSelection();
     _menuOpen = true;
     return true;

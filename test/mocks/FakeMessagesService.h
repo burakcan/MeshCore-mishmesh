@@ -49,6 +49,7 @@ struct FakeMessagesService : mishmesh::MessagesService {
     o.senderTime = r.senderTime; o.localTime = r.localTime; o.senderName = self->senderName.c_str();
     o.text = self->sndBuf.c_str(); o.status = r.status; o.tripTimeMs = r.tripTimeMs;
     o.heardCount = r.heardCount; o.snrx4 = r.snrx4; o.hops = r.hops; o.path = r.path; o.pathLen = r.pathLen;
+    o.retryAttempt = 0;
     return true;
   }
   void setActiveConvo(const mishmesh::ConvoKey& k) override { store.setActiveConvo(k); }

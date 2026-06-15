@@ -412,6 +412,75 @@ void MessageStore::markDelivered(uint32_t expectedAck, uint16_t tripTimeMs) {
     }
   }
 }
+void MessageStore::markFailed(const ConvoKey& key, uint32_t senderTime) {
+  for (uint32_t off = 0; off < _used; ) {
+    uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
+    if (!recDead(r) && recKind(r) == KIND_OUT_DM) {
+      ConvoKey k; rdKey(r, k);
+      if (k.equals(key) && rd32(r + 8) == senderTime) {
+        uint8_t* trailer = r + REC_HDR + recTextLen(r);
+        if (trailer[0] == ST_PENDING) { trailer[0] = ST_FAILED; _seq++; }
+        return;
+      }
+    }
+    off += sz;
+  }
+}
+
+void MessageStore::updateExpectedAck(const ConvoKey& key, uint32_t senderTime, uint32_t newAck) {
+  Tracked* t = findTracked(key, senderTime);
+  if (!t) t = openTracked(key, senderTime, KIND_OUT_DM);
+  if (t) t->expectedAck = newAck;
+}
+
+int MessageStore::pendingDMCount() const {
+  int n = 0;
+  for (uint32_t off = 0; off < _used; ) {
+    const uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
+    if (!recDead(r) && recKind(r) == KIND_OUT_DM) {
+      const uint8_t* trailer = r + REC_HDR + recTextLen(r);
+      if (trailer[0] == ST_PENDING) n++;
+    }
+    off += sz;
+  }
+  return n;
+}
+
+bool MessageStore::getPendingDM(int index, ConvoKey& outKey, uint32_t& outSenderTime) const {
+  int n = 0;
+  for (uint32_t off = 0; off < _used; ) {
+    const uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
+    if (!recDead(r) && recKind(r) == KIND_OUT_DM) {
+      const uint8_t* trailer = r + REC_HDR + recTextLen(r);
+      if (trailer[0] == ST_PENDING) {
+        if (n == index) { rdKey(r, outKey); outSenderTime = rd32(r + 8); return true; }
+        n++;
+      }
+    }
+    off += sz;
+  }
+  return false;
+}
+
+int MessageStore::getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const {
+  if (!buf || cap <= 0) return 0;
+  buf[0] = 0;
+  for (uint32_t off = 0; off < _used; ) {
+    const uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
+    if (!recDead(r) && recKind(r) == KIND_OUT_DM) {
+      ConvoKey k; rdKey(r, k);
+      if (k.equals(key) && rd32(r + 8) == senderTime) {
+        uint16_t len = recTextLen(r);
+        if (len > (uint16_t)(cap - 1)) len = (uint16_t)(cap - 1);
+        memcpy(buf, r + REC_HDR, len); buf[len] = 0;
+        return len;
+      }
+    }
+    off += sz;
+  }
+  return 0;
+}
+
 void MessageStore::addRepeat(const ConvoKey& key, uint32_t senderTime,
                              int8_t snrx4, const uint8_t* path, uint8_t pathLen) {
   Tracked* t = findTracked(key, senderTime);

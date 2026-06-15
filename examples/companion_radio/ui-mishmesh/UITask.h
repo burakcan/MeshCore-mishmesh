@@ -18,6 +18,7 @@
 // [mishmesh]
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/core/AppletStorage.h>
+#include <mishmesh/core/RetryEngine.h>
 #include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/sound/Sounds.h>
 // [/mishmesh]
@@ -50,6 +51,12 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   struct MsgSvc : public mishmesh::MessagesService {
     mishmesh::MessageStore* store = nullptr;
     mishmesh::AppletStorage* storage = nullptr;   // per-chat region persistence
+    mishmesh::RetryEngine* retry = nullptr;       // live retry-attempt count for pending DMs
+    // Cached "msgcfg" flags byte: getMessagesConfig() runs per settings row per
+    // render frame, so it must not hit the filesystem each call. Loaded lazily,
+    // written through on set.
+    mutable uint8_t _msgFlags = 0;
+    mutable bool    _msgFlagsLoaded = false;
 
     const char* nameFor(const mishmesh::ConvoKey& k) const;
     int  convoCount() const override;
@@ -93,6 +100,18 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     uint8_t load(const char* key, uint8_t* dst, uint8_t cap) override;
     bool    save(const char* key, const uint8_t* src, uint8_t len) override;
   } _theStorage;
+
+  // Auto-retry of undelivered direct messages. The engine decides what/when;
+  // this glue performs the radio re-transmit (via MyMesh) and the failed-flag.
+  struct RetryGlue : public mishmesh::RetryActions {
+    mishmesh::MessageStore* store = nullptr;
+    void retransmit(const mishmesh::ConvoKey& k, uint32_t senderTime,
+                    uint8_t attempt, bool resetPath) override;
+    void markFailed(const mishmesh::ConvoKey& k, uint32_t senderTime) override;
+  } _retryGlue;
+  mishmesh::RetryEngine _retry;
+  uint32_t _retryScanAt = 0;   // next due time for the pending-message scan
+
   mishmesh::sound::SoundEngine _sound;
 
   // Notification routing is deferred from notify() to the next loop(): notify()

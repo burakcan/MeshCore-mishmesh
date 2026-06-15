@@ -25,6 +25,9 @@ public:
   const char* headerTitleForTest() const { return _titleBuf; }
   int  selectedTabForTest() const { return _tabs.selected(); }
   int  barRowForTest() const { return _barRow; }
+  // Metadata string shown beneath an outbound bubble (Sent / Retrying N/5 /
+  // Delivered / Failed / Heard). Exposed for host tests.
+  static void statusLabel(const MessageView& m, char* buf, int cap);
   const char* msgMenuLabelForTest(int i) const { return _msgMenu.label(i); }
 private:
   const char* resolveTitle() const;
@@ -68,12 +71,26 @@ private:
   ListMenu  _menu;       // per-message action overlay
   struct MsgMenuModel : ListModel {
     bool hasPath = false;
-    bool repeats = false;   // outbound channel -> "Heard Repeats" instead of "View Path"
-    int count() const override { return hasPath ? 3 : 2; }
+    bool repeats = false;     // outbound channel -> "Heard Repeats" instead of "View Path"
+    bool canResend = false;   // failed DM / 0-heard channel -> offer "Resend"
+    enum Action : uint8_t { Reply, Resend, Delete, Path };
+    // Visible order: Reply, [Resend], Delete, [Path].
+    Action actionAt(int i) const {
+      Action seq[4]; int n = 0;
+      seq[n++] = Reply;
+      if (canResend) seq[n++] = Resend;
+      seq[n++] = Delete;
+      if (hasPath) seq[n++] = Path;
+      return (i >= 0 && i < n) ? seq[i] : Delete;
+    }
+    int count() const override { return 1 + (canResend ? 1 : 0) + 1 + (hasPath ? 1 : 0); }
     const char* label(int i) const override {
-      if (i == 0) return "Reply";
-      if (i == 1) return "Delete";
-      return repeats ? "Heard Repeats" : "View Path";
+      switch (actionAt(i)) {
+        case Reply:  return "Reply";
+        case Resend: return "Resend";
+        case Delete: return "Delete";
+        default:     return repeats ? "Heard Repeats" : "View Path";
+      }
     }
   } _msgMenu;
   int       _barRow = -1;     // -1 = on a message; 0 = Write; 1 = Quick

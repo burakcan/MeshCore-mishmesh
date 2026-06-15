@@ -48,6 +48,7 @@ struct MessageView {
   uint8_t     status;      // MsgStatus
   uint16_t    tripTimeMs;
   uint8_t     heardCount;
+  uint8_t     retryAttempt; // outbound DM still pending: current auto-retry number (0 = none)
   int8_t      snrx4;
   uint8_t     hops;
   const uint8_t* path; uint8_t pathLen;

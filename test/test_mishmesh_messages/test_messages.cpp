@@ -299,6 +299,7 @@ TEST(MessageThread, OutboundChannelMenuSaysHeardRepeats) {
   FakeMessagesService svc;
   auto k = mishmesh::channelKey(1);
   svc.store.appendOutboundChannel(k, "hey", 3, 5, 5);
+  svc.store.addRepeat(k, 5, -8, nullptr, 0);   // heard once -> no "Resend" offered
   FakeDisplayDriver d;
   mishmesh::AppletContext ctx; ctx.messages = &svc;
   mishmesh::AppletHost host(&d, ctx);
@@ -306,7 +307,65 @@ TEST(MessageThread, OutboundChannelMenuSaysHeardRepeats) {
   mishmesh::messageThreadApplet().setTarget(k);
   host.push(&mishmesh::messageThreadApplet());
   host.dispatch(mishmesh::InputEvent::Select);   // open per-message menu on the message
+  EXPECT_STREQ("Reply", mishmesh::messageThreadApplet().msgMenuLabelForTest(0));
   EXPECT_STREQ("Heard Repeats", mishmesh::messageThreadApplet().msgMenuLabelForTest(2));
+}
+
+// A channel message nobody has echoed back (0 heards) offers a manual Resend,
+// which re-sends the body as a fresh outbound message.
+TEST(MessageThread, ZeroHeardChannelOffersResend) {
+  FakeMessagesService svc;
+  auto k = mishmesh::channelKey(1);
+  svc.store.appendOutboundChannel(k, "hey", 3, 5, 5);   // heardCount 0
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.dispatch(mishmesh::InputEvent::Select);          // open per-message menu
+  EXPECT_STREQ("Resend", mishmesh::messageThreadApplet().msgMenuLabelForTest(1));
+  EXPECT_STREQ("Heard Repeats", mishmesh::messageThreadApplet().msgMenuLabelForTest(3));
+  host.dispatch(mishmesh::InputEvent::NavDown);          // Reply -> Resend
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(1, svc.sends);
+  EXPECT_EQ("hey", svc.lastSent);
+}
+
+// A direct message that exhausted its retries (ST_FAILED) offers a manual Resend.
+TEST(MessageThread, FailedDMOffersResend) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  svc.store.appendOutboundDM(k, "yo", 2, 9, 9, 0xABCD, 0);
+  svc.store.markFailed(k, 9);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.dispatch(mishmesh::InputEvent::Select);          // open per-message menu (DM: no path row)
+  EXPECT_STREQ("Resend", mishmesh::messageThreadApplet().msgMenuLabelForTest(1));
+  host.dispatch(mishmesh::InputEvent::NavDown);          // Reply -> Resend
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(1, svc.sends);
+  EXPECT_EQ("yo", svc.lastSent);
+}
+
+// A still-pending (not failed) DM does NOT offer Resend - auto-retry owns it.
+TEST(MessageThread, PendingDMHasNoResend) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  svc.store.appendOutboundDM(k, "yo", 2, 9, 9, 0xABCD, 0);   // ST_PENDING
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_STREQ("Reply", mishmesh::messageThreadApplet().msgMenuLabelForTest(0));
+  EXPECT_STREQ("Delete", mishmesh::messageThreadApplet().msgMenuLabelForTest(1));  // no Resend between
 }
 
 TEST(MessageThread, InboundMenuSaysViewPath) {
@@ -857,6 +916,31 @@ class MessagesNewTabEnv : public ::testing::Environment {
  public:
   void TearDown() override { delete gNewTabHost; gNewTabHost = nullptr; }
 };
+
+// The outbound status label surfaces the live retry count while a DM is being
+// retried, and yields to terminal states (delivered/failed).
+TEST(MessageThread, StatusLabelShowsRetryCount) {
+  using namespace mishmesh;
+  MessageView m{};
+  m.outbound = true; m.isChannel = false;
+  char buf[28];
+
+  m.status = ST_PENDING; m.retryAttempt = 0;          // just sent, no retry yet
+  MessageThreadApplet::statusLabel(m, buf, sizeof(buf));
+  EXPECT_STREQ("Sent", buf);
+
+  m.retryAttempt = 2;                                  // mid-retry
+  MessageThreadApplet::statusLabel(m, buf, sizeof(buf));
+  EXPECT_STREQ("Retrying 2/5", buf);
+
+  m.status = ST_DELIVERED; m.tripTimeMs = 1500; m.retryAttempt = 3;  // delivery wins
+  MessageThreadApplet::statusLabel(m, buf, sizeof(buf));
+  EXPECT_STREQ("Delivered 1.5s", buf);
+
+  m.status = ST_FAILED; m.retryAttempt = 0;
+  MessageThreadApplet::statusLabel(m, buf, sizeof(buf));
+  EXPECT_STREQ("Failed", buf);
+}
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);

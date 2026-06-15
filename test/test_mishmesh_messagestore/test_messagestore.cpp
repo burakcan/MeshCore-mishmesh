@@ -178,6 +178,62 @@ TEST(MessageStore, OutboundDMStartsPendingThenDelivered) {
   EXPECT_EQ(1234, r.tripTimeMs);
 }
 
+TEST(MessageStore, PendingDMEnumerationSkipsNonPending) {
+  MessageStore s;
+  s.appendOutboundDM(dm("ALICE!"), "a", 1, 100, 100, 0x1111, 0);
+  s.appendOutboundDM(dm("BOBBBB"), "b", 1, 200, 200, 0x2222, 0);
+  s.appendInbound(dm("CAROL!"), "in", 2, 300, 300, 0, nullptr, 0);   // inbound: not counted
+  s.appendOutboundChannel(channelKey(4), "c", 1, 400, 400);          // channel: not counted
+  EXPECT_EQ(2, s.pendingDMCount());
+  s.markDelivered(0x1111, 0);                                        // ALICE delivered -> drops out
+  EXPECT_EQ(1, s.pendingDMCount());
+  ConvoKey k; uint32_t st = 0;
+  ASSERT_TRUE(s.getPendingDM(0, k, st));
+  EXPECT_TRUE(k.equals(dm("BOBBBB")));
+  EXPECT_EQ(200u, st);
+  EXPECT_FALSE(s.getPendingDM(1, k, st));                            // only one left
+}
+
+TEST(MessageStore, GetDMTextReturnsBody) {
+  MessageStore s;
+  s.appendOutboundDM(dm("ALICE!"), "hello world", 11, 500, 500, 0xABCD, 0);
+  char buf[32];
+  int n = s.getDMText(dm("ALICE!"), 500, buf, sizeof(buf));
+  EXPECT_EQ(11, n);
+  EXPECT_STREQ("hello world", buf);
+  EXPECT_EQ(0, s.getDMText(dm("ALICE!"), 999, buf, sizeof(buf)));    // wrong senderTime
+}
+
+TEST(MessageStore, MarkFailedSetsStatus) {
+  MessageStore s;
+  s.appendOutboundDM(dm("ALICE!"), "x", 1, 500, 500, 0xACE, 0);
+  s.markFailed(dm("ALICE!"), 500);
+  MsgRecord r; ASSERT_TRUE(s.getMessage(dm("ALICE!"), 0, r));
+  EXPECT_EQ(ST_FAILED, r.status);
+  EXPECT_EQ(0, s.pendingDMCount());
+}
+
+TEST(MessageStore, MarkFailedLeavesDeliveredAlone) {
+  MessageStore s;
+  s.appendOutboundDM(dm("ALICE!"), "x", 1, 500, 500, 0xACE, 0);
+  s.markDelivered(0xACE, 7);
+  s.markFailed(dm("ALICE!"), 500);                                   // already delivered -> no-op
+  MsgRecord r; ASSERT_TRUE(s.getMessage(dm("ALICE!"), 0, r));
+  EXPECT_EQ(ST_DELIVERED, r.status);
+}
+
+TEST(MessageStore, UpdateExpectedAckRepointsDelivery) {
+  MessageStore s;
+  s.appendOutboundDM(dm("ALICE!"), "x", 1, 500, 500, /*ack*/0x1111, 0);
+  s.updateExpectedAck(dm("ALICE!"), 500, /*newAck*/0x2222);
+  s.markDelivered(0x1111, 9);                                        // stale ack: no match now
+  MsgRecord r; ASSERT_TRUE(s.getMessage(dm("ALICE!"), 0, r));
+  EXPECT_EQ(ST_PENDING, r.status);
+  s.markDelivered(0x2222, 9);                                        // new ack matches
+  ASSERT_TRUE(s.getMessage(dm("ALICE!"), 0, r));
+  EXPECT_EQ(ST_DELIVERED, r.status);
+}
+
 TEST(MessageStore, ChannelRepeatsAccumulate) {
   MessageStore s;
   s.appendOutboundChannel(channelKey(2), "hello", 5, 700, 700);
