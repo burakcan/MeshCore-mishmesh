@@ -1,7 +1,5 @@
-#include <mishmesh/applets/SystemStatsApplet.h>
-#include <mishmesh/core/AppletRegistry.h>
+#include <mishmesh/applets/settings/SystemInfoPanel.h>
 #include <mishmesh/core/Canvas.h>
-#include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 
 namespace mishmesh {
@@ -39,10 +37,10 @@ int formatSystemStats(const SystemStats& s, char out[][SYSSTATS_LINE_LEN], int m
   return n;
 }
 
-void SystemStatsApplet::rebuild(uint32_t now, bool keepScroll) {
+void SystemInfoPanel::rebuild(uint32_t now, bool keepScroll) {
   _lastBuilt = now;
   _built = true;
-  _panel.clear(keepScroll);   // periodic refresh keeps the user's scroll position
+  _panel.clear(keepScroll);
   SystemStats s;
   if (!(_app && _app->systemStats(s))) {
     _panel.addLine("Stats unavailable");
@@ -53,26 +51,23 @@ void SystemStatsApplet::rebuild(uint32_t now, bool keepScroll) {
   for (int i = 0; i < n; i++) _panel.addLine(lines[i]);
 }
 
-void SystemStatsApplet::onStart(AppletContext& ctx) {
+void SystemInfoPanel::begin(AppletContext& ctx) {
   _app = ctx.app;
   _built = false;
   _panel.clear();
 }
 
-int SystemStatsApplet::onRender(Canvas& c) {
+int SystemInfoPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
   uint32_t now = c.now();
   if (!_built) rebuild(now, false);
   else if (now - _lastBuilt >= REBUILD_MS) rebuild(now, true);
-  _panel.draw(c, 0, 0, c.width(), c.height());
+  _panel.draw(c, x, y, w, h);
   return _panel.needsAnimation() ? 33 : (int)REBUILD_MS;
 }
 
-bool SystemStatsApplet::onInput(InputEvent ev) {
-  return _panel.onInput(ev);   // NavUp/Down scroll; everything else bubbles
+SystemInfoPanel& systemInfoSettings() {
+  static SystemInfoPanel s;
+  return s;
 }
-
-static SystemStatsApplet s_systemStats;
-MISHMESH_REGISTER_APPLET_ICON(&s_systemStats, ::mishmesh::Placement::AppMenu,
-                              "System", 6, (uint16_t)::mishmesh::Icon::Chip);
 
 }  // namespace mishmesh

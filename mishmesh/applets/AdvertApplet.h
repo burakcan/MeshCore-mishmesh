@@ -21,19 +21,6 @@ public:
     const char* label(int index) const override;
     uint16_t icon(int index) const override;
   };
-  // Settings tab: a single "Share position" toggle that controls whether
-  // self-adverts include this node's location (persisted via AppServices).
-  class SettingsModel : public ListModel {
-    AppServices* _app = nullptr;
-  public:
-    void bind(AppServices* app) { _app = app; }
-    int count() const override { return 1; }
-    const char* label(int index) const override { (void)index; return "Share position"; }
-    bool isToggle(int index) const override { (void)index; return true; }
-    bool toggleState(int index) const override {
-      (void)index; return _app && _app->shareLocationInAdvert();
-    }
-  };
   // Recent tab: forwards to the ContactsService recent-advert feed.
   class RecentModel : public ListModel {
     ContactsService* _svc = nullptr;
@@ -62,9 +49,9 @@ private:
   ListMenu         _list;
   SendModel        _send;
   RecentModel      _recent;
-  SettingsModel    _settings;
   char             _battBuf[8] = {0};
   void syncListToTab();
+  bool settingsTab() const { return _tabs.selected() == 2; }
 };
 
 }  // namespace mishmesh

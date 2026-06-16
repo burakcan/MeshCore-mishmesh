@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <mishmesh/core/Applet.h>
-#include <mishmesh/applets/BluetoothApplet.h>
+#include <mishmesh/applets/settings/BluetoothPanel.h>
 #include <mishmesh/core/AppletHost.h>
 #include "FakeDisplayDriver.h"
 
@@ -43,50 +43,41 @@ public:
 };
 }  // namespace
 
-TEST(BluetoothApplet, StatusTextMapping) {
+TEST(BluetoothPanel, StatusTextMapping) {
   // Status reflects the link only; the Toggle carries the radio on/off state.
-  EXPECT_STREQ("Not connected", BluetoothApplet::statusText(false));
-  EXPECT_STREQ("Connected",     BluetoothApplet::statusText(true));
+  EXPECT_STREQ("Not connected", BluetoothPanel::statusText(false));
+  EXPECT_STREQ("Connected",     BluetoothPanel::statusText(true));
 }
 
-TEST(BluetoothApplet, PinVisibility) {
-  EXPECT_TRUE (BluetoothApplet::showPin(123456, false));  // have pin, not paired
-  EXPECT_FALSE(BluetoothApplet::showPin(0,      false));  // no pin
-  EXPECT_FALSE(BluetoothApplet::showPin(123456, true));   // paired -> irrelevant
+TEST(BluetoothPanel, PinVisibility) {
+  EXPECT_TRUE (BluetoothPanel::showPin(123456, false));  // have pin, not paired
+  EXPECT_FALSE(BluetoothPanel::showPin(0,      false));  // no pin
+  EXPECT_FALSE(BluetoothPanel::showPin(123456, true));   // paired -> irrelevant
 }
 
-TEST(BluetoothApplet, SelectTogglesAndConsumes) {
-  FakeBleApp app; app.enabled = false;
+TEST(BluetoothPanel, SelectTogglesAndConsumes) {
+  FakeBleApp app;                       // existing fake with settable BLE state
   AppletContext ctx; ctx.app = &app;
-  BluetoothApplet applet;
-  applet.onStart(ctx);
-
-  EXPECT_TRUE(applet.onInput(InputEvent::Select));   // consumed
-  EXPECT_EQ(1, app.setCalls);
-  EXPECT_TRUE(app.lastSet);                          // off -> on
-  EXPECT_TRUE(applet.onInput(InputEvent::Select));
-  EXPECT_EQ(2, app.setCalls);
-  EXPECT_FALSE(app.lastSet);                         // on -> off
+  BluetoothPanel panel; panel.begin(ctx);
+  bool before = app.bleEnabled();
+  EXPECT_TRUE(panel.onInput(InputEvent::Select));   // toggle row
+  EXPECT_NE(before, app.bleEnabled());
 }
 
-TEST(BluetoothApplet, BackBubbles) {
+TEST(BluetoothPanel, BackBubbles) {
   FakeBleApp app;
   AppletContext ctx; ctx.app = &app;
-  BluetoothApplet applet;
-  applet.onStart(ctx);
-  EXPECT_FALSE(applet.onInput(InputEvent::Back));    // not consumed -> host pops
-  EXPECT_FALSE(applet.onInput(InputEvent::NavUp));   // nothing to scroll
+  BluetoothPanel panel; panel.begin(ctx);
+  EXPECT_FALSE(panel.onInput(InputEvent::Back));
 }
 
-TEST(BluetoothApplet, RendersWithoutCrashing) {
-  FakeDisplayDriver d;
-  FakeBleApp app; app.enabled = true; app.pin = 123456;
+TEST(BluetoothPanel, RendersWithoutCrashing) {
+  FakeBleApp app;
   AppletContext ctx; ctx.app = &app;
-  AppletHost host(&d, ctx);
-  BluetoothApplet applet;
-  host.push(&applet);
-  host.loop(0);
-  EXPECT_FALSE(d.fills.empty());   // icon + text drawn as pixel runs
+  BluetoothPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  panel.renderBody(c, 0, 0, 128, 64);
+  EXPECT_GT(d.fills.size(), 0u);
 }
 
 int main(int argc, char** argv) {

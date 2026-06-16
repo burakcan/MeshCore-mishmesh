@@ -72,70 +72,10 @@ uint16_t DiscoverListModel::icon(int i) const {
   return kindIcon((ContactKind)v.type);
 }
 
-// raw autoadd_max_hops -> human label. 0=no limit, 1=direct (0 hops), N=up to N-1 hops.
-static void maxHopsLabel(int raw, char* out, uint16_t cap) {
-  if (raw <= 0)       snprintf(out, cap, "No limit");
-  else if (raw == 1)  snprintf(out, cap, "Direct");
-  else if (raw == 2)  snprintf(out, cap, "1 hop");
-  else                snprintf(out, cap, "%d hops", raw - 1);
-}
-
-static const char* SETTINGS_LABELS[ContactsSettingsModel::ROW_COUNT] = {
-  "Auto-add all", "Auto-add Users", "Auto-add Repeaters", "Auto-add Rooms", "Auto-add Sensors",
-  "Overwrite oldest", "Max hops", "Remove non-users", "Remove non-favourites", "Remove all contacts",
-};
-
-bool ContactsSettingsModel::addAll() const {
-  return _svc ? _svc->getAutoAdd().autoAddAll : true;
-}
-
-// Logical row sequence: the master toggle, then the per-kind toggles only when
-// it's off, then overwrite + the cleanup actions.
-ContactsSettingsModel::Row ContactsSettingsModel::rowAt(int i) const {
-  Row seq[ROW_COUNT];
-  int n = 0;
-  seq[n++] = AutoAddAll;
-  if (!addAll()) { seq[n++] = Users; seq[n++] = Repeaters; seq[n++] = Rooms; seq[n++] = Sensors; }
-  seq[n++] = Overwrite;
-  seq[n++] = MaxHops;
-  seq[n++] = RemoveNonUsers; seq[n++] = RemoveNonFavourites; seq[n++] = RemoveAll;
-  return (i >= 0 && i < n) ? seq[i] : ROW_COUNT;
-}
-int ContactsSettingsModel::count() const {
-  // master + overwrite + maxhops + 3 actions, plus the 4 kind toggles when not adding all
-  return addAll() ? 6 : ROW_COUNT;
-}
-const char* ContactsSettingsModel::label(int i) const {
-  Row r = rowAt(i);
-  return (r >= 0 && r < ROW_COUNT) ? SETTINGS_LABELS[r] : "";
-}
-bool ContactsSettingsModel::isToggle(int i) const {
-  return rowAt(i) <= Overwrite;   // AutoAddAll..Overwrite are toggles; the rest are actions
-}
-bool ContactsSettingsModel::toggleState(int i) const {
-  if (!_svc) return false;
-  AutoAddConfig c = _svc->getAutoAdd();
-  switch (rowAt(i)) {
-    case AutoAddAll: return c.autoAddAll;
-    case Users:      return c.addChat;
-    case Repeaters:  return c.addRepeater;
-    case Rooms:      return c.addRoom;
-    case Sensors:    return c.addSensor;
-    case Overwrite:  return c.overwriteOldest;
-    default:         return false;
-  }
-}
-const char* ContactsSettingsModel::value(int i) const {
-  if (!_svc || rowAt(i) != MaxHops) return nullptr;   // only the MaxHops row shows a value
-  static char buf[12];
-  maxHopsLabel(_svc->getAutoAdd().maxHops, buf, sizeof(buf));
-  return buf;
-}
 
 ContactsApplet::ContactsApplet()
     : Applet("Contacts"), _host(nullptr), _svc(nullptr),
-      _confirming(false), _pendingAction(-1), _pickMode(false), _pickRequested(false),
-      _editingHops(false) {}
+      _pickMode(false), _pickRequested(false) {}
 
 static const char* emptyLabel(ContactKind k) {
   switch (k) {
@@ -151,7 +91,7 @@ void ContactsApplet::syncListToTab() {
   switch (s.kind) {
     case TabKind::Favourites: _list.setModel(&_favs); _list.setEmptyText("No favourites"); break;
     case TabKind::Discovered: _list.setModel(&_discover); _list.setEmptyText("No new devices"); break;
-    case TabKind::Settings:   _list.setModel(&_settings); _list.setEmptyText(nullptr); break;
+    case TabKind::Settings:   _list.setEmptyText(nullptr); break;   // rendered by contactsSettings()
     default:                  _list.setModel(&_models[(int)s.contactKind - 1]);          // kinds are 1-based
                               _list.setEmptyText(emptyLabel(s.contactKind)); break;
   }
@@ -207,10 +147,8 @@ void ContactsApplet::onStart(AppletContext& ctx) {
   _favs.bind(_svc);
   _favs.setUsersOnly(_pickMode);
   _discover.bind(_svc);
-  _settings.bind(_svc);
+  contactsSettings().begin(ctx);
   _list.setRowHeight(14);
-  _confirming = false; _pendingAction = -1;
-  _editingHops = false;
   _slotCount = 0;        // fresh build: no selection to preserve
   rebuildTabs();
   // On a fresh open, land on the Favourites tab when it exists (always slot 0).
@@ -231,83 +169,23 @@ int ContactsApplet::onRender(Canvas& c) {
   _tabs.draw(c, 0, 0, w, barH);
   int bodyY = barH + 1;
   int bodyH = h - bodyY;
-  _list.draw(c, 0, bodyY, w, bodyH);   // contacts and settings share the one list widget
-
-  if (_confirming) { _confirm.draw(c, 0, 0, w, h); return 100; }
-  if (_editingHops) { _hops.draw(c, 0, 0, w, h); return 100; }
+  if (settingsTab()) return contactsSettings().renderBody(c, 0, bodyY, w, bodyH);
+  _list.draw(c, 0, bodyY, w, bodyH);
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool ContactsApplet::onInput(InputEvent ev) {
-  if (_editingHops) {
-    if (_hops.onInput(ev)) {
-      StepperResult r = _hops.result();
-      if (r != StepperResult::None) {
-        if (r == StepperResult::Confirmed && _svc) {
-          AutoAddConfig cfg = _svc->getAutoAdd();
-          cfg.maxHops = (uint8_t)_hops.value();
-          _svc->setAutoAdd(cfg);
-        }
-        _editingHops = false;
-        _hops.reset();
-      }
-    }
-    return true;   // swallow everything while modal
-  }
-
-  if (_confirming) {
-    if (_confirm.onInput(ev)) {
-      ConfirmResult r = _confirm.result();
-      if (r != ConfirmResult::None) {
-        if (r == ConfirmResult::Confirmed && _svc) {
-          int removed = -1;
-          if (_pendingAction == ContactsSettingsModel::RemoveNonUsers) removed = _svc->removeNonChat();
-          else if (_pendingAction == ContactsSettingsModel::RemoveNonFavourites) removed = _svc->removeNonFavourites();
-          else if (_pendingAction == ContactsSettingsModel::RemoveAll) removed = _svc->removeAll();
-          if (removed >= 0 && _host) {
-            char buf[20]; snprintf(buf, sizeof(buf), "Removed %d", removed);
-            _host->postToast(buf);
-          }
-        }
-        _confirming = false; _pendingAction = -1;
-      }
-      return true;
-    }
-    return true;   // swallow everything while modal
+  if (settingsTab()) {
+    if (contactsSettings().modalActive()) return contactsSettings().onInput(ev);
+    if (_tabs.onInput(ev)) { syncListToTab(); return true; }   // NavLeft/Right leave settings
+    if (contactsSettings().onInput(ev)) return true;
+    return false;   // Back bubbles to the host
   }
 
   if (_tabs.onInput(ev)) { syncListToTab(); return true; }
   if (_list.onInput(ev)) return true;
 
   if (ev == InputEvent::Select) {
-    if (settingsTab()) {
-      int i = _list.selected();
-      ContactsSettingsModel::Row r = _settings.rowAt(i);
-      if (_settings.isToggle(i) && _svc) {
-        AutoAddConfig cfg = _svc->getAutoAdd();
-        switch (r) {
-          case ContactsSettingsModel::AutoAddAll: cfg.autoAddAll = !cfg.autoAddAll; break;
-          case ContactsSettingsModel::Users:      cfg.addChat = !cfg.addChat; break;
-          case ContactsSettingsModel::Repeaters:  cfg.addRepeater = !cfg.addRepeater; break;
-          case ContactsSettingsModel::Rooms:      cfg.addRoom = !cfg.addRoom; break;
-          case ContactsSettingsModel::Sensors:    cfg.addSensor = !cfg.addSensor; break;
-          case ContactsSettingsModel::Overwrite:  cfg.overwriteOldest = !cfg.overwriteOldest; break;
-          default: break;
-        }
-        _svc->setAutoAdd(cfg);
-      } else if (r == ContactsSettingsModel::MaxHops && _svc) {
-        _hops.configure("Max hops", _svc->getAutoAdd().maxHops, 0, 64, maxHopsLabel);
-        _editingHops = true;
-      } else {
-        _pendingAction = r;   // store the logical Row, not the (dynamic) list index
-        const char* msg = "Remove non-user contacts?";
-        if (r == ContactsSettingsModel::RemoveAll) msg = "Remove ALL contacts?";
-        else if (r == ContactsSettingsModel::RemoveNonFavourites) msg = "Remove all non-favourites?";
-        _confirm.configure(msg);
-        _confirming = true;
-      }
-      return true;
-    }
     if (_svc) {
       const TabSlot& s = currentSlot();
       ContactView v;

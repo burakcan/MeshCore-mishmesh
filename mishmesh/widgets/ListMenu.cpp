@@ -67,8 +67,14 @@ void ListMenu::drawRowContent(Canvas& view, int i, int ry, int cw, DisplayDriver
   } else {
     const char* val = _model->value(i);
     if (val && *val) {
-      rightW = view.textWidth(fontBody(), val) + 6;
-      view.drawTextEllipsized(fontBody(), cw - 2, ry + ty, cw / 2, val, col, TextAlign::Right);
+      // Let the value take the width it needs, but never so much that the label
+      // has no room (keep ~20px for it); short values are unaffected. The fixed
+      // half-width cap used to clip readable values like "Not connected".
+      int vw = view.textWidth(fontBody(), val);
+      int maxVw = cw - tx - 20; if (maxVw < 0) maxVw = 0;
+      if (vw > maxVw) vw = maxVw;
+      rightW = vw + 6;
+      view.drawTextEllipsized(fontBody(), cw - 2, ry + ty, vw, val, col, TextAlign::Right);
     }
   }
 

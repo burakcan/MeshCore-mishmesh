@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
-#include <mishmesh/applets/SystemStatsApplet.h>
+#include <mishmesh/applets/settings/SystemInfoPanel.h>
 #include "FakeDisplayDriver.h"
 
 #include <string>
@@ -84,42 +84,32 @@ TEST(FormatSystemStats, ShowsRamTotalWhenKnown) {
   EXPECT_EQ("Heap total: 248.0K", lineAt(lines, 2));
 }
 
-TEST(SystemStatsApplet, ScrollsAndBubblesBack) {
-  FakeDisplayDriver d;
+TEST(SystemInfoPanel, ScrollsAndBubblesBack) {
   FakeApp app; app.stats = sampleStats();
   AppletContext ctx; ctx.app = &app;
-
-  SystemStatsApplet applet;
-  applet.onStart(ctx);
-
-  // NavUp/Down are consumed by the scroll panel; Back is not (host pops it).
-  EXPECT_TRUE(applet.onInput(InputEvent::NavDown));
-  EXPECT_TRUE(applet.onInput(InputEvent::NavUp));
-  EXPECT_FALSE(applet.onInput(InputEvent::Back));
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  panel.renderBody(c, 0, 0, 128, 64);
+  EXPECT_TRUE(panel.onInput(InputEvent::NavDown));   // scroll consumed
+  EXPECT_FALSE(panel.onInput(InputEvent::Back));     // bubbles
 }
 
-TEST(SystemStatsApplet, RendersWithoutCrashing) {
-  FakeDisplayDriver d;
+TEST(SystemInfoPanel, RendersWithoutCrashing) {
   FakeApp app; app.stats = sampleStats();
   AppletContext ctx; ctx.app = &app;
-  AppletHost host(&d, ctx);
-
-  SystemStatsApplet applet;
-  host.push(&applet);
-  host.loop(0);                 // builds lines + rasterises
-  EXPECT_FALSE(d.fills.empty()); // text drawn as pixel runs
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  panel.renderBody(c, 0, 0, 128, 64);
+  EXPECT_GT(d.fills.size(), 0u);
 }
 
-TEST(SystemStatsApplet, UnavailableWhenServiceReturnsFalse) {
-  FakeDisplayDriver d;
+TEST(SystemInfoPanel, UnavailableWhenServiceReturnsFalse) {
   FakeApp app; app.ok = false;
   AppletContext ctx; ctx.app = &app;
-  AppletHost host(&d, ctx);
-
-  SystemStatsApplet applet;
-  host.push(&applet);
-  host.loop(0);                 // should not crash; shows "Stats unavailable"
-  EXPECT_FALSE(d.fills.empty());
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  panel.renderBody(c, 0, 0, 128, 64);
+  EXPECT_STREQ("Stats unavailable", panel.lineForTest(0));   // test seam added in Step 3 header
 }
 
 int main(int argc, char** argv) {

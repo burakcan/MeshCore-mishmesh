@@ -4,8 +4,7 @@
 #include <mishmesh/core/ContactsService.h>
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/TabBar.h>
-#include <mishmesh/widgets/ConfirmDialog.h>
-#include <mishmesh/widgets/StepperDialog.h>
+#include <mishmesh/applets/settings/ContactsSettingsPanel.h>
 
 namespace mishmesh {
 
@@ -49,25 +48,6 @@ public:
   uint16_t icon(int i) const override;
 };
 
-// Settings rows. The per-kind auto-add toggles only appear when "Auto-add all"
-// is off (mirrors the companion app's all/selected modes), so the visible row
-// set is dynamic — map list index -> logical Row via rowAt().
-class ContactsSettingsModel : public ListModel {
-  ContactsService* _svc;
-  bool addAll() const;   // current master state (defaults to true when unbound)
-public:
-  enum Row { AutoAddAll, Users, Repeaters, Rooms, Sensors, Overwrite, MaxHops,
-             RemoveNonUsers, RemoveNonFavourites, RemoveAll, ROW_COUNT };
-  ContactsSettingsModel() : _svc(nullptr) {}
-  void bind(ContactsService* svc) { _svc = svc; }
-  Row rowAt(int i) const;   // visible list index -> logical Row (ROW_COUNT if out of range)
-  int count() const override;
-  const char* label(int i) const override;
-  bool isToggle(int i) const override;
-  bool toggleState(int i) const override;
-  const char* value(int i) const override;
-};
-
 class ContactsApplet : public Applet {
   // What a given tab shows. The Favourites tab exists only when there are
   // favourites, so tab indices shift; a slot per tab records its meaning.
@@ -83,14 +63,8 @@ class ContactsApplet : public Applet {
   ContactListModel      _models[4];     // Chat/Repeater/Room/Sensor
   FavouritesListModel   _favs;
   DiscoverListModel     _discover;
-  ContactsSettingsModel _settings;
-  ConfirmDialog         _confirm;
-  StepperDialog         _hops;          // max-hops value picker (modal)
-  bool                  _editingHops;
   TabSlot               _slots[8];      // parallel to the tabs
   int                   _slotCount;
-  bool                  _confirming;
-  int                   _pendingAction; // ContactsSettingsModel::Row for cleanup confirm
   bool                  _pickMode;        // picker: only Favourites(users) + Contacts(users), select -> thread
   bool                  _pickRequested;   // one-shot, consumed by onStart
 
