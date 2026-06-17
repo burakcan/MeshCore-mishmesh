@@ -47,14 +47,12 @@ void game2048NewGame() {
   ResetGame();
 }
 
-// game.cpp defines GameState with external linkage; declare it here to force a save.
-extern GameStateStruct GameState;
-
 void game2048Persist() {
-  // The game only auto-saves on game-over. To resume an in-progress board from the
-  // menu, clear the "already saved" flag and write the full record now; the applet
-  // then flushes the EEPROM image to storage via ArduboyRuntime::saveIfDirty().
-  GameState.saved = false;
+  // Persist the in-progress board so it resumes from the menu. SaveGame() no-ops while
+  // GameState.saved is true (the game clears it on every move), so leaving without
+  // having moved writes nothing — only real changes hit the LittleFS-backed store,
+  // avoiding needless flash wear. The applet then flushes via saveIfDirty() (itself a
+  // no-op unless the EEPROM image actually changed).
   SaveGame();
 }
 

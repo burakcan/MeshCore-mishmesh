@@ -1,5 +1,8 @@
 #include "UITask.h"
 #include "target.h"   // rtc_clock
+// [mishmesh]
+#include <helpers/sensors/LocationProvider.h>
+// [/mishmesh]
 #include <mishmesh/applets/NotificationApplet.h>
 #include <mishmesh/core/TelemetryDecode.h>
 #include <mishmesh/core/Mention.h>
@@ -49,6 +52,32 @@ uint32_t UITask::epochSeconds() const {
   return rtc_clock.getCurrentTime();
 }
 
+// [mishmesh]
+void UITask::setAutoTimeSync(bool on) {
+  NodePrefs* p = the_mesh.getNodePrefs();
+  if (p) { p->manual_time_set = on ? 0 : 1; the_mesh.savePrefs(); }
+  applyTimeSyncGate(on);
+  // Turning auto back on: request a prompt re-sync so the clock corrects on the
+  // next GPS fix instead of waiting out the ~30-min interval. Suppression-only:
+  // this arms a pending sync; it does not power GPS on, so it's a no-op when GPS
+  // is disabled or has no fix.
+  if (on && _sensors) {
+    LocationProvider* lp = _sensors->getLocationProvider();
+    if (lp) lp->syncTime();
+  }
+}
+
+void UITask::setEpochSeconds(uint32_t secs) {
+  rtc_clock.setCurrentTime(secs);
+}
+
+void UITask::applyTimeSyncGate(bool on) {
+  if (!_sensors) return;
+  LocationProvider* lp = _sensors->getLocationProvider();
+  if (lp) lp->setTimeSyncEnabled(on);
+}
+// [/mishmesh]
+
 bool UITask::systemStats(mishmesh::SystemStats& out) const {
   uint32_t freeHeap = 0, totalHeap = 0;
   platformHeap(freeHeap, totalHeap);
@@ -85,6 +114,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _display = display;
   _sensors = sensors;
   _node_prefs = node_prefs;
+  // [mishmesh] apply the persisted auto/manual time-sync state to the GPS provider
+  applyTimeSyncGate(_node_prefs ? _node_prefs->manual_time_set == 0 : true);
+  // [/mishmesh]
 
   if (_display == nullptr) return;   // headless build
 

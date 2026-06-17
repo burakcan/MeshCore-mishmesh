@@ -36,6 +36,7 @@ private:
   void layoutFocus(Canvas& body, int n);   // sets _focusTop/_focusBot/_contentH
   void adjustScroll();                      // clamps _scrollY to keep focus visible
   void drawMessage(Canvas& body, const MessageView& m, int top, bool focused) const;
+  void msgStamp(const MessageView& m, char* out, uint16_t cap) const;   // "14:09" / "1 Jul 14:09"
   void drawActionBar(Canvas& bar);   // two stacked Write/Quick buttons, focus per _barRow
   void startCompose(const char* seed = nullptr);
   static void onComposeDone(void* ctx, const char* text);

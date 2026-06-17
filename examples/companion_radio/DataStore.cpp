@@ -238,10 +238,18 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     _prefs.sound_mute_mask = 0x0F;  // all 4 categories enabled
     _prefs.notify_tone_ch = 0;      // 0 = firmware default tone (Droplet)
     _prefs.notify_tone_dm = 0;      // 0 = firmware default tone (Standard)
+    _prefs.tz_quarter_hours = 0;    // UTC
+    _prefs.time_fmt_12h = 0;        // 24-hour
+    _prefs.manual_time_set = 0;     // automatic
+    _prefs.date_format = 0;         // DMY
     file.read((uint8_t *)&_prefs.sound_volume, sizeof(_prefs.sound_volume));      // 137
     file.read((uint8_t *)&_prefs.sound_mute_mask, sizeof(_prefs.sound_mute_mask)); // 138
     file.read((uint8_t *)&_prefs.notify_tone_ch, sizeof(_prefs.notify_tone_ch));   // 139
     file.read((uint8_t *)&_prefs.notify_tone_dm, sizeof(_prefs.notify_tone_dm));   // 140
+    file.read((uint8_t *)&_prefs.tz_quarter_hours, sizeof(_prefs.tz_quarter_hours)); // 141
+    file.read((uint8_t *)&_prefs.time_fmt_12h, sizeof(_prefs.time_fmt_12h));         // 142
+    file.read((uint8_t *)&_prefs.manual_time_set, sizeof(_prefs.manual_time_set));   // 143
+    file.read((uint8_t *)&_prefs.date_format, sizeof(_prefs.date_format));           // 144
     // [/mishmesh]
 
     file.close();
@@ -288,6 +296,10 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.sound_mute_mask, sizeof(_prefs.sound_mute_mask)); // 138
     file.write((uint8_t *)&_prefs.notify_tone_ch, sizeof(_prefs.notify_tone_ch));   // 139
     file.write((uint8_t *)&_prefs.notify_tone_dm, sizeof(_prefs.notify_tone_dm));   // 140
+    file.write((uint8_t *)&_prefs.tz_quarter_hours, sizeof(_prefs.tz_quarter_hours)); // 141
+    file.write((uint8_t *)&_prefs.time_fmt_12h, sizeof(_prefs.time_fmt_12h));         // 142
+    file.write((uint8_t *)&_prefs.manual_time_set, sizeof(_prefs.manual_time_set));   // 143
+    file.write((uint8_t *)&_prefs.date_format, sizeof(_prefs.date_format));           // 144
     // [/mishmesh]
 
     file.close();

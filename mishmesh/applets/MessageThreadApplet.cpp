@@ -8,6 +8,7 @@
 #include <mishmesh/core/Anim.h>
 #include <mishmesh/core/RetryEngine.h>   // RetryEngine::MAX_RETRIES (retry label)
 #include <mishmesh/text/Fonts.h>
+#include <mishmesh/core/TimeFormat.h>
 #include <mishmesh/widgets/StatusBar.h>   // batteryPercent()
 #include <mishmesh/widgets/Modal.h>
 #include <cstdio>
@@ -192,6 +193,13 @@ void MessageThreadApplet::adjustScroll() {
   if (_scrollTarget > _contentH - vp) _scrollTarget = _contentH - vp;
 }
 
+void MessageThreadApplet::msgStamp(const MessageView& m, char* out, uint16_t cap) const {
+  formatStamp(out, cap, m.localTime ? m.localTime : m.senderTime,
+              _app ? _app->epochSeconds() : 0,
+              _app ? _app->tzOffsetMinutes() : 0,
+              _app ? _app->timeFormat12h() : false);
+}
+
 void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int top, bool focused) const {
   int adv = body.lineHeight(fontBody());    if (adv <= 0) adv = 8;
   int cap = body.lineHeight(fontCaption()); if (cap <= 0) cap = 6;
@@ -209,6 +217,8 @@ void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int to
     blk.fillRect(bx, 0, bubbleW, bubbleH, DisplayDriver::LIGHT);
     wrapText(blk, bx + PAD, PAD, bubbleW - 2 * PAD, m.text, DisplayDriver::DARK, true);
     char st[28]; statusLabel(m, st, sizeof(st));
+    char ts[20]; msgStamp(m, ts, sizeof(ts));
+    if (ts[0]) blk.drawText(fontCaption(), bx, bubbleH, ts, DisplayDriver::LIGHT, TextAlign::Left);
     blk.drawText(fontCaption(), cw, bubbleH, st, DisplayDriver::LIGHT, TextAlign::Right);
     if (focused) blk.drawText(fontBody(), bx - 6, (bubbleH - adv) / 2, ">", DisplayDriver::LIGHT);
     return;
@@ -222,6 +232,8 @@ void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int to
   } else {
     blk.fillRect(GUTTER, cap / 2, 16, 1, DisplayDriver::LIGHT);   // short divider
   }
+  char ts[20]; msgStamp(m, ts, sizeof(ts));
+  if (ts[0]) blk.drawText(fontCaption(), cw, 0, ts, DisplayDriver::LIGHT, TextAlign::Right);
   wrapText(blk, GUTTER, cap, cw - GUTTER - PAD, m.text, DisplayDriver::LIGHT, true);
   if (focused) blk.drawText(fontBody(), 0, cap, ">", DisplayDriver::LIGHT);
 }

@@ -78,6 +78,16 @@ struct AppServices {
   virtual bool   radioConfig(RadioConfig& out) const { (void)out; return false; }
   virtual int8_t txPowerMax() const { return 22; }        // board ceiling; floor is -9
   virtual void   setRadioConfig(const RadioConfig&) {}    // persist + apply live (no reboot)
+  // Time settings. Defaults keep the framework companion-agnostic (UTC/24h/auto).
+  virtual int16_t tzOffsetMinutes() const { return 0; }
+  virtual void    setTzOffsetMinutes(int16_t) {}
+  virtual bool    timeFormat12h() const { return false; }
+  virtual void    setTimeFormat12h(bool) {}
+  virtual bool    autoTimeSync() const { return true; }
+  virtual void    setAutoTimeSync(bool) {}
+  virtual void    setEpochSeconds(uint32_t) {}    // manual clock set (writes RTC)
+  virtual uint8_t dateFormat() const { return 0; }   // mishmesh::DateFormat (0=DMY)
+  virtual void    setDateFormat(uint8_t) {}
   // [/mishmesh]
 };
 

@@ -47,5 +47,10 @@ struct NodePrefs {  // persisted to file
   uint8_t sound_mute_mask;  // SoundEngine category enable bits (1=enabled)
   uint8_t notify_tone_ch;   // channel-msg default ringtone (encoded; 0 = firmware default)
   uint8_t notify_tone_dm;   // direct-msg  default ringtone (encoded; 0 = firmware default)
+  // Time settings. 0-defaults preserve pre-time-settings behavior (UTC/24h/auto).
+  int8_t  tz_quarter_hours; // UTC offset in 15-min units (-48..+56 = -12:00..+14:00)
+  uint8_t time_fmt_12h;     // 0 = 24-hour, 1 = 12-hour
+  uint8_t manual_time_set;  // 0 = automatic (GPS/phone allowed), 1 = manual (suppress)
+  uint8_t date_format;      // mishmesh::DateFormat: 0=DMY, 1=MDY, 2=YMD
   // [/mishmesh]
 };

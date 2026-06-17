@@ -123,6 +123,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   bool        _notifyPending = false;
   UIEventType _notifyEvent = UIEventType::none;
   void dispatchNotification(UIEventType t);
+  void applyTimeSyncGate(bool on);
   // [/mishmesh]
 
 #ifdef UI_HAS_JOYSTICK
@@ -203,6 +204,39 @@ public:
     p->tx_power_dbm = c.txPowerDbm;
     the_mesh.savePrefs();
     the_mesh.uiApplyRadioParams();   // live, no reboot
+  }
+  int16_t tzOffsetMinutes() const override {
+    return _node_prefs ? (int16_t)_node_prefs->tz_quarter_hours * 15 : 0;
+  }
+  void setTzOffsetMinutes(int16_t m) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    if (m < -720) m = -720; else if (m > 840) m = 840;
+    p->tz_quarter_hours = (int8_t)(m / 15);
+    the_mesh.savePrefs();
+  }
+  bool timeFormat12h() const override {
+    return _node_prefs ? _node_prefs->time_fmt_12h != 0 : false;
+  }
+  void setTimeFormat12h(bool on) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->time_fmt_12h = on ? 1 : 0;
+    the_mesh.savePrefs();
+  }
+  bool autoTimeSync() const override {
+    return _node_prefs ? _node_prefs->manual_time_set == 0 : true;
+  }
+  void setAutoTimeSync(bool on) override;     // defined in UITask.cpp (touches sensors)
+  void setEpochSeconds(uint32_t secs) override;   // defined in UITask.cpp (touches rtc_clock)
+  uint8_t dateFormat() const override {
+    return _node_prefs ? _node_prefs->date_format : 0;
+  }
+  void setDateFormat(uint8_t f) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->date_format = (f <= 2) ? f : 0;
+    the_mesh.savePrefs();
   }
   // [/mishmesh]
 

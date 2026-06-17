@@ -1,6 +1,7 @@
 #include <mishmesh/applets/HomeApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/TimeFormat.h>
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 // [mishmesh]
@@ -29,13 +30,25 @@ int HomeApplet::onRender(Canvas& c) {
   _bar.draw(c, 0, 0, w, barH);
 
   uint32_t t = _app ? _app->epochSeconds() : 0;
-  char clock[6];
-  snprintf(clock, sizeof(clock), "%02u:%02u",
-           (unsigned)((t / 3600) % 24), (unsigned)((t / 60) % 60));
+  int16_t off = _app ? _app->tzOffsetMinutes() : 0;
+  bool fmt12h = _app ? _app->timeFormat12h() : false;
+  LocalTime lt = applyTz(t, off);
+  char clock[12];
+  formatClock(clock, sizeof(clock), lt, fmt12h);
+
   int ch = c.fontHeight(fontNum());
+  int dateH = t ? c.fontHeight(fontBody()) + 2 : 0;
   int hintH = _menu ? c.fontHeight(fontBody()) + 2 : 0;
-  c.drawText(fontNum(), w / 2, barH + (h - barH - hintH - ch) / 2, clock,
+  int blockTop = barH + (h - barH - hintH - ch - dateH) / 2;
+  c.drawText(fontNum(), w / 2, blockTop, clock,
              DisplayDriver::LIGHT, TextAlign::Center);
+  if (t) {
+    char date[24];
+    DateFormat df = _app ? (DateFormat)_app->dateFormat() : DateFormat::DMY;
+    formatShortDate(date, sizeof(date), lt, df);
+    c.drawText(fontBody(), w / 2, blockTop + ch, date,
+               DisplayDriver::LIGHT, TextAlign::Center);
+  }
 
   if (_menu)
     c.drawText(fontBody(), w / 2, h - hintH, "Select for apps",

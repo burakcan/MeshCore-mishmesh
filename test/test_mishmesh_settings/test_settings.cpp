@@ -263,7 +263,7 @@ TEST(SettingsApplet, SelectPushesDetailWithChosenPanel) {
 
   mishmesh::SettingsApplet menu;
   host.setRoot(&menu);
-  EXPECT_EQ(5, menu.entryCountForTest());  // Contacts, Messages, Advert, Radio, System Info
+  EXPECT_EQ(6, menu.entryCountForTest());  // Contacts, Messages, Advert, Radio, Time, System Info
 
   // Row 0 = Contacts: Select pushes the detail bound to contactsSettings().
   host.dispatch(mishmesh::InputEvent::Select);
@@ -287,7 +287,7 @@ TEST(SettingsApplet, RendersStatusBarHeader) {
   mishmesh::Canvas c(&d);
   menu.onRender(c);
   EXPECT_GT(d.fills.size(), 0u);                 // header + list drew something
-  EXPECT_EQ(5, menu.entryCountForTest());        // Contacts/Messages/Advert/Radio/SystemInfo all available
+  EXPECT_EQ(6, menu.entryCountForTest());        // Contacts/Messages/Advert/Radio/Time/SystemInfo all available
 }
 
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
@@ -421,7 +421,7 @@ TEST(SettingsApplet, HidesBluetoothAndSoundWhenUnavailable) {
   mishmesh::AppletContext ctx;            // no app, no sound
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  EXPECT_EQ(5, menu.entryCountForTest());   // Contacts/Messages/Advert/Radio/System Info only
+  EXPECT_EQ(6, menu.entryCountForTest());   // Contacts/Messages/Advert/Radio/Time/System Info only
 }
 
 TEST(SettingsApplet, ShowsBluetoothAndSoundWhenAvailable) {
@@ -431,7 +431,7 @@ TEST(SettingsApplet, ShowsBluetoothAndSoundWhenAvailable) {
   mishmesh::AppletContext ctx; ctx.app = &app; ctx.sound = &eng;
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  EXPECT_EQ(7, menu.entryCountForTest());   // all seven visible
+  EXPECT_EQ(8, menu.entryCountForTest());   // all eight visible
 }
 
 TEST(SettingsPanelLifecycle, DetailAppletCallsOnHideOnStop) {

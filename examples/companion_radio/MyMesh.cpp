@@ -1645,7 +1645,10 @@ void MyMesh::handleCmdFrame(size_t len) {
     memcpy(&secs, &cmd_frame[1], 4);
     uint32_t curr = getRTCClock()->getCurrentTime();
     if (secs >= curr) {
-      getRTCClock()->setCurrentTime(secs);
+      // [mishmesh] honor the "Set automatically" toggle
+      if (!_prefs.manual_time_set)
+        getRTCClock()->setCurrentTime(secs);
+      // [/mishmesh]
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
