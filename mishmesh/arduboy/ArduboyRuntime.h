@@ -25,6 +25,9 @@ public:
   // Delegate to gate.
   bool stepDue(uint32_t now);
 
+  // [mishmesh] Set the sim step interval (ms); 0 restores the default ~60Hz.
+  void setFrameInterval(uint32_t ms);
+
   // Blit the current Arduboy framebuffer to the active Canvas (every pass).
   void present();
 

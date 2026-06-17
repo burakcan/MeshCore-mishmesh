@@ -1,0 +1,25 @@
+mishmesh/applets/game2048 — 2048 game vendoring NOTICE
+======================================================
+
+This directory vendors the "2048-Arduboy" game to run it on the mishmesh
+on-device UI (nRF52840 / Wio Tracker L1) via the vendored Arduboy2 layer.
+
+2048-Arduboy
+------------
+  Upstream:  https://github.com/awisse/2048-Arduboy
+  Commit:    038b34bf165f4fedee6d82f303651ce8e6eec7f2
+  Author:    awisse
+  License:   MIT (see ./LICENSE, retained verbatim)
+
+What was vendored (verbatim) into ./game/
+-----------------------------------------
+  game.cpp/.h  controller.cpp/.h  draw.cpp/.h  font.cpp/.h  font4x6.h
+  stars.cpp/.h  utils.cpp/.h  defines.h  globals.h  platform.h
+  hex-digits.h  rewards.h
+
+What was NOT vendored / was replaced
+------------------------------------
+  - 2048-Arduboy.ino (the Arduboy `Platform` implementation + setup()/loop())
+    is REPLACED by mishmesh-authored game/Game2048Platform.cpp, which retargets
+    the Platform seam to the mishmesh Arduboy2 runtime and EEPROM image.
+  - debug.h, Desktop/, png/, tool/ — not used on mishmesh.

@@ -26,6 +26,10 @@ bool ArduboyRuntime::stepDue(uint32_t now) {
   return _gate.stepDue(now);
 }
 
+void ArduboyRuntime::setFrameInterval(uint32_t ms) {   // [mishmesh]
+  _gate.setFrameMs(ms);
+}
+
 void ArduboyRuntime::present() {
   coreBlitCurrent();
 }

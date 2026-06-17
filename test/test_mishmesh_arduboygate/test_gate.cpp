@@ -36,6 +36,23 @@ TEST(ArduboyGate, PressABLatchesForOneRead) {
   EXPECT_FALSE(g.buttonMask(in) & ArduboyGate::A_B);  // latch cleared
 }
 
+TEST(ArduboyGate, ConfigurableFrameInterval) {
+  ArduboyGate g;
+  g.setFrameMs(33);                 // ~30 Hz
+  EXPECT_TRUE(g.stepDue(0));         // first tick always due
+  EXPECT_FALSE(g.stepDue(20));      // 20ms: not due (<33)
+  EXPECT_FALSE(g.stepDue(32));      // 32ms: not due
+  EXPECT_TRUE(g.stepDue(33));       // 33ms: due
+  EXPECT_FALSE(g.stepDue(40));
+}
+
+TEST(ArduboyGate, DefaultIntervalUnchanged) {
+  ArduboyGate g;                     // no setFrameMs -> 16ms default
+  EXPECT_TRUE(g.stepDue(0));
+  EXPECT_FALSE(g.stepDue(15));
+  EXPECT_TRUE(g.stepDue(16));
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

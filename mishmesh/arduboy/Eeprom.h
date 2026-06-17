@@ -7,9 +7,9 @@ namespace mishmesh { struct AppletStorage; }
 namespace mishmesh { namespace arduboy {
 
 // A small RAM image emulating EEPROM for vendored Arduboy2 + game code on platforms with
-// no real EEPROM. Persisted as one blob via AppletStorage. 64 bytes covers Arduboy2 system
-// bytes (<16) plus a game's small high-score record.
-static constexpr int EEPROM_IMAGE_BYTES = 64;
+// no real EEPROM. Persisted as one blob via AppletStorage. 128 bytes covers Arduboy2 system
+// bytes (<16) plus a game's save record (e.g. 2048's ~48-byte board+state at base 16).
+static constexpr int EEPROM_IMAGE_BYTES = 128;
 
 class EepromImage {
   uint8_t _buf[EEPROM_IMAGE_BYTES];
