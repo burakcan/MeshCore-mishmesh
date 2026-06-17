@@ -1,6 +1,7 @@
 #include "MessagesApplet.h"
 #include <mishmesh/applets/settings/MessagesSettingsPanel.h>
 #include "MessageThreadApplet.h"
+#include "ChatNotifyApplet.h"
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/AppletHost.h>
@@ -92,6 +93,7 @@ void MessagesApplet::onForeground() {
   _chats.svc = _svc;
   _new.svc = _svc;
   syncList();
+  refreshRegion();
   // Returning from a chat: the recency sort may have reordered the list, so the
   // stored row index would now land on a different chat. Reselect the chat we
   // opened by key so the highlight stays on it.
@@ -158,13 +160,23 @@ bool MessagesApplet::onInput(InputEvent ev) {
       ChatMenu::Result r = _chatMenu.takeResult(toast);
       if (_host && toast) _host->postToast(toast);
       if (r != ChatMenu::Result::None) { syncList(); _menuOpen = false; }   // confirmed -> done
-      return true;   // the stepper / cancel just dismisses, back to the action list
+      return true;   // cancel just dismisses, back to the action list
     }
     if (_chatMenu.onInput(ev)) return true;
     if (ev == InputEvent::Select) {
       const char* toast = nullptr;
-      ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete/Notify arm a modal
+      ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete arm a modal; Notify opens the notify applet
       if (r == ChatMenu::Result::EditRegion) { openRegionEditor(); return true; }   // keypad over the menu
+      if (r == ChatMenu::Result::EditNotify) {
+        const char* n = "";
+        ConvoView cv;
+        for (int i = 0; _svc && i < _svc->convoCount(); i++) {
+          if (_svc->getConvo(i, cv) && cv.key.equals(_menuKey)) { n = cv.name; break; }
+        }
+        chatNotifyApplet().setTarget(_menuKey, n);
+        if (_host) _host->push(&chatNotifyApplet());
+        return true;
+      }
       if (_host && toast) _host->postToast(toast);
       if (r != ChatMenu::Result::None) syncList();   // chat cleared/removed -> refresh rows
       if (!_chatMenu.modalActive()) _menuOpen = false;   // non-destructive (or none) closes the overlay

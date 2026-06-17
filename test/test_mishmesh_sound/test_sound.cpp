@@ -180,7 +180,7 @@ TEST(Sounds, TableHasNamesAndCategories) {
   using namespace mishmesh::sound;
   const SoundDef* d = soundDef(SoundId::MsgChime);
   ASSERT_NE(nullptr, d);
-  EXPECT_STREQ("Nokia", d->name);
+  EXPECT_STREQ("Standard", d->name);
   EXPECT_EQ(SoundCategory::Notification, d->category);
   EXPECT_EQ(nullptr, soundDef(SoundId::COUNT));
 }

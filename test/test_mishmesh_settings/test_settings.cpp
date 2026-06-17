@@ -263,7 +263,7 @@ TEST(SettingsApplet, SelectPushesDetailWithChosenPanel) {
 
   mishmesh::SettingsApplet menu;
   host.setRoot(&menu);
-  EXPECT_EQ(4, menu.entryCountForTest());  // Contacts, Messages, Advert, System Info
+  EXPECT_EQ(5, menu.entryCountForTest());  // Contacts, Messages, Advert, Radio, System Info
 
   // Row 0 = Contacts: Select pushes the detail bound to contactsSettings().
   host.dispatch(mishmesh::InputEvent::Select);
@@ -287,7 +287,7 @@ TEST(SettingsApplet, RendersStatusBarHeader) {
   mishmesh::Canvas c(&d);
   menu.onRender(c);
   EXPECT_GT(d.fills.size(), 0u);                 // header + list drew something
-  EXPECT_EQ(4, menu.entryCountForTest());        // Contacts/Messages/Advert/SystemInfo all available
+  EXPECT_EQ(5, menu.entryCountForTest());        // Contacts/Messages/Advert/Radio/SystemInfo all available
 }
 
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
@@ -388,12 +388,40 @@ TEST(SoundPanel, LevelNames) {
   EXPECT_STREQ("High", mishmesh::SoundPanel::levelName(V::High));
 }
 
+namespace {
+class FakeApp : public mishmesh::AppServices {
+public:
+  uint8_t ch = 0, dm = 0;
+  const char* nodeName() const override { return "n"; }
+  uint16_t batteryMillivolts() const override { return 4000; }
+  uint32_t epochSeconds() const override { return 0; }
+  uint8_t notifyTone(bool channel) const override { return channel ? ch : dm; }
+  void setNotifyTone(bool channel, uint8_t encoded) override {
+    if (channel) ch = encoded; else dm = encoded;
+  }
+};
+}  // namespace
+
+TEST(SoundPanelRows, ShowsVolumeAndPerTypeDefaults) {
+  // app reports channel default = Silent, DM default = tone index 1 (Droplet)
+  FakeApp app; app.ch = mishmesh::sound::NOTIFY_TONE_SILENT;
+  app.dm = mishmesh::sound::NOTIFY_TONE_BASE + 1;
+  mishmesh::sound::SoundEngine eng;
+  mishmesh::AppletContext ctx; ctx.app = &app; ctx.sound = &eng;
+  auto& panel = mishmesh::soundSettings();
+  panel.begin(ctx);
+  // Expect three rows: Volume, Channel msgs (Silent), Direct msgs (Droplet)
+  EXPECT_EQ(panel.rowCountForTest(), 3);
+  EXPECT_STREQ(panel.rowValueForTest(1), "Silent");
+  EXPECT_STREQ(panel.rowValueForTest(2), "Droplet");
+}
+
 TEST(SettingsApplet, HidesBluetoothAndSoundWhenUnavailable) {
   FakeDisplayDriver d;
   mishmesh::AppletContext ctx;            // no app, no sound
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  EXPECT_EQ(4, menu.entryCountForTest());   // Contacts/Messages/Advert/System Info only
+  EXPECT_EQ(5, menu.entryCountForTest());   // Contacts/Messages/Advert/Radio/System Info only
 }
 
 TEST(SettingsApplet, ShowsBluetoothAndSoundWhenAvailable) {
@@ -403,7 +431,25 @@ TEST(SettingsApplet, ShowsBluetoothAndSoundWhenAvailable) {
   mishmesh::AppletContext ctx; ctx.app = &app; ctx.sound = &eng;
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  EXPECT_EQ(6, menu.entryCountForTest());   // all six visible
+  EXPECT_EQ(7, menu.entryCountForTest());   // all seven visible
+}
+
+TEST(SettingsPanelLifecycle, DetailAppletCallsOnHideOnStop) {
+  struct HidePanel : mishmesh::SettingsPanel {
+    int hides = 0;
+    const char* title() const override { return "Hide"; }
+    void begin(mishmesh::AppletContext&) override {}
+    int  renderBody(mishmesh::Canvas&, int, int, int, int) override { return 0; }
+    bool onInput(mishmesh::InputEvent) override { return false; }
+    void onHide() override { hides++; }
+  } panel;
+
+  mishmesh::settingsDetailApplet().setPanel(&panel);
+  mishmesh::AppletContext ctx;
+  mishmesh::settingsDetailApplet().onStart(ctx);
+  EXPECT_EQ(panel.hides, 0);
+  mishmesh::settingsDetailApplet().onStop();
+  EXPECT_EQ(panel.hides, 1);
 }
 
 int main(int argc, char** argv) {

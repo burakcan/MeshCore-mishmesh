@@ -14,6 +14,7 @@ public:
   void setPanel(SettingsPanel* p) { _panel = p; }   // call before push()
 
   void onStart(AppletContext& ctx) override;
+  void onStop() override;
   void onForeground() override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;

@@ -45,5 +45,7 @@ struct NodePrefs {  // persisted to file
   // [mishmesh] mishmesh sound prefs (appended at tail for back-compat).
   uint8_t sound_volume;     // mishmesh::sound::VolumeLevel (0=Mute..3=High)
   uint8_t sound_mute_mask;  // SoundEngine category enable bits (1=enabled)
+  uint8_t notify_tone_ch;   // channel-msg default ringtone (encoded; 0 = firmware default)
+  uint8_t notify_tone_dm;   // direct-msg  default ringtone (encoded; 0 = firmware default)
   // [/mishmesh]
 };

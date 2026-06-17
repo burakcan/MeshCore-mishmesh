@@ -40,6 +40,11 @@ public:
   void configure(char* dst, uint16_t cap, const char* title,
                  KeypadConfirmFn onConfirm = nullptr, void* ctx = nullptr);
 
+  // Locks the keypad to numeric entry: digits + '.' + '-', letter/sym modes off.
+  // Reuses the configure() buffer/onConfirm seam. Call before push().
+  void configureNumeric(char* dst, uint16_t cap, const char* title,
+                        KeypadConfirmFn onConfirm = nullptr, void* ctx = nullptr);
+
   void setFocusForTest(int r, int c) { _grid.setFocus(r, c); }
 
   // Accessors / logic (also used by tests).
@@ -64,6 +69,7 @@ private:
   uint16_t _cursor;      // insertion index, 0.._len
   Mode _mode;
   bool _symPage;
+  bool _numericOnly = false;   // configureNumeric(): digits + . - only, no mode switch
   GridView _grid;
 
   // pending multi-tap state

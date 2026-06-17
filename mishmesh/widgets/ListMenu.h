@@ -18,6 +18,10 @@ struct ListModel {
   // A row may instead show an ON/OFF toggle pill in the value column.
   virtual bool isToggle(int index) const { return false; }
   virtual bool toggleState(int index) const { return false; }
+  // ...or a single-select radio mark: a check at the right edge of the chosen row
+  // only (no per-row pill). For "pick one" lists; isToggle/isRadio are exclusive.
+  virtual bool isRadio(int index) const { return false; }
+  virtual bool radioOn(int index) const { return false; }
 };
 
 // NavUp/NavDown move the selection (wrapping); Select is left for the owning

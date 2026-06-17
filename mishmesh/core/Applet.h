@@ -29,6 +29,16 @@ struct SystemStats {
   const char* firmwareVersion  = nullptr;
 };
 
+// LoRa radio configuration surfaced to the on-device UI. Units match NodePrefs:
+// freq in MHz, bw in kHz.
+struct RadioConfig {
+  float   freqMhz;      // e.g. 910.525
+  float   bwKhz;        // e.g. 62.5
+  uint8_t sf;           // 5..12
+  uint8_t cr;           // 5..8
+  int8_t  txPowerDbm;   // -9..txPowerMax()
+};
+
 // Live app/device state applets read. Implemented by the adapter and queried on
 // demand, since battery/time/connection change over an applet's lifetime. Keeps
 // the framework free of companion-specific types (NodePrefs, RTCClock, board).
@@ -58,6 +68,16 @@ struct AppServices {
   // Set + persist the global sound volume (0=Mute,1=Low,2=Mid,3=High). The adapter
   // applies it to the engine and writes it to NodePrefs. Default no-op.
   virtual void setSoundVolume(uint8_t level) { (void)level; }
+  // Global default notification ringtone per message type (channel vs direct),
+  // encoded as in mishmesh/sound/Sounds.h. The adapter persists it to NodePrefs.
+  // Defaults keep the framework companion-agnostic (Default/unset, not settable).
+  virtual uint8_t notifyTone(bool channel) const { (void)channel; return 0; }
+  virtual void setNotifyTone(bool channel, uint8_t encoded) { (void)channel; (void)encoded; }
+  // On-device radio configuration. Defaults keep the framework companion-agnostic;
+  // the adapter (UITask) overrides these to read/write NodePrefs and apply live.
+  virtual bool   radioConfig(RadioConfig& out) const { (void)out; return false; }
+  virtual int8_t txPowerMax() const { return 22; }        // board ceiling; floor is -9
+  virtual void   setRadioConfig(const RadioConfig&) {}    // persist + apply live (no reboot)
   // [/mishmesh]
 };
 

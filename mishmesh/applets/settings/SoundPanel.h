@@ -3,12 +3,13 @@
 #include <mishmesh/core/SettingsPanel.h>
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/sound/SoundEngine.h>
+#include <mishmesh/sound/Sounds.h>
 
 namespace mishmesh {
 
-// Sound settings as a row list. v1: a single Volume row that cycles
-// Mute->Low->Mid->High on Select, applied + persisted via AppServices (live-only
-// fallback if no app seam), with a preview beep. Extensible to more rows later.
+// Sound settings: Volume cycle + the two per-type default notification
+// ringtones. Selecting a "* msgs" row pushes the shared SoundPickerApplet in
+// global mode; Volume keeps its in-place cycle.
 class SoundPanel : public SettingsPanel {
 public:
   static const char* levelName(sound::VolumeLevel v);
@@ -19,13 +20,25 @@ public:
   int  renderBody(Canvas& c, int x, int y, int w, int h) override;
   bool onInput(InputEvent ev) override;
 
+  // test seams
+  int rowCountForTest() const { return _model.count(); }
+  const char* rowValueForTest(int i) const { return _model.value(i); }
+
 private:
   struct Model : ListModel {
     sound::SoundEngine* snd = nullptr;
-    int count() const override { return 1; }
-    const char* label(int) const override { return "Volume"; }
-    const char* value(int) const override {
-      return levelName(snd ? snd->volume() : sound::VolumeLevel::Mute);
+    AppServices*        app = nullptr;
+    int count() const override { return 3; }
+    const char* label(int i) const override {
+      if (i == 0) return "Volume";
+      if (i == 1) return "Channel msgs";
+      return "Direct msgs";
+    }
+    const char* value(int i) const override {
+      if (i == 0) return levelName(snd ? snd->volume() : sound::VolumeLevel::Mute);
+      bool channel = (i == 1);
+      uint8_t e = app ? app->notifyTone(channel) : 0;
+      return sound::notifyToneEncodedName(e, /*perChat*/false, sound::notifyTypeDefault(channel));
     }
   } _model;
 

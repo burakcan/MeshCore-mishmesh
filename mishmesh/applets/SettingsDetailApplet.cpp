@@ -11,6 +11,10 @@ void SettingsDetailApplet::onStart(AppletContext& ctx) {
   }
 }
 
+void SettingsDetailApplet::onStop() {
+  if (_panel) _panel->onHide();   // commit staged edits (panels that batch on exit)
+}
+
 void SettingsDetailApplet::onForeground() {
   if (_panel) _panel->onShow();
 }

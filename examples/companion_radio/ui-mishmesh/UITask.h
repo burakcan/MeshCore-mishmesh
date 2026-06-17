@@ -80,6 +80,8 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     void setRegion(const mishmesh::ConvoKey& k, const char* name) override;
     mishmesh::NotifyLevel notifyLevel(const mishmesh::ConvoKey& k) const override;
     void setNotifyLevel(const mishmesh::ConvoKey& k, mishmesh::NotifyLevel lvl) override;
+    uint8_t chatSound(const mishmesh::ConvoKey& k) const override;
+    void setChatSound(const mishmesh::ConvoKey& k, uint8_t encoded) override;
     mishmesh::MessagesConfig getMessagesConfig() const override;
     void setMessagesConfig(const mishmesh::MessagesConfig& cfg) override;
     mishmesh::ChanResult createPrivateChannel(const char* name) override;
@@ -174,6 +176,33 @@ public:
     if (!p) return;
     p->sound_volume = level;
     the_mesh.savePrefs();
+  }
+  uint8_t notifyTone(bool channel) const override {
+    return _node_prefs ? (channel ? _node_prefs->notify_tone_ch : _node_prefs->notify_tone_dm) : 0;
+  }
+  void setNotifyTone(bool channel, uint8_t encoded) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    if (channel) p->notify_tone_ch = encoded; else p->notify_tone_dm = encoded;
+    the_mesh.savePrefs();
+  }
+  bool radioConfig(mishmesh::RadioConfig& out) const override {
+    if (!_node_prefs) return false;
+    out.freqMhz    = _node_prefs->freq;
+    out.bwKhz      = _node_prefs->bw;
+    out.sf         = _node_prefs->sf;
+    out.cr         = _node_prefs->cr;
+    out.txPowerDbm = _node_prefs->tx_power_dbm;
+    return true;
+  }
+  int8_t txPowerMax() const override { return the_mesh.uiTxPowerMax(); }
+  void setRadioConfig(const mishmesh::RadioConfig& c) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->freq = c.freqMhz; p->bw = c.bwKhz; p->sf = c.sf; p->cr = c.cr;
+    p->tx_power_dbm = c.txPowerDbm;
+    the_mesh.savePrefs();
+    the_mesh.uiApplyRadioParams();   // live, no reboot
   }
   // [/mishmesh]
 

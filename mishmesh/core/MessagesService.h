@@ -92,6 +92,11 @@ struct MessagesService {
   // impls (tests) inert at All.
   virtual NotifyLevel notifyLevel(const ConvoKey& k) const { (void)k; return NotifyLevel::All; }
   virtual void setNotifyLevel(const ConvoKey& k, NotifyLevel lvl) { (void)k; (void)lvl; }
+  // Per-chat notification ringtone override (encoded: 0 Default, 1 Silent,
+  // 2+i ringtone i; see mishmesh/sound/Sounds.h). Adapter-backed; defaults keep
+  // non-adapter impls (tests) inert at Default.
+  virtual uint8_t chatSound(const ConvoKey& k) const { (void)k; return 0; }
+  virtual void setChatSound(const ConvoKey& k, uint8_t encoded) { (void)k; (void)encoded; }
   // Global Messages settings. Adapter-backed; defaults keep non-adapter impls
   // (tests) inert at the struct defaults.
   virtual MessagesConfig getMessagesConfig() const { return MessagesConfig(); }

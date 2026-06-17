@@ -236,8 +236,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     // [mishmesh] defaults first so an older (shorter) prefs file leaves them set.
     _prefs.sound_volume = 2;        // Mid
     _prefs.sound_mute_mask = 0x0F;  // all 4 categories enabled
+    _prefs.notify_tone_ch = 0;      // 0 = firmware default tone (Droplet)
+    _prefs.notify_tone_dm = 0;      // 0 = firmware default tone (Standard)
     file.read((uint8_t *)&_prefs.sound_volume, sizeof(_prefs.sound_volume));      // 137
     file.read((uint8_t *)&_prefs.sound_mute_mask, sizeof(_prefs.sound_mute_mask)); // 138
+    file.read((uint8_t *)&_prefs.notify_tone_ch, sizeof(_prefs.notify_tone_ch));   // 139
+    file.read((uint8_t *)&_prefs.notify_tone_dm, sizeof(_prefs.notify_tone_dm));   // 140
     // [/mishmesh]
 
     file.close();
@@ -282,6 +286,8 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     // [mishmesh]
     file.write((uint8_t *)&_prefs.sound_volume, sizeof(_prefs.sound_volume));      // 137
     file.write((uint8_t *)&_prefs.sound_mute_mask, sizeof(_prefs.sound_mute_mask)); // 138
+    file.write((uint8_t *)&_prefs.notify_tone_ch, sizeof(_prefs.notify_tone_ch));   // 139
+    file.write((uint8_t *)&_prefs.notify_tone_dm, sizeof(_prefs.notify_tone_dm));   // 140
     // [/mishmesh]
 
     file.close();

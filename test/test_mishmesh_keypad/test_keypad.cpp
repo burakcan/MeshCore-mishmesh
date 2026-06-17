@@ -383,6 +383,34 @@ TEST(Keypad, DiscardCancelledStaysAndKeepsText) {
   EXPECT_STREQ("hia", k.text());         // text preserved
 }
 
+TEST(KeypadNumeric, LocksModeAndTypesDotAndMinus) {
+  mishmesh::KeypadApplet& k = mishmesh::keypadApplet();
+  char buf[16] = {0};
+  k.configureNumeric(buf, sizeof(buf) - 1, "Frequency (MHz)");
+  mishmesh::AppletContext ctx;           // host not needed for typing
+  k.onStart(ctx);
+  EXPECT_EQ(k.mode(), mishmesh::KeypadApplet::Mode::Num);
+
+  k.cycleMode();                          // must be a no-op in numeric mode
+  EXPECT_EQ(k.mode(), mishmesh::KeypadApplet::Mode::Num);
+  k.toggleSymPage();
+  EXPECT_FALSE(k.symPage());
+
+  // Type "9" then "." then "1".
+  // Char cells: (r<3, c<3) -> groupAt(r*3+c). In Num mode groupAt = {"1".."9"}.
+  // (2,2) -> groupAt(8) = "9"; (0,0) -> groupAt(0) = "1".
+  // Dot cell: shift cell at (r==2, c==3) -> '.' in numeric mode.
+  k.setFocusForTest(2, 2);                // char cell 8 -> group "9"
+  k.onInput(mishmesh::InputEvent::Select);
+  k.setFocusForTest(2, 3);                // shift/dot cell -> '.' in numeric
+  k.onInput(mishmesh::InputEvent::Select);
+  k.setFocusForTest(0, 0);                // char cell 0 -> group "1"
+  k.onInput(mishmesh::InputEvent::Select);
+  EXPECT_STREQ(k.text(), "9.1");
+
+  k.onStop();
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

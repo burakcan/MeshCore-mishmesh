@@ -1372,6 +1372,14 @@ uint32_t MyMesh::getBLEPin() {
   return _active_ble_pin;
 }
 
+// [mishmesh]
+void MyMesh::uiApplyRadioParams() {
+  radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
+  radio_driver.setTxPower(_prefs.tx_power_dbm);
+}
+int8_t MyMesh::uiTxPowerMax() const { return MAX_LORA_TX_POWER; }
+// [/mishmesh]
+
 struct FreqRange {
   uint32_t lower_freq, upper_freq;
 };

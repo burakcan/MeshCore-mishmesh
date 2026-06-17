@@ -198,11 +198,11 @@ void UITask::dispatchNotification(UIEventType t) {
 
   bool inbound = (t == UIEventType::contactMessage || t == UIEventType::channelMessage);
   if (!inbound) return;
-  SoundId chime = (t == UIEventType::channelMessage) ? SoundId::MsgKerplop : SoundId::MsgChime;
+  bool isChannel = (t == UIEventType::channelMessage);
 
   mishmesh::ConvoKey c;
   if (!_msgStore.lastInbound(c)) {                 // shouldn't happen post-capture
-    _sound.play(chime);
+    _sound.play(mishmesh::sound::notifyTypeDefault(isChannel));
     if (_host) _host->requestRender();
     return;
   }
@@ -242,7 +242,13 @@ void UITask::dispatchNotification(UIEventType t) {
   }
 
   _msgStore.markNotifiable(c);   // feeds totalNotifyUnread() (global indicator/bubble)
-  _sound.play(chime);
+  {
+    uint8_t typeByte = isChannel ? _node_prefs->notify_tone_ch : _node_prefs->notify_tone_dm;
+    SoundId id;
+    if (mishmesh::sound::resolveNotifyTone(_msgSvc.chatSound(c), typeByte,
+                                           mishmesh::sound::notifyTypeDefault(isChannel), id))
+      _sound.play(id);            // false -> Silent: skip the beep, visual path continues
+  }
   if (!_host) return;
 
   bool atHome = _host->foreground() == _home;
@@ -691,6 +697,28 @@ void UITask::MsgSvc::setNotifyLevel(const mishmesh::ConvoKey& k, mishmesh::Notif
   char key[20]; notifyStorageKey(k, key, sizeof(key));
   uint8_t b = (uint8_t)lvl;
   storage->save(key, &b, 1);   // All writes a 0 byte that loads back as the default
+}
+
+// Per-chat ringtone storage key: "sfc<idx>" for channels, "sf_<12 hex>" for DMs.
+// Absent value means Default (0) -> fall through to the per-type default.
+static void soundStorageKey(const mishmesh::ConvoKey& k, char* buf, size_t n) {
+  if (k.type == 1) snprintf(buf, n, "sfc%u", (unsigned)k.id[0]);
+  else snprintf(buf, n, "sf_%02x%02x%02x%02x%02x%02x",
+                k.id[0], k.id[1], k.id[2], k.id[3], k.id[4], k.id[5]);
+}
+
+uint8_t UITask::MsgSvc::chatSound(const mishmesh::ConvoKey& k) const {
+  if (!storage) return 0;
+  char key[20]; soundStorageKey(k, key, sizeof(key));
+  uint8_t b = 0;
+  uint8_t got = storage->load(key, &b, 1);
+  return got == 0 ? 0 : b;
+}
+
+void UITask::MsgSvc::setChatSound(const mishmesh::ConvoKey& k, uint8_t encoded) {
+  if (!storage) return;
+  char key[20]; soundStorageKey(k, key, sizeof(key));
+  storage->save(key, &encoded, 1);   // 0 (Default) writes a 0 byte that reads back as Default
 }
 
 // Global Messages settings. autoRetry/autoResetPath have no firmware mechanism

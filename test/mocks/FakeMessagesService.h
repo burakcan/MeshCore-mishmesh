@@ -88,6 +88,14 @@ struct FakeMessagesService : mishmesh::MessagesService {
   void setNotifyLevel(const mishmesh::ConvoKey& k, mishmesh::NotifyLevel l) override {
     notifyLevels[keyName(k)] = l;
   }
+  std::map<std::string, uint8_t> chatSounds;   // per-chat ringtone bytes
+  uint8_t chatSound(const mishmesh::ConvoKey& k) const override {
+    auto it = chatSounds.find(keyName(k));
+    return it == chatSounds.end() ? 0 : it->second;
+  }
+  void setChatSound(const mishmesh::ConvoKey& k, uint8_t encoded) override {
+    chatSounds[keyName(k)] = encoded;
+  }
   bool sendText(const mishmesh::ConvoKey& k, const char* text) override {
     lastSent = text ? text : "";
     lastSentKey = k;

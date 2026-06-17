@@ -37,8 +37,9 @@ const char* KeypadApplet::cellLabel(int r, int c) const {
   if (r < 3 && c < 3) return groupAt(r * 3 + c);
   if (c == 3) {
     if (r == 0) return "DEL";
-    if (r == 1) return "SPC";
-    if (r == 2) {  // shift cell shows current mode
+    if (r == 1) return _numericOnly ? "-" : "SPC";
+    if (r == 2) {  // shift cell: mode toggle, or '.' in numeric mode
+      if (_numericOnly) return ".";
       return _mode == Mode::Upper ? "AB" : _mode == Mode::Num ? "12" : "ab";
     }
   }
@@ -68,6 +69,7 @@ void KeypadApplet::commitPending() {
 }
 
 void KeypadApplet::cycleMode() {
+  if (_numericOnly) return;
   commitPending();
   _symPage = false;
   _mode = _mode == Mode::Lower ? Mode::Upper
@@ -75,6 +77,7 @@ void KeypadApplet::cycleMode() {
 }
 
 void KeypadApplet::toggleSymPage() {
+  if (_numericOnly) return;
   commitPending();
   _symPage = !_symPage;
   if (_symPage) _mode = Mode::Lower;   // symbols are case-independent; normalize
@@ -123,8 +126,12 @@ void KeypadApplet::handleSelect() {
   if (r < 3 && c < 3) { handleCharCell(r * 3 + c); return; }
   if (c == 3) {
     if (r == 0) { commitPending(); if (_cursor > 0) { deleteCharAt(_cursor - 1); _cursor--; } return; }
-    if (r == 1) { commitPending(); insertCharAt(_cursor, ' '); _cursor++; return; }
-    if (r == 2) { cycleMode(); return; }            // shift / mode cycle
+    if (r == 1) { commitPending(); insertCharAt(_cursor, _numericOnly ? '-' : ' '); _cursor++; return; }
+    if (r == 2) {                                   // shift / mode cycle, or '.' in numeric
+      if (_numericOnly) { commitPending(); insertCharAt(_cursor, '.'); _cursor++; }
+      else cycleMode();
+      return;
+    }
   }
   // r == 3
   if (c == 0) {
@@ -143,7 +150,7 @@ void KeypadApplet::onStart(AppletContext& ctx) {
   _grid.setFocus(0, 1);            // start on "abc" - the natural first target for typing
   if (!_src) { _own[0] = 0; _len = 0; _cursor = 0; }  // standalone: fresh buffer (configure() already seeded)
   _buf = _own;
-  _mode = Mode::Lower;
+  _mode = _numericOnly ? Mode::Num : Mode::Lower;
   _symPage = false;
   commitPending();
   _confirming = false;
@@ -240,6 +247,7 @@ void KeypadApplet::onStop() {
   _onConfirmCtx = nullptr;
   _confirming = false;
   _confirm.reset();
+  _numericOnly = false;
 }
 
 void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
@@ -279,6 +287,7 @@ void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
 
 void KeypadApplet::configure(char* dst, uint16_t cap, const char* title,
                              KeypadConfirmFn onConfirm, void* ctx) {
+  _numericOnly = false;
   _src = dst;                                  // written only on OK; never during editing
   _cap = cap < KP_MAX ? cap : KP_MAX;
   _title = title;
@@ -288,6 +297,12 @@ void KeypadApplet::configure(char* dst, uint16_t cap, const char* title,
   if (dst) while (dst[n] && n < _cap) { _own[n] = dst[n]; n++; }
   _own[n] = 0;
   _len = n; _cursor = n;
+}
+
+void KeypadApplet::configureNumeric(char* dst, uint16_t cap, const char* title,
+                                    KeypadConfirmFn onConfirm, void* ctx) {
+  configure(dst, cap, title, onConfirm, ctx);
+  _numericOnly = true;
 }
 
 KeypadApplet& keypadApplet() {

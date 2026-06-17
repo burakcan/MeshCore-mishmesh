@@ -1,4 +1,5 @@
 #include <mishmesh/applets/settings/SoundPanel.h>
+#include <mishmesh/applets/SoundPickerApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/sound/Sounds.h>
@@ -30,6 +31,7 @@ void SoundPanel::begin(AppletContext& ctx) {
   _app  = ctx.app;
   _host = ctx.host;
   _model.snd = _snd;
+  _model.app = _app;
   _list.setRowHeight(14);
   _list.setModel(&_model);
   _list.resetSelection();
@@ -42,7 +44,9 @@ int SoundPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
 
 bool SoundPanel::onInput(InputEvent ev) {
   if (_list.onInput(ev)) return true;
-  if (ev == InputEvent::Select) {
+  if (ev != InputEvent::Select) return false;   // Back bubbles
+  int row = _list.selected();
+  if (row == 0) {
     if (_snd) {
       V next = nextLevel(_snd->volume());
       // Route through AppServices so the adapter applies AND persists it; fall
@@ -53,7 +57,11 @@ bool SoundPanel::onInput(InputEvent ev) {
     }
     return true;
   }
-  return false;   // Back bubbles
+  // Channel msgs (1) / Direct msgs (2) -> push the global tone picker.
+  bool channel = (row == 1);
+  soundPickerApplet().setGlobal(channel, channel ? "Channel msgs" : "Direct msgs");
+  if (_host) _host->push(&soundPickerApplet());
+  return true;
 }
 
 SoundPanel& soundSettings() {

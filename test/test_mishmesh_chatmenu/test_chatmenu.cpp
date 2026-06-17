@@ -87,53 +87,16 @@ TEST(ChatMenu, DeleteRemovesChatFromList) {
   EXPECT_EQ(1, svc.messageCount(dm("BOBBBB")));
 }
 
-// Notifications row arms the value stepper in place; stepping + Select writes the level.
-TEST(ChatMenu, NotificationsRowStepsAndSetsLevel) {
-  ChatMenu m;
-  auto k = channelKey(2);
-  m.setTarget(k);
-  m.reset();
-  m.onInput(InputEvent::NavDown);            // row 0 (Region) -> row 1 (Notifications)
-  const char* toast = nullptr;
-  FakeMessagesService svc;                   // starts at All (default)
-  EXPECT_EQ(ChatMenu::Result::None, m.activate(&svc, toast));
-  EXPECT_TRUE(m.modalActive());              // stepper is up
-  m.onInput(InputEvent::NavRight);           // All -> Mentions only
-  m.onInput(InputEvent::Select);             // confirm
-  EXPECT_FALSE(m.modalActive());
-  EXPECT_EQ(NotifyLevel::MentionsOnly, svc.notifyLevel(k));
-}
-
-// A DM's stepper offers only {All, Mute}: one NavRight from All lands on Mute.
-TEST(ChatMenu, NotificationsRowDmStepsAllToMute) {
-  ChatMenu m;
-  auto k = dm("ALICE!");
-  m.setTarget(k);
-  m.reset();
-  m.onInput(InputEvent::NavDown);            // -> Notifications
-  const char* toast = nullptr;
+TEST(ChatMenu, NotificationsRowReturnsEditNotify) {
   FakeMessagesService svc;
-  m.activate(&svc, toast);
-  m.onInput(InputEvent::NavRight);           // All -> Mute (no "Mentions only" on a DM)
-  m.onInput(InputEvent::Select);
-  EXPECT_EQ(NotifyLevel::Mute, svc.notifyLevel(k));
-}
-
-// Cancelling the stepper (Back) leaves the level unchanged.
-TEST(ChatMenu, NotificationsStepperCancelLeavesLevel) {
-  ChatMenu m;
-  auto k = channelKey(2);
-  m.setTarget(k);
-  m.reset();
-  m.onInput(InputEvent::NavDown);
+  mishmesh::ConvoKey k{}; k.type = 1; k.id[0] = 1;
+  mishmesh::ChatMenu menu;
+  menu.setTarget(k);
+  menu.reset();
+  menu.onInput(mishmesh::InputEvent::NavDown);   // row 0 Region -> row 1 Notifications
   const char* toast = nullptr;
-  FakeMessagesService svc;
-  svc.setNotifyLevel(k, NotifyLevel::Mute);
-  m.activate(&svc, toast);
-  m.onInput(InputEvent::NavRight);           // would move, but...
-  m.onInput(InputEvent::Back);               // ...cancel
-  EXPECT_FALSE(m.modalActive());
-  EXPECT_EQ(NotifyLevel::Mute, svc.notifyLevel(k));   // unchanged
+  EXPECT_EQ(menu.activate(&svc, toast), mishmesh::ChatMenu::Result::EditNotify);
+  EXPECT_FALSE(menu.modalActive());              // no stepper
 }
 
 int main(int argc, char** argv) {

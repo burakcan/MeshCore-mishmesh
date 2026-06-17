@@ -1,6 +1,7 @@
 // mishmesh/applets/MessageThreadApplet.cpp
 #include "MessageThreadApplet.h"
 #include "MessagePathApplet.h"
+#include "ChatNotifyApplet.h"
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
@@ -127,6 +128,7 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
 void MessageThreadApplet::onForeground() {
   snprintf(_titleBuf, sizeof(_titleBuf), "%s", resolveTitle());
   if (_svc) _svc->setActiveConvo(_key);
+  refreshRegion();
 }
 void MessageThreadApplet::onBackground() { if (_svc) _svc->clearActiveConvo(); }
 void MessageThreadApplet::onStop() {
@@ -450,8 +452,13 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
     if (_chatMenu.onInput(ev)) return true;
     if (ev == InputEvent::Select) {
       const char* toast = nullptr;
-      ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete/Notify arm a modal
+      ChatMenu::Result r = _chatMenu.activate(_svc, toast);   // Mark unread runs now; Clear/Delete arm a modal; Notify opens the notify applet
       if (r == ChatMenu::Result::EditRegion) { openRegionEditor(); return true; }   // keypad over the menu
+      if (r == ChatMenu::Result::EditNotify) {
+        chatNotifyApplet().setTarget(_key, resolveTitle());
+        if (_host) _host->push(&chatNotifyApplet());
+        return true;
+      }
       if (_host && toast) _host->postToast(toast);
       if (r == ChatMenu::Result::Deleted) { if (_host) _host->pop(); }   // chat is gone
       else if (!_chatMenu.modalActive()) { _tabs.setSelected(0); _pinBottom = true; }  // non-destructive -> conversation

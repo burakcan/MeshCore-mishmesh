@@ -141,6 +141,12 @@ public:
   bool uiSetPath(const uint8_t* pubkey, const uint8_t* path, uint8_t path_len);      // 0 hops = reset to flood
   bool uiRenameContact(const uint8_t* pubkey, const char* name);  // local display label
   void uiPersistContacts();
+  // [mishmesh] apply current _prefs radio params to the driver live (no reboot),
+  // mirroring CMD_SET_RADIO_PARAMS/CMD_SET_RADIO_TX_POWER. Defined in MyMesh.cpp
+  // where radio_driver + MAX_LORA_TX_POWER are in scope.
+  void uiApplyRadioParams();
+  int8_t uiTxPowerMax() const;
+  // [/mishmesh]
 
   // Discovery: adverts seen but not auto-added, so the UI can add them manually.
   static const int UI_MAX_DISCOVERIES = 16;

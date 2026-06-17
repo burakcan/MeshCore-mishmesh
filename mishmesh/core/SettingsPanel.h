@@ -24,6 +24,7 @@ public:
   virtual const char* title() const = 0;
   virtual void begin(AppletContext& ctx) = 0;    // bind services; idempotent
   virtual void onShow() {}                         // refresh before display
+  virtual void onHide() {}                         // called when the panel is dismissed (host popped)
   virtual int  renderBody(Canvas& c, int x, int y, int w, int h) = 0;
   virtual bool onInput(InputEvent ev) = 0;
 
