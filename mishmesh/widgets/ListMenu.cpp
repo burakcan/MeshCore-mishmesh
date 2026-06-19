@@ -108,8 +108,24 @@ void ListMenu::draw(Canvas& c, int x, int y, int w, int h) {
     _animating = false;
     if (_header && _headerH > 0) _header->draw(view, 0, 0, w, _headerH);
     const char* msg = _emptyText ? _emptyText : "Empty";
-    int my = bodyTop + (h - bodyTop - view.fontHeight(fontBody())) / 2; if (my < bodyTop) my = bodyTop;
-    view.drawTextEllipsized(fontBody(), w / 2, my, w, msg, DisplayDriver::LIGHT, TextAlign::Center);
+    // The message may carry '\n' to force multiple lines (the bitmap font has no
+    // newline glyph, so a single-line draw would show a tofu block and clip). Draw
+    // each line centered and stack them, centering the whole block vertically.
+    int lh = view.lineHeight(fontBody()); if (lh <= 0) lh = view.fontHeight(fontBody());
+    int lines = 1; for (const char* p = msg; *p; ++p) if (*p == '\n') lines++;
+    int blockH = (lines - 1) * lh + view.fontHeight(fontBody());
+    int my = bodyTop + (h - bodyTop - blockH) / 2; if (my < bodyTop) my = bodyTop;
+    const char* seg = msg;
+    for (int li = 0; ; li++) {
+      const char* nl = seg; while (*nl && *nl != '\n') nl++;
+      char line[40];
+      int len = (int)(nl - seg); if (len > (int)sizeof(line) - 1) len = sizeof(line) - 1;
+      for (int i = 0; i < len; i++) line[i] = seg[i];
+      line[len] = 0;
+      view.drawTextEllipsized(fontBody(), w / 2, my + li * lh, w, line, DisplayDriver::LIGHT, TextAlign::Center);
+      if (!*nl) break;
+      seg = nl + 1;
+    }
     return;
   }
 

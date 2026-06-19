@@ -416,13 +416,16 @@ TEST(MessagePath, InboundDirectHasNoHops) {
   EXPECT_STREQ("Direct (no path)", mishmesh::messagePathApplet().lineForTest(0));
 }
 
-TEST(MessagePath, ChannelShowsRepeatChains) {
+// Each re-hearing shows the repeater we actually heard THAT echo from - the last
+// hop (path[pathLen-1]), not the origin-side path[0] (which is always our nearest
+// repeater and thus identical across echoes).
+TEST(MessagePath, ChannelShowsLastHeardRepeater) {
   FakeMessagesService svc;
   auto k = mishmesh::channelKey(2);
   svc.store.appendOutboundChannel(k, "x", 1, 9, 9);
-  uint8_t p[2] = {0xAA, 0x5B};               // Alice -> 5B
-  svc.store.addRepeat(k, 9, 7, p, 2);
-  svc.store.addRepeat(k, 9, -1, p, 1);       // Alice only
+  uint8_t p[2] = {0xAA, 0x5B};               // path: Alice -> 5B
+  svc.store.addRepeat(k, 9, 7, p, 2);        // heard via 5B (last hop)
+  svc.store.addRepeat(k, 9, -1, p, 1);       // heard directly from Alice
   FakeDisplayDriver d;
   mishmesh::AppletContext ctx; ctx.messages = &svc;
   mishmesh::AppletHost host(&d, ctx);
@@ -432,8 +435,10 @@ TEST(MessagePath, ChannelShowsRepeatChains) {
   host.loop(0);
   EXPECT_STREQ("Heard 2 times", mishmesh::messagePathApplet().titleForTest());
   EXPECT_EQ(2, mishmesh::messagePathApplet().rowCountForTest());     // counts re-hearings
-  EXPECT_STREQ("#1   2h | 1.8dB", mishmesh::messagePathApplet().lineForTest(0));
-  EXPECT_STREQ("  Alice -> 5B",   mishmesh::messagePathApplet().lineForTest(1));
+  EXPECT_STREQ("#1   2h | 1.8dB",  mishmesh::messagePathApplet().lineForTest(0));
+  EXPECT_STREQ("  5B",             mishmesh::messagePathApplet().lineForTest(1));
+  EXPECT_STREQ("#2   1h | -0.2dB", mishmesh::messagePathApplet().lineForTest(2));
+  EXPECT_STREQ("  Alice",          mishmesh::messagePathApplet().lineForTest(3));
 }
 
 // Outbound channel with no repeats yet (heardCount==0) -> "Not heard yet".

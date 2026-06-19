@@ -11,6 +11,7 @@
 #include <mishmesh/core/TimeFormat.h>
 #include <mishmesh/widgets/StatusBar.h>   // batteryPercent()
 #include <mishmesh/widgets/Modal.h>
+#include <mishmesh/core/QuickReplyStore.h>
 #include <cstdio>
 #include <cstring>
 
@@ -110,6 +111,7 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
   }
   _unseenBelow = false;    // we open pinned to the newest message
   _menuOpen = false;
+  _qrOpen = false;
   _barRow = _composeOnOpen ? 0 : -1;   // open focused on the Write button when requested
   _composeOnOpen = false;              // one-shot
 
@@ -396,6 +398,11 @@ int MessageThreadApplet::onRender(Canvas& c) {
     _menu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
     return _menu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
+  if (_qrOpen) {
+    Canvas box = drawModalChrome(c);
+    _menu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
+    return _menu.needsAnimation() ? ListMenu::TICK_MS : 250;
+  }
   return animating ? ListMenu::TICK_MS : 500;
 }
 
@@ -440,6 +447,17 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
     }
     if (ev == InputEvent::Back || ev == InputEvent::Cancel) { _menuOpen = false; return true; }
     return true;   // swallow all input while the menu is open
+  }
+  if (_qrOpen) {
+    if (_menu.onInput(ev)) return true;
+    if (ev == InputEvent::Select) {
+      const char* txt = quickReplyStore().text(_menu.selected());
+      if (txt && txt[0]) onComposeDone(this, txt);   // identical to a typed send
+      _qrOpen = false;
+      return true;
+    }
+    if (ev == InputEvent::Back || ev == InputEvent::Cancel) { _qrOpen = false; return true; }
+    return true;   // modal swallows everything else
   }
 
   // The chat menu's confirm dialog is a modal: once armed it captures all input
@@ -494,7 +512,7 @@ bool MessageThreadApplet::onConversationInput(InputEvent ev) {
     if (ev == InputEvent::NavUp)   { _barRow = (_barRow > 0) ? _barRow - 1 : 0; return true; }
     if (ev == InputEvent::Select) {
       if (_barRow <= 0) startCompose();
-      else if (_host) _host->postToast("Not available yet");
+      else openQuickReplies();
       return true;
     }
     return false;   // Back bubbles -> pop to chat list (Left/Right consumed by tabs)
@@ -511,7 +529,7 @@ bool MessageThreadApplet::onConversationInput(InputEvent ev) {
     if (ev == InputEvent::NavUp)   { _barRow = (_barRow > 0) ? _barRow - 1 : -1; return true; }
     if (ev == InputEvent::Select) {
       if (_barRow == 0) startCompose();
-      else if (_host) _host->postToast("Not available yet");
+      else openQuickReplies();
       return true;
     }
     return false;
@@ -553,6 +571,15 @@ bool MessageThreadApplet::onConversationInput(InputEvent ev) {
     return true;
   }
   return false;   // Back bubbles -> pop to chat list
+}
+
+void MessageThreadApplet::openQuickReplies() {
+  _qrModel = QuickReplyModel{};
+  _menu.setModel(&_qrModel);
+  _menu.setRowHeight(14);
+  _menu.setEmptyText("No quick replies\nAdd in Settings");
+  _menu.resetSelection();
+  _qrOpen = true;
 }
 
 void MessageThreadApplet::startCompose(const char* seed) {

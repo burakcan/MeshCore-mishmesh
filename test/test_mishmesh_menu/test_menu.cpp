@@ -3,9 +3,44 @@
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/applets/AppMenuApplet.h>
 #include <mishmesh/applets/StopwatchApplet.h>
+#include <mishmesh/widgets/ListMenu.h>
+#include <mishmesh/core/Canvas.h>
 #include "FakeDisplayDriver.h"
 
 using namespace mishmesh;
+
+namespace {
+// Vertical extent (px) touched by fillRect calls - for the empty-state, the only
+// draws are the message glyphs, so this is the message's rendered height.
+int fillsVSpan(const FakeDisplayDriver& d) {
+  int lo = 1 << 30, hi = -(1 << 30);
+  for (const auto& f : d.fills) { if (f.y < lo) lo = f.y; if (f.y + f.h > hi) hi = f.y + f.h; }
+  return hi > lo ? hi - lo : 0;
+}
+struct EmptyModel : ListModel {
+  int count() const override { return 0; }
+  const char* label(int) const override { return ""; }
+};
+}
+
+// A '\n' in the empty-state message must render as stacked lines, not a single
+// line with a tofu block for the newline. Regression: the picker's
+// "No quick replies\nAdd in Settings" showed a block + a clipped second line.
+TEST(ListMenuEmptyText, NewlineRendersAsMultipleLines) {
+  EmptyModel m;
+  FakeDisplayDriver d1; Canvas c1(&d1);
+  ListMenu a; a.setModel(&m); a.setEmptyText("AAA");
+  a.draw(c1, 0, 0, 128, 64);
+
+  FakeDisplayDriver d2; Canvas c2(&d2);
+  ListMenu b; b.setModel(&m); b.setEmptyText("AAA\nBBB");
+  b.draw(c2, 0, 0, 128, 64);
+
+  int oneLine = fillsVSpan(d1);
+  int twoLine = fillsVSpan(d2);
+  EXPECT_GT(oneLine, 0);                 // single line renders something
+  EXPECT_GT(twoLine, oneLine + 3);       // two lines are meaningfully taller (buggy: ~equal)
+}
 
 namespace {
 

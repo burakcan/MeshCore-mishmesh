@@ -4,6 +4,7 @@
 #include <helpers/sensors/LocationProvider.h>
 // [/mishmesh]
 #include <mishmesh/applets/NotificationApplet.h>
+#include <mishmesh/core/QuickReplyStore.h>
 #include <mishmesh/core/TelemetryDecode.h>
 #include <mishmesh/core/Mention.h>
 #include <helpers/AdvertDataHelpers.h>   // ADV_TYPE_CHAT
@@ -136,6 +137,27 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   // Surface joined channels (e.g. the default Public channel) as chats even
   // before any message arrives - the store is otherwise only fed on message capture.
   the_mesh.uiSeedChannels();
+  // Drop phantom channel chats left by the null/zero-key channel bug: a channel
+  // convo whose slot is cleared (all-zero secret) isn't a real chat. Collect
+  // first, then delete (deleteConvo reorders the list). Persists via loop's seq
+  // save. The core fix (mm_channelEmpty) prevents new ones from being created.
+  {
+    mishmesh::ConvoKey drop[mishmesh::MAX_CONVOS];
+    int nDrop = 0;
+    for (int i = 0; i < _msgStore.convoCount() && nDrop < (int)mishmesh::MAX_CONVOS; i++) {
+      mishmesh::ConvoSummary cs;
+      if (!_msgStore.getConvo(i, cs) || cs.key.type != 1) continue;
+      ChannelDetails cd;
+      bool phantom = !the_mesh.getChannel(cs.key.id[0], cd);
+      if (!phantom) {
+        phantom = true;
+        for (size_t b = 0; b < sizeof(cd.channel.secret); b++)
+          if (cd.channel.secret[b]) { phantom = false; break; }
+      }
+      if (phantom) drop[nDrop++] = cs.key;
+    }
+    for (int i = 0; i < nDrop; i++) _msgStore.deleteConvo(drop[i]);
+  }
   // [/mishmesh]
 
   // [mishmesh] bring up the sound subsystem and restore persisted prefs.
@@ -157,6 +179,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   ctx.messages = &_msgSvc;
   _theStorage.ds = the_mesh.getStore();
   ctx.storage = &_theStorage;
+  mishmesh::quickReplyStore().begin(&_theStorage);   // load canned replies
   ctx.sound = &_sound;          // [mishmesh]
   // [/mishmesh]
   _host = new mishmesh::AppletHost(_display, ctx);
@@ -551,7 +574,10 @@ const char* UITask::MsgSvc::nameFor(const mishmesh::ConvoKey& k) const {
   static char buf[34];
   if (k.type == 1) {
     ChannelDetails cd;
-    if (the_mesh.getChannel(k.id[0], cd)) { snprintf(buf, sizeof(buf), "%s", cd.name); return buf; }
+    // Empty name (cleared/unnamed slot) falls through to "#idx", never blank.
+    if (the_mesh.getChannel(k.id[0], cd) && cd.name[0] != '\0') {
+      snprintf(buf, sizeof(buf), "%s", cd.name); return buf;
+    }
     snprintf(buf, sizeof(buf), "#%u", (unsigned)k.id[0]); return buf;
   }
   ContactInfo* c = the_mesh.lookupContactByPubKey(k.id, 6);
@@ -656,6 +682,18 @@ bool UITask::MsgSvc::resolveHop(uint8_t hashByte, const char*& name, uint8_t& kn
     if (ci.id.pub_key[0] == hashByte) {
       if (!hasFirst) { snprintf(buf, sizeof(buf), "%s", ci.name); hasFirst = true; }
       knownCount++;
+    }
+  }
+  // Fall back to the Discover feed (adverts heard but not added as contacts) so a
+  // repeater we've seen advertise still resolves to a name instead of a bare hex
+  // hash. Contacts win; discoveries don't bump knownCount (it counts contacts).
+  if (!hasFirst) {
+    int d = the_mesh.uiDiscoveryCount();
+    for (int i = 0; i < d; i++) {
+      if (!the_mesh.uiGetDiscovery(i, ci)) continue;
+      if (ci.id.pub_key[0] == hashByte) {
+        snprintf(buf, sizeof(buf), "%s", ci.name); hasFirst = true; break;
+      }
     }
   }
   name = hasFirst ? buf : "";

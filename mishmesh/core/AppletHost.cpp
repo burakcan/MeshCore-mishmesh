@@ -4,6 +4,9 @@
 #include <helpers/ui/DisplayDriver.h>
 #include <string.h>
 #include <stdio.h>
+#ifdef MISHMESH_INPUT_PROFILE
+#include <Arduino.h>   // millis() for sub-render frame timing
+#endif
 
 namespace mishmesh {
 
@@ -141,6 +144,9 @@ void AppletHost::pumpInput(uint32_t now_ms) {
     InputReport rep;                       // fresh each poll: `repeat` defaults false
     while ((rep = InputReport(), _sources[i]->poll(rep))) {
       _last_activity = now_ms;
+#ifdef MISHMESH_INPUT_PROFILE
+      if (!rep.repeat) _prof.recordPolled();   // a discrete press edge was sampled
+#endif
       if (_display != nullptr && !_display->isOn()) {
         _display->turnOn();   // first press only wakes; it isn't delivered
         _dirty = true;
@@ -148,7 +154,12 @@ void AppletHost::pumpInput(uint32_t now_ms) {
         bool bounce = _input_seen && rep.event == _last_input_event &&
                       now_ms - _last_input_ms < INPUT_DEBOUNCE_MS;
         _last_input_event = rep.event; _last_input_ms = now_ms; _input_seen = true;
-        if (!bounce) dispatch(rep.event, rep.repeat);
+        if (!bounce) {
+#ifdef MISHMESH_INPUT_PROFILE
+          if (!rep.repeat) _prof.recordDispatched();   // survived bounce coalescing
+#endif
+          dispatch(rep.event, rep.repeat);
+        }
       }
     }
   }
@@ -167,6 +178,13 @@ void AppletHost::loop(uint32_t now_ms) {
     _last_activity = now_ms;
     _activity_init = true;
   }
+
+#ifdef MISHMESH_INPUT_PROFILE
+  _prof.tick(now_ms);
+  // Repaint the overlay a few times a second even when the UI is otherwise idle,
+  // so the live counters keep updating while you press.
+  if (now_ms - _prof_last_paint >= 300) { _prof_last_paint = now_ms; _dirty = true; }
+#endif
 
   pumpInput(now_ms);
 
@@ -210,6 +228,9 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
   bool due = exclusive || _dirty || !_has_rendered || now_ms >= _next_render_at;
   if (!due) return;
 
+#ifdef MISHMESH_INPUT_PROFILE
+  uint32_t _pt0 = millis();   // frame compose+flush cost, measured around the whole draw
+#endif
   _canvas.setNow(now_ms);
   _display->startFrame();
   int delay = fg->onRender(_canvas);
@@ -240,13 +261,42 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
     }
     _next_render_at = now_ms;   // always due next pass; returned delay ignored
   } else {
+#ifdef MISHMESH_INPUT_PROFILE
+    drawProfileOverlay();
+#endif
     _display->endFrame();
+#ifdef MISHMESH_INPUT_PROFILE
+    _prof.recordRender(millis() - _pt0);
+#endif
     if (delay < 0) delay = 0;
     _next_render_at = now_ms + (uint32_t)delay;
   }
   _has_rendered = true;
   _dirty = false;
 }
+
+#ifdef MISHMESH_INPUT_PROFILE
+// S<maxStall> R<maxRender> B<blindGaps>  /  p<polled> d<dispatched>, ms. Compare
+// p (edges sampled) and d (edges acted on) against your own press count: fingers>p
+// = starvation/hardware (watch B climb), p>d = software bounce ate it. See
+// InputProfiler for the full triage.
+void AppletHost::drawProfileOverlay() {
+  const mf_font_s* f = fontBody();
+  int fh = _canvas.fontHeight(f); if (fh <= 0) fh = 8;
+  int w = _canvas.width();
+  int bh = fh * 2 + 3;
+
+  char l1[24], l2[24];
+  snprintf(l1, sizeof(l1), "S%lu R%lu B%lu", (unsigned long)_prof.maxStall,
+           (unsigned long)_prof.maxRender, (unsigned long)_prof.blindGaps);
+  snprintf(l2, sizeof(l2), "p%lu d%lu", (unsigned long)_prof.polled,
+           (unsigned long)_prof.dispatched);
+
+  _canvas.fillRect(0, 0, w, bh, DisplayDriver::DARK);
+  _canvas.drawText(f, 1, 1, l1, DisplayDriver::LIGHT);
+  _canvas.drawText(f, 1, 1 + fh + 1, l2, DisplayDriver::LIGHT);
+}
+#endif
 
 void AppletHost::drawBubble(uint32_t now_ms) {
   const mf_font_s* icon = iconFont();

@@ -5,6 +5,9 @@
 #include <mishmesh/core/InputSource.h>
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/core/Canvas.h>
+#ifdef MISHMESH_INPUT_PROFILE
+#include <mishmesh/core/InputProfiler.h>
+#endif
 
 // Max display flushes/sec while a wantsExclusive() applet is foreground. The sim
 // (onRender) still runs every loop pass; only the blocking panel flush is capped,
@@ -68,6 +71,13 @@ public:
 private:
   void renderIfDue(uint32_t now_ms);
   void drawBubble(uint32_t now_ms);   // top-right new-message badge overlay
+#ifdef MISHMESH_INPUT_PROFILE
+  // UI-responsiveness overlay (build with -D MISHMESH_INPUT_PROFILE). Draws the
+  // loop-stall / render / input-drop counters over the foreground. See InputProfiler.
+  void drawProfileOverlay();
+  InputProfiler _prof;
+  uint32_t _prof_last_paint = 0;   // last time the overlay forced a refresh
+#endif
   // Push the foreground applet's input preferences (currently wantsBackRepeat())
   // to every source. Called after each foreground change.
   void applyInputContext();

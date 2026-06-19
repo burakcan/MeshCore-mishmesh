@@ -7,6 +7,7 @@
 #include <mishmesh/widgets/ChatMenu.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/widgets/Button.h>
+#include <mishmesh/core/QuickReplyStore.h>
 
 namespace mishmesh {
 
@@ -63,6 +64,7 @@ private:
   uint32_t         _lastMsgTime = 0;  // newest message's time; detects arrivals even at the cap
   uint32_t         _lastSeq = 0;
   bool             _menuOpen = false; // per-message action menu overlay (Reply/Delete/Path)
+  bool             _qrOpen = false;   // quick-replies picker overlay (twin of _menuOpen)
   char             _titleBuf[40] = {0};  // stable backing for the conversation tab label
   char             _fallbackName[32] = {0};   // header name when no conversation exists yet
   char             _battBuf[8] = {0};    // stable backing for the battery decoration
@@ -94,6 +96,11 @@ private:
       }
     }
   } _msgMenu;
+  struct QuickReplyModel : ListModel {
+    int count() const override { return quickReplyStore().count(); }
+    const char* label(int i) const override { return quickReplyStore().text(i); }
+  } _qrModel;
+  void openQuickReplies();
   int       _barRow = -1;     // -1 = on a message; 0 = Write; 1 = Quick
   bool      _composeOnOpen = false;   // one-shot: focus the Write button on next onStart
   Button    _btn;             // reused to draw each stacked action button in turn

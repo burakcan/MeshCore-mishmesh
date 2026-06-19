@@ -1069,6 +1069,14 @@ bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text)
   // channel message
   ChannelDetails channel;
   if (!getChannel(k.id[0], channel)) return false;
+  // [mishmesh] never transmit on a cleared (all-zero secret) slot: that is the
+  // null/zero-key channel, not a real one (see mm_channelEmpty in BaseChatMesh).
+  {
+    bool empty = true;
+    for (size_t b = 0; b < sizeof(channel.channel.secret); b++)
+      if (channel.channel.secret[b]) { empty = false; break; }
+    if (empty) return false;
+  }
   uint32_t msg_timestamp = getRTCClock()->getCurrentTimeUnique();
   if (!sendGroupMessage(msg_timestamp, channel.channel, _prefs.node_name, text, tlen)) return false;
   if (_mm_store) {

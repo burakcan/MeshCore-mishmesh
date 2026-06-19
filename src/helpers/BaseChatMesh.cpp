@@ -353,9 +353,20 @@ void BaseChatMesh::handleReturnPathRetry(const ContactInfo& contact, const uint8
 }
 
 #ifdef MAX_GROUP_CHANNELS
+// [mishmesh] A cleared channel slot has an all-zero secret, but setChannel still
+// computes sha256(zeroes)=0x37.. as its hash. Without this guard, every node's
+// empty slots form a shared zero-key channel: a null-key group packet decrypts
+// under an empty slot and surfaces as a phantom, unnamed chat. Treat an all-zero
+// secret as "no channel here" so empty slots never send, receive, or match.
+static bool mm_channelEmpty(const mesh::GroupChannel& ch) {
+  for (size_t i = 0; i < sizeof(ch.secret); i++) if (ch.secret[i]) return false;
+  return true;
+}
+// [/mishmesh]
 int BaseChatMesh::searchChannelsByHash(const uint8_t* hash, mesh::GroupChannel dest[], int max_matches) {
   int n = 0;
   for (int i = 0; i < MAX_GROUP_CHANNELS && n < max_matches; i++) {
+    if (mm_channelEmpty(channels[i].channel)) continue;  // [mishmesh] skip cleared slots
     if (channels[i].channel.hash[0] == hash[0]) {
       dest[n++] = channels[i].channel;
     }
@@ -903,6 +914,7 @@ bool BaseChatMesh::setChannel(int idx, const ChannelDetails& src) {
 }
 int BaseChatMesh::findChannelIdx(const mesh::GroupChannel& ch) {
   for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+    if (mm_channelEmpty(channels[i].channel)) continue;  // [mishmesh] never match a cleared slot
     if (memcmp(ch.secret, channels[i].channel.secret, sizeof(ch.secret)) == 0) return i;
   }
   return -1;  // not found

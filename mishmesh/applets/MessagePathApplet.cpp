@@ -43,14 +43,15 @@ void MessagePathApplet::rebuild() {
       RepeatView rv;
       if (!_svc->getRepeat(_key, _idx, r, rv)) continue;
       _text.addf("#%d   %uh | %.1fdB", r + 1, (unsigned)rv.hops, (double)rv.snrx4 / 4.0);
-      char chain[40]; int p = 0; chain[0] = 0;
-      for (int h = 0; h < rv.pathLen && p < (int)sizeof(chain) - 1; h++) {
-        char lbl[20]; hopLabel(rv.path[h], lbl, sizeof(lbl));
-        int w = snprintf(chain + p, sizeof(chain) - p, "%s%s", h ? " -> " : "  ", lbl);
-        if (w < 0) break;
-        p += (w < (int)sizeof(chain) - p) ? w : (int)sizeof(chain) - p - 1;
+      // The repeater we actually heard this echo from is the LAST hop; the path
+      // accumulates origin-first, so path[0] is always our nearest repeater and
+      // uninformative here.
+      if (rv.pathLen > 0) {
+        char lbl[34]; hopLabel(rv.path[rv.pathLen - 1], lbl, sizeof(lbl));
+        _text.addf("  %s", lbl);
+      } else {
+        _text.addLine("  (direct)");
       }
-      _text.addLine(chain[0] ? chain : "  (direct)");
       _rows++;
     }
   } else {
