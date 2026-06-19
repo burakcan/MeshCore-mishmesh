@@ -1,6 +1,7 @@
 #include <mishmesh/applets/SoundPickerApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/ClockService.h>
 #include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/text/Fonts.h>
 #include <string.h>
@@ -15,29 +16,39 @@ using sound::SoundId;
 SoundPickerApplet::SoundPickerApplet() : Applet("Sound") {}
 
 void SoundPickerApplet::setGlobal(bool channel, const char* title) {
-  _perChat = false; _channel = channel;
+  _perChat = false; _clock = false; _channel = channel;
   strncpy(_title, title ? title : "Sound", sizeof(_title) - 1);
   _title[sizeof(_title) - 1] = 0;
 }
 
 void SoundPickerApplet::setChat(const ConvoKey& key, const char* title) {
-  _perChat = true; _key = key; _channel = (key.type == 1);
+  _perChat = true; _clock = false; _key = key; _channel = (key.type == 1);
+  strncpy(_title, title ? title : "Sound", sizeof(_title) - 1);
+  _title[sizeof(_title) - 1] = 0;
+}
+
+void SoundPickerApplet::setClock(bool alarm, const char* title) {
+  _perChat = false; _clock = true; _channel = alarm;
   strncpy(_title, title ? title : "Sound", sizeof(_title) - 1);
   _title[sizeof(_title) - 1] = 0;
 }
 
 uint8_t SoundPickerApplet::currentByte() const {
+  if (_clock) return _channel ? clockService().alarmToneIdx() : clockService().timerToneIdx();
   if (_perChat) return _svc ? _svc->chatSound(_key) : 0;
   return _app ? _app->notifyTone(_channel) : 0;
 }
 
-// Row layout. Per-chat: 0=Default, 1..N=tones, N+1=Silent.
+// Row layout. Clock: 0..N-1=tunes (stored byte IS the row).
+// Per-chat: 0=Default, 1..N=tones, N+1=Silent.
 // Global:           0..N-1=tones, N=Silent.
 int SoundPickerApplet::count() const {
+  if (_clock) return sound::clockToneCount();
   return notifyToneCount() + (_perChat ? 2 : 1);
 }
 
 uint8_t SoundPickerApplet::encodedForRow(int row) const {
+  if (_clock) return (uint8_t)row;
   int n = notifyToneCount();
   if (_perChat) {
     if (row == 0) return sound::NOTIFY_TONE_DEFAULT;
@@ -49,6 +60,7 @@ uint8_t SoundPickerApplet::encodedForRow(int row) const {
 }
 
 int SoundPickerApplet::rowForEncoded(uint8_t e) const {
+  if (_clock) return e < sound::clockToneCount() ? e : 0;
   int n = notifyToneCount();
   if (e == sound::NOTIFY_TONE_SILENT) return count() - 1;
   if (e == sound::NOTIFY_TONE_DEFAULT) {
@@ -63,6 +75,7 @@ int SoundPickerApplet::rowForEncoded(uint8_t e) const {
 }
 
 const char* SoundPickerApplet::label(int i) const {
+  if (_clock) return sound::clockToneName(i);
   uint8_t e = encodedForRow(i);
   if (e == sound::NOTIFY_TONE_DEFAULT && _perChat) return "Default";
   if (e == sound::NOTIFY_TONE_SILENT) return "Silent";
@@ -95,6 +108,16 @@ bool SoundPickerApplet::onInput(InputEvent ev) {
   if (_list.onInput(ev)) return true;
   if (ev == InputEvent::Select) {
     uint8_t e = encodedForRow(_list.selected());
+    if (_clock) {
+      if (_channel) clockService().setAlarmToneIdx(e);
+      else          clockService().setTimerToneIdx(e);
+      if (_snd) {   // preview at the level it will actually ring at
+        uint8_t v = _channel ? clockService().alarmVolume() : clockService().timerVolume();
+        if (v) _snd->play(sound::clockToneId(e), (sound::VolumeLevel)v);
+        else   _snd->play(sound::clockToneId(e));
+      }
+      return true;
+    }
     if (_perChat) { if (_svc) _svc->setChatSound(_key, e); }
     else          { if (_app) _app->setNotifyTone(_channel, e); }
     // Preview: play the resolved tone unless Silent. For per-chat Default, use the

@@ -1,9 +1,11 @@
 #include <mishmesh/applets/settings/MessagesSettingsPanel.h>
 #include <mishmesh/applets/settings/QuickRepliesPanel.h>
 #include <mishmesh/applets/SettingsDetailApplet.h>
+#include <mishmesh/applets/SoundPickerApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/QuickReplyStore.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/sound/Sounds.h>
 #include <stdio.h>
 
 namespace mishmesh {
@@ -13,7 +15,9 @@ static void acksLabel(int v, char* out, uint16_t cap) {
 }
 
 const char* MessagesSettingsPanel::Model::label(int i) const {
-  static const char* LABELS[ROW_COUNT] = { "Auto retry DMs", "Auto reset DM paths", "Direct msg acks", "Quick replies" };
+  static const char* LABELS[ROW_COUNT] = { "Auto retry DMs", "Auto reset DM paths",
+                                           "Direct msg acks", "Channel sound",
+                                           "Direct sound", "Quick replies" };
   return (i >= 0 && i < ROW_COUNT) ? LABELS[i] : "";
 }
 
@@ -31,6 +35,11 @@ const char* MessagesSettingsPanel::Model::value(int i) const {
     snprintf(buf, sizeof(buf), "%u", svc->getMessagesConfig().directAcks);
     return buf;
   }
+  if ((i == ChannelSound || i == DirectSound) && app) {
+    bool channel = i == ChannelSound;
+    return sound::notifyToneEncodedName(app->notifyTone(channel), false,
+                                        sound::notifyTypeDefault(channel));
+  }
   if (i == QuickReplies) {   // show how many are configured
     snprintf(buf, sizeof(buf), "%d", quickReplyStore().count());
     return buf;
@@ -40,8 +49,10 @@ const char* MessagesSettingsPanel::Model::value(int i) const {
 
 void MessagesSettingsPanel::begin(AppletContext& ctx) {
   _svc = ctx.messages;
+  _app = ctx.app;
   _host = ctx.host;
   _model.svc = _svc;
+  _model.app = _app;
   _list.setRowHeight(14);
   _list.setModel(&_model);
   _list.resetSelection();   // singleton reuse: setModel skips reset on same-ptr rebind
@@ -82,6 +93,10 @@ bool MessagesSettingsPanel::onInput(InputEvent ev) {
     } else if (i == Model::DirectAcks && _svc) {
       _acks.configure("DM acks", cfg.directAcks, 1, 2, acksLabel);
       _editingAcks = true;
+    } else if ((i == Model::ChannelSound || i == Model::DirectSound) && _host) {
+      bool channel = i == Model::ChannelSound;
+      soundPickerApplet().setGlobal(channel, channel ? "Channel msgs" : "Direct msgs");
+      _host->push(&soundPickerApplet());
     } else if (i == Model::QuickReplies && _host) {
       // Drill into the canned-message manager. A dedicated detail-applet instance
       // (not the shared settingsDetailApplet, which is already on the stack hosting

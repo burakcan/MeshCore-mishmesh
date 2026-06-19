@@ -49,7 +49,6 @@ private:
   ListMenu         _list;
   SendModel        _send;
   RecentModel      _recent;
-  char             _battBuf[8] = {0};
   void syncListToTab();
   bool settingsTab() const { return _tabs.selected() == 2; }
 };

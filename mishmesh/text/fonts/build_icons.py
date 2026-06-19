@@ -3,7 +3,7 @@
 # BDF that mcufont's import_bdf consumes. Pure-PIL: no SVG engine needed.
 import os, re, urllib.request, sys
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 DILATE = 0   # supersample-scale dilation; >0 over-thickens at 12px, keep crisp 1px
 
@@ -43,7 +43,18 @@ ICONS = [
     ("Feather",     "feather",       0xE01B),   # quill = compose/write
     ("Zap",         "zap",           0xE01C),   # lightning = quick replies
     ("Bluetooth",   "bluetooth",     0xE01D),
+    ("Volume",     "volume-2",  0xE01E),   # speaker + wave: sound tile / audible
+    ("VolumeMute", "volume-x",  0xE01F),   # muted state (top bar + sound tile)
+    ("Moon",       "moon",      0xE020),   # theme tile: dark mode
+    ("Sun",        "sun",       0xE021),   # theme tile: light mode
+    ("Hourglass",  "hourglass",   0xE022),   # timer (vendored: not on github master)
+    ("AlarmClock", "alarm-clock", 0xE023),   # alarm (vendored: not on github master)
+    ("Globe",      "globe",       0xE024),   # world clock
 ]
+
+# Iconify-sourced compound paths whose inner subpaths are holes (even-odd),
+# unlike the github-master SVGs where separate strokes just union.
+EVENODD = {"hourglass"}
 
 NUM = re.compile(r'[-+]?\d*\.?\d+')
 
@@ -74,13 +85,22 @@ def subpaths(d):
     if poly: out.append(poly)
     return out
 
-def raster(d):
-    img = Image.new('L', (GRID*SS, GRID*SS), 0)
-    dr = ImageDraw.Draw(img)
+def raster(d, evenodd=False):
     polys = subpaths(d)
-    for poly in polys:
-        if len(poly) >= 3:
-            dr.polygon([(px*SS, py*SS) for px, py in poly], fill=255)
+    if evenodd:
+        acc = Image.new('1', (GRID*SS, GRID*SS), 0)
+        for poly in polys:
+            if len(poly) < 3: continue
+            m = Image.new('1', acc.size, 0)
+            ImageDraw.Draw(m).polygon([(px*SS, py*SS) for px, py in poly], fill=1)
+            acc = ImageChops.logical_xor(acc, m)
+        img = acc.convert('L').point(lambda v: 255 if v else 0)
+    else:
+        img = Image.new('L', (GRID*SS, GRID*SS), 0)
+        dr = ImageDraw.Draw(img)
+        for poly in polys:
+            if len(poly) >= 3:
+                dr.polygon([(px*SS, py*SS) for px, py in poly], fill=255)
     if DILATE:
         img = img.filter(ImageFilter.MaxFilter(DILATE * 2 + 1))   # bolden strokes
     return img.resize((SIZE, SIZE), Image.BOX)   # grayscale, averaged
@@ -113,7 +133,7 @@ for nm, svg, cp in ICONS:
     # Pixelarticons may split a glyph across several <path> elements; render all
     # of them (each path starts with an absolute M, so the d strings concatenate).
     ds = re.findall(r'd="([^"]+)"', data)
-    img = raster(" ".join(ds))
+    img = raster(" ".join(ds), evenodd=svg in EVENODD)
     g = bdf_glyph(nm, cp, img)
     glyphs.append(g)
     if nm in ("Home", "Clock"):

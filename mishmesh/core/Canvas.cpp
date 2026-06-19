@@ -1,7 +1,13 @@
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/UiPrefs.h>
 #include <mcufont.h>
 
 namespace mishmesh {
+
+DisplayDriver::Color themedColor(DisplayDriver::Color c) {
+  if (uiPrefs().darkMode()) return c;
+  return c == DisplayDriver::LIGHT ? DisplayDriver::DARK : DisplayDriver::LIGHT;
+}
 
 // Intersect a local rect with the clip window [cl,cr) x [ct,cb); false if
 // nothing remains visible.
@@ -41,7 +47,7 @@ Canvas Canvas::region(int x, int y, int w, int h) const {
 void Canvas::fillRect(int x, int y, int w, int h, DisplayDriver::Color c) {
   if (!clipLocal(x, y, w, h, _cl, _ct, _cr, _cb)) return;
   if (_d) {
-    _d->setColor(c);
+    _d->setColor(themedColor(c));
     _d->fillRect(_ox + x, _oy + y, w, h);
   }
 }
@@ -49,7 +55,7 @@ void Canvas::fillRect(int x, int y, int w, int h, DisplayDriver::Color c) {
 void Canvas::drawRect(int x, int y, int w, int h, DisplayDriver::Color c) {
   if (!clipLocal(x, y, w, h, _cl, _ct, _cr, _cb)) return;
   if (_d) {
-    _d->setColor(c);
+    _d->setColor(themedColor(c));
     _d->drawRect(_ox + x, _oy + y, w, h);
   }
 }
@@ -65,7 +71,7 @@ void Canvas::drawRoundRect(int x, int y, int w, int h, DisplayDriver::Color c) {
 void Canvas::text(int x, int y, const char* str, DisplayDriver::Color c) {
   if (!_d || str == nullptr) return;
   if (x < _cl || y < _ct || x >= _cr || y >= _cb) return;
-  _d->setColor(c);
+  _d->setColor(themedColor(c));
   _d->setCursor(_ox + x, _oy + y);
   _d->print(str);
 }
@@ -189,7 +195,7 @@ void Canvas::fillStipple(int x, int y, int w, int h, DisplayDriver::Color c) {
   int px = x, py = y;                                 // pre-clip origin: parity reference
   if (!clipLocal(x, y, w, h, _cl, _ct, _cr, _cb)) return;
   if (_d == nullptr) return;
-  _d->setColor(c);
+  _d->setColor(themedColor(c));
   int phase = (x - px) + (y - py);                    // keep the dither stable if clipped
   for (int j = 0; j < h; j++)
     for (int i = ((phase + j) & 1); i < w; i += 2)

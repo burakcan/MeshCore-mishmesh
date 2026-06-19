@@ -155,9 +155,20 @@ public:
   uint32_t epochSeconds() const override;
   bool systemStats(mishmesh::SystemStats& out) const override;
   // [mishmesh]
-  bool bleSupported() const override { return blePin() != 0 || isSerialEnabled(); }
+  // BLE capability is a build-time fact: deriving it from runtime state
+  // (pin/enable) made the Bluetooth settings entry vanish when BLE was
+  // toggled off. Serial/USB builds have no BLE at all, so tile/entry hide.
+  bool bleSupported() const override {
+#ifdef BLE_PIN_CODE
+    return true;
+#else
+    return false;
+#endif
+  }
   bool bleEnabled()   const override { return isSerialEnabled(); }
-  bool bleConnected() const override { return hasConnection(); }
+  // Gate on enabled: the USB serial's isConnected() is a hardwired `true`,
+  // and even on BLE a stale connection flag must not outlive a disable.
+  bool bleConnected() const override { return isSerialEnabled() && hasConnection(); }
   uint32_t blePin()   const override { return the_mesh.getBLEPin(); }
   void setBleEnabled(bool on) override { if (on) enableSerial(); else disableSerial(); }
   bool sendAdvert(bool flood) override { return the_mesh.sendSelfAdvert(flood); }
@@ -237,6 +248,27 @@ public:
     if (!p) return;
     p->date_format = (f <= 2) ? f : 0;
     the_mesh.savePrefs();
+  }
+  bool gpsSupported() const override {
+    return _sensors && _sensors->getSettingByKey("gps") != nullptr;
+  }
+  bool gpsEnabled() const override {
+    const char* v = _sensors ? _sensors->getSettingByKey("gps") : nullptr;
+    return v && strcmp(v, "1") == 0;
+  }
+  void setGpsEnabled(bool on) override {
+    if (!_sensors) return;
+    _sensors->setSettingValue("gps", on ? "1" : "0");
+    NodePrefs* p = the_mesh.getNodePrefs();     // persist like ui-tiny does
+    if (p) { p->gps_enabled = on ? 1 : 0; the_mesh.savePrefs(); }
+  }
+  bool gpsHasFix() const override {
+    LocationProvider* lp = _sensors ? _sensors->getLocationProvider() : nullptr;
+    return lp && gpsEnabled() && lp->isValid();
+  }
+  int gpsSatellites() const override {
+    LocationProvider* lp = _sensors ? _sensors->getLocationProvider() : nullptr;
+    return (lp && gpsEnabled()) ? (int)lp->satellitesCount() : 0;
   }
   // [/mishmesh]
 

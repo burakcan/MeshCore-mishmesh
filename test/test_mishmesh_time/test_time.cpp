@@ -199,11 +199,11 @@ TEST(TimeSettingsPanel, SetTimeRowHiddenWhenAuto) {
   mishmesh::AppletContext ctx; ctx.app = &aa;
   auto& p = mishmesh::timeSettings();
   p.begin(ctx);
-  EXPECT_EQ(4, p.rowCountForTest());   // TimeZone/TimeFmt/DateFmt/SetAuto; SetTime hidden
+  EXPECT_EQ(8, p.rowCountForTest());   // Zone/Fmt/DateFmt/AlarmSnd/AlarmVol/TimerSnd/TimerVol/SetAuto
   EXPECT_TRUE(p.autoToggleForTest());  // pill ON when auto is ON
   aa.autoOn = false;
   p.onShow();
-  EXPECT_EQ(5, p.rowCountForTest());   // SetTime appears in manual mode
+  EXPECT_EQ(9, p.rowCountForTest());   // SetTime appears in manual mode
   EXPECT_FALSE(p.autoToggleForTest()); // pill OFF when auto is OFF
 }
 

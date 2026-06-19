@@ -43,7 +43,6 @@ private:
   AppletHost*      _host = nullptr;
   MessagesService* _svc  = nullptr;
   AppServices*     _app  = nullptr;
-  char             _battBuf[8] = {0};    // stable backing for the battery decoration
   TabBar           _tabs;
   ListMenu         _list;
   ChatMenu         _chatMenu;            // long-press chat-action overlay

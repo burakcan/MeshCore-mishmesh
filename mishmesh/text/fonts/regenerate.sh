@@ -21,7 +21,7 @@ gen_text() {  # role size filter...
 }
 gen_text Body     8  0x20-0xFF     # lists, status bar, hints, message body (default)
 gen_text Subtitle 12 0x20-0xFF     # contact-detail header card
-gen_text Num      24 0x20 0x2E-0x3A   # clock/stopwatch: space . / 0-9 :
+gen_text Num      16 0x20 0x2E-0x3A   # clock/stopwatch: space . / 0-9 :
 
 # --- Latin Extended-A (Common EU Latin: Polish, Czech/Slovak, Hungarian,
 #     Croatian, Romanian, Turkish). The Nokia TTF lacks these glyphs, so we

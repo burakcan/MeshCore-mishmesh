@@ -1,0 +1,72 @@
+#include <gtest/gtest.h>
+#include <mishmesh/core/AppletRegistry.h>
+#include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/UiPrefs.h>
+#include <mishmesh/applets/settings/HomeSettingsPanel.h>
+#include "FakeDisplayDriver.h"
+
+using namespace mishmesh;
+
+namespace {
+
+struct StubApplet : Applet {
+  StubApplet() : Applet("stub") {}
+  int onRender(Canvas&) override { return 1000; }
+};
+
+StubApplet a1, a2;
+AppletRegistration r1{&a1, "Contacts", 0, Placement::AppMenu, 1, nullptr};
+AppletRegistration r2{&a2, "Messages", 0, Placement::AppMenu, 0, nullptr};
+
+void prime() {
+  resetRegistry();
+  registerApplet(&r1);
+  registerApplet(&r2);
+  uiPrefs().resetForTest();
+  uiPrefs().begin(nullptr);
+}
+
+}  // namespace
+
+TEST(HomeSettingsPanel, TogglesBatteryPercent) {
+  prime();
+  AppletContext ctx;
+  HomeSettingsPanel& p = homeSettings();
+  p.begin(ctx);
+  EXPECT_STREQ("Home", p.title());
+  EXPECT_FALSE(uiPrefs().battShowPercent());
+  // Row 0 = battery toggle; selection starts there.
+  EXPECT_TRUE(p.onInput(InputEvent::Select));
+  EXPECT_TRUE(uiPrefs().battShowPercent());
+  EXPECT_TRUE(p.onInput(InputEvent::Select));
+  EXPECT_FALSE(uiPrefs().battShowPercent());
+}
+
+TEST(QuickActionPickerPanel, PicksAnAppletForASlot) {
+  prime();
+  AppletContext ctx;
+  QuickActionPickerPanel& pick = quickActionPicker();
+  pick.setSlot(UiPrefs::SLOT_RIGHT);
+  pick.begin(ctx);
+  // Rows are AppMenu registrations sorted by order: [Messages, Contacts].
+  EXPECT_TRUE(pick.onInput(InputEvent::NavDown));   // move to "Contacts"
+  EXPECT_TRUE(pick.onInput(InputEvent::Select));
+  EXPECT_STREQ("Contacts", uiPrefs().quickActionLabel(UiPrefs::SLOT_RIGHT));
+  EXPECT_EQ(&a1, uiPrefs().quickAction(UiPrefs::SLOT_RIGHT)->applet);
+}
+
+TEST(HomeSettingsPanel, RendersWithoutHost) {
+  prime();
+  AppletContext ctx;
+  HomeSettingsPanel& p = homeSettings();
+  p.begin(ctx);
+  FakeDisplayDriver d;
+  Canvas c(&d);
+  p.renderBody(c, 0, 13, 128, 51);
+  EXPECT_GT(d.fills.size(), 0u);
+}
+
+int main(int argc, char** argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}

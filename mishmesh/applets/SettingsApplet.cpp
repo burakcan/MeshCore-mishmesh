@@ -1,11 +1,11 @@
 #include <mishmesh/applets/SettingsApplet.h>
 #include <mishmesh/applets/SettingsDetailApplet.h>
+#include <mishmesh/applets/settings/HomeSettingsPanel.h>
 #include <mishmesh/applets/settings/ContactsSettingsPanel.h>
 #include <mishmesh/applets/settings/MessagesSettingsPanel.h>
 #include <mishmesh/applets/settings/AdvertSettingsPanel.h>
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
 #include <mishmesh/applets/settings/BluetoothPanel.h>
-#include <mishmesh/applets/settings/SoundPanel.h>
 #include <mishmesh/applets/settings/RadioSettingsPanel.h>
 #include <mishmesh/applets/settings/TimeSettingsPanel.h>
 #include <mishmesh/core/AppletHost.h>
@@ -15,27 +15,26 @@
 
 namespace mishmesh {
 
+static SettingsPanel* homePanelPtr()        { return &homeSettings(); }
 static SettingsPanel* contactsPanelPtr()    { return &contactsSettings(); }
 static SettingsPanel* messagesPanelPtr()    { return &messagesSettings(); }
 static SettingsPanel* advertPanelPtr()      { return &advertSettings(); }
 static SettingsPanel* systemInfoPanelPtr()  { return &systemInfoSettings(); }
 static SettingsPanel* bluetoothPanelPtr()   { return &bluetoothSettings(); }
-static SettingsPanel* soundPanelPtr()       { return &soundSettings(); }
 static SettingsPanel* radioPanelPtr()       { return &radioSettings(); }
 static SettingsPanel* timePanelPtr()        { return &timeSettings(); }
 
 static bool always(const AppletContext&) { return true; }
 static bool bleAvail(const AppletContext& c) { return c.app && c.app->bleSupported(); }
-static bool soundAvail(const AppletContext& c) { return c.sound != nullptr; }
 
 const SettingsApplet::Entry SettingsApplet::ENTRIES[ENTRY_COUNT] = {
+  { "Home",        homePanelPtr,       (uint16_t)Icon::Home,      always    },
   { "Contacts",    contactsPanelPtr,   (uint16_t)Icon::Users,     always    },
   { "Messages",    messagesPanelPtr,   (uint16_t)Icon::Message,   always    },
   { "Advert",      advertPanelPtr,     (uint16_t)Icon::Radio,     always    },
   { "Radio",       radioPanelPtr,      (uint16_t)Icon::Wifi,      always    },
   { "Time & date", timePanelPtr,       (uint16_t)Icon::Clock,     always    },
   { "Bluetooth",   bluetoothPanelPtr,  (uint16_t)Icon::Bluetooth, bleAvail  },
-  { "Sound",       soundPanelPtr,      (uint16_t)Icon::Bell,      soundAvail },
   { "System Info", systemInfoPanelPtr, (uint16_t)Icon::Chip,      always    },
 };
 

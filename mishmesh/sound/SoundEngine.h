@@ -19,6 +19,9 @@ public:
   bool playRtttl(const char* rtttl, SoundCategory cat);
   bool playScore(const uint8_t* score, SoundCategory cat = SoundCategory::Game);
   bool play(SoundId id);
+  // Ring at a fixed level regardless of the shared volume (alarm/timer rings:
+  // audible even with the system volume dialed to Mute). Master mute still gates.
+  bool play(SoundId id, VolumeLevel overrideVol);
   void stop();
   bool isPlaying() const { return _hasPending || _seq.isPlaying(); }
 
@@ -47,6 +50,8 @@ private:
   ISoundSource* _pending = nullptr;
   SoundCategory _pendingCat = SoundCategory::Ui;
   bool          _hasPending = false;
+  VolumeLevel   _pendingVol = VolumeLevel::Mid;   // one-shot override, armed by play(id, vol)
+  bool          _hasPendingVol = false;
   SoundCategory _curCat = SoundCategory::Ui;
   const void*   _exclusive = nullptr;
   VolumeLevel   _volume = VolumeLevel::Mid;

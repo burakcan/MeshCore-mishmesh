@@ -1,4 +1,5 @@
 #include <mishmesh/widgets/StatusBar.h>
+#include <mishmesh/widgets/BatteryIndicator.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
@@ -26,13 +27,11 @@ void StatusBar::draw(Canvas& c, int x, int y, int w, int h) {
   int ty = (h - 1 - bar.fontHeight(fontBody())) / 2;
   if (ty < 0) ty = 0;
 
-  // Battery % on the right; title ellipsized into whatever space is left.
-  char pct[8];
-  snprintf(pct, sizeof(pct), "%d%%", batteryPercent(_millivolts));
-  bar.drawText(fontBody(), w, ty, pct, DisplayDriver::LIGHT, TextAlign::Right);
+  BatteryIndicator batt;
+  batt.setMillivolts(_millivolts);
+  const int battW = batt.drawRightAligned(bar, w, h - 1);
 
-  const int pctW = bar.textWidth(fontBody(), pct);
-  const int titleW = w - pctW - 4;   // 4px gap before the battery %
+  const int titleW = w - battW - 4;   // 4px gap before the battery
   if (titleW > 0)
     bar.drawTextEllipsized(fontBody(), 0, ty, titleW, _title, DisplayDriver::LIGHT);
 }

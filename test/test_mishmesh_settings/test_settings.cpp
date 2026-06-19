@@ -263,16 +263,16 @@ TEST(SettingsApplet, SelectPushesDetailWithChosenPanel) {
 
   mishmesh::SettingsApplet menu;
   host.setRoot(&menu);
-  EXPECT_EQ(6, menu.entryCountForTest());  // Contacts, Messages, Advert, Radio, Time, System Info
+  EXPECT_EQ(7, menu.entryCountForTest());  // Home, Contacts, Messages, Advert, Radio, Time, System Info
 
-  // Row 0 = Contacts: Select pushes the detail bound to contactsSettings().
+  // Row 0 = Home: Select pushes the detail bound to homeSettings().
   host.dispatch(mishmesh::InputEvent::Select);
   EXPECT_EQ(&mishmesh::settingsDetailApplet(), host.foreground());
 
   host.dispatch(mishmesh::InputEvent::Back);   // pop back to the menu
   EXPECT_EQ(&menu, host.foreground());
 
-  // Row 1 = Messages.
+  // Row 1 = Contacts.
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::Select);
   EXPECT_EQ(&mishmesh::settingsDetailApplet(), host.foreground());
@@ -287,7 +287,7 @@ TEST(SettingsApplet, RendersStatusBarHeader) {
   mishmesh::Canvas c(&d);
   menu.onRender(c);
   EXPECT_GT(d.fills.size(), 0u);                 // header + list drew something
-  EXPECT_EQ(6, menu.entryCountForTest());        // Contacts/Messages/Advert/Radio/Time/SystemInfo all available
+  EXPECT_EQ(7, menu.entryCountForTest());        // Home/Contacts/Messages/Advert/Radio/Time/SystemInfo all available
 }
 
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
@@ -362,31 +362,7 @@ TEST(BluetoothPanel, PinRowHiddenOncePairedOrNoPin) {
   EXPECT_FALSE(mishmesh::BluetoothPanel::showPin(123456, true));
 }
 
-#include <mishmesh/applets/settings/SoundPanel.h>
-#include <mishmesh/sound/SoundEngine.h>
-#include <FakeToneOutput.h>
-
-TEST(SoundPanel, VolumeRowCyclesLevels) {
-  FakeToneOutput out;
-  mishmesh::sound::SoundEngine eng; eng.begin(&out);
-  eng.setVolume(mishmesh::sound::VolumeLevel::Mute);
-  mishmesh::AppletContext ctx; ctx.sound = &eng;   // no app -> panel writes engine directly
-  mishmesh::SoundPanel panel; panel.begin(ctx);
-  EXPECT_STREQ("Sound", panel.title());
-
-  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));   // Mute -> Low
-  EXPECT_EQ(mishmesh::sound::VolumeLevel::Low, eng.volume());
-  panel.onInput(mishmesh::InputEvent::Select);                // Low -> Mid
-  EXPECT_EQ(mishmesh::sound::VolumeLevel::Mid, eng.volume());
-}
-
-TEST(SoundPanel, LevelNames) {
-  using V = mishmesh::sound::VolumeLevel;
-  EXPECT_STREQ("Mute", mishmesh::SoundPanel::levelName(V::Mute));
-  EXPECT_STREQ("Low",  mishmesh::SoundPanel::levelName(V::Low));
-  EXPECT_STREQ("Mid",  mishmesh::SoundPanel::levelName(V::Mid));
-  EXPECT_STREQ("High", mishmesh::SoundPanel::levelName(V::High));
-}
+#include <mishmesh/sound/Sounds.h>
 
 namespace {
 class FakeApp : public mishmesh::AppServices {
@@ -402,33 +378,31 @@ public:
 };
 }  // namespace
 
-TEST(SoundPanelRows, ShowsVolumeAndPerTypeDefaults) {
+TEST(MessagesSettingsPanel, ShowsPerTypeSoundRows) {
   // app reports channel default = Silent, DM default = tone index 1 (Droplet)
   FakeApp app; app.ch = mishmesh::sound::NOTIFY_TONE_SILENT;
   app.dm = mishmesh::sound::NOTIFY_TONE_BASE + 1;
-  mishmesh::sound::SoundEngine eng;
-  mishmesh::AppletContext ctx; ctx.app = &app; ctx.sound = &eng;
-  auto& panel = mishmesh::soundSettings();
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.app = &app; ctx.messages = &svc;
+  mishmesh::MessagesSettingsPanel panel;
   panel.begin(ctx);
-  // Expect three rows: Volume, Channel msgs (Silent), Direct msgs (Droplet)
-  EXPECT_EQ(panel.rowCountForTest(), 3);
-  EXPECT_STREQ(panel.rowValueForTest(1), "Silent");
-  EXPECT_STREQ(panel.rowValueForTest(2), "Droplet");
+  // Rows 3/4 = Channel/Direct sound, showing the resolved tone names.
+  EXPECT_STREQ("Silent", panel.rowValueForTest(3));
+  EXPECT_STREQ("Droplet", panel.rowValueForTest(4));
 }
 
-TEST(SettingsApplet, HidesBluetoothAndSoundWhenUnavailable) {
+TEST(SettingsApplet, HidesBluetoothWhenUnavailable) {
   FakeDisplayDriver d;
-  mishmesh::AppletContext ctx;            // no app, no sound
+  mishmesh::AppletContext ctx;            // no app -> no BLE
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  EXPECT_EQ(6, menu.entryCountForTest());   // Contacts/Messages/Advert/Radio/Time/System Info only
+  EXPECT_EQ(7, menu.entryCountForTest());   // Home/Contacts/Messages/Advert/Radio/Time/System Info
 }
 
-TEST(SettingsApplet, ShowsBluetoothAndSoundWhenAvailable) {
+TEST(SettingsApplet, ShowsBluetoothWhenAvailable) {
   FakeDisplayDriver d;
   FakeBleApp2 app;                          // bleSupported() == true
-  FakeToneOutput out; mishmesh::sound::SoundEngine eng; eng.begin(&out);
-  mishmesh::AppletContext ctx; ctx.app = &app; ctx.sound = &eng;
+  mishmesh::AppletContext ctx; ctx.app = &app;
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
   EXPECT_EQ(8, menu.entryCountForTest());   // all eight visible

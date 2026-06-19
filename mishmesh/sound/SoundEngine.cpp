@@ -33,6 +33,7 @@ bool SoundEngine::gate(SoundCategory cat) const {
 
 void SoundEngine::queue(ISoundSource* src, SoundCategory cat) {
   _pending = src; _pendingCat = cat; _hasPending = true;
+  _hasPendingVol = false;   // a normal play drops any armed override
 }
 
 bool SoundEngine::playRtttl(const char* rtttl, SoundCategory cat) {
@@ -55,7 +56,8 @@ void SoundEngine::tick(uint32_t nowMs) {
   if (_hasPending) {
     _hasPending = false;
     _curCat = _pendingCat;
-    _seq.start(_pending, effVol(), nowMs);
+    _seq.start(_pending, _hasPendingVol ? _pendingVol : effVol(), nowMs);
+    _hasPendingVol = false;
   }
   _seq.tick(nowMs);
 }
@@ -93,6 +95,13 @@ bool SoundEngine::play(SoundId id) {
   const SoundDef* d = soundDef(id);
   if (!d) return false;
   return playRtttl(d->rtttl, d->category);
+}
+
+bool SoundEngine::play(SoundId id, VolumeLevel overrideVol) {
+  if (!play(id)) return false;
+  _pendingVol = overrideVol;
+  _hasPendingVol = true;
+  return true;
 }
 
 static SoundEngine* s_active = nullptr;

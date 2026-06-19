@@ -14,16 +14,22 @@ class TabBar : public Widget {
   uint16_t    _icons[MAX_TABS];
   int         _count;
   int         _sel;
-  const char* _deco;          // right-floating decoration text (e.g. battery), not scrolled
+  const char* _deco;          // right-floating decoration text, not scrolled
+  bool        _battery;       // decoration slot shows the shared battery indicator
+  uint16_t    _batteryMv;
 public:
-  TabBar() : _count(0), _sel(0), _deco("") {}
+  TabBar() : _count(0), _sel(0), _deco(""), _battery(false), _batteryMv(0) {}
   void clear() { _count = 0; _sel = 0; }
   void addTab(const char* label, uint16_t icon = 0) {
     if (_count < MAX_TABS) { _labels[_count] = label ? label : ""; _icons[_count] = icon; _count++; }
   }
   // A right-aligned decoration that floats outside the scrollable tab strip; the
   // strip lays out and scrolls within the remaining width. "" = none.
-  void setDecoration(const char* text) { _deco = text ? text : ""; }
+  void setDecoration(const char* text) { _deco = text ? text : ""; _battery = false; }
+  // Battery readout in the decoration slot, rendered via the shared
+  // BatteryIndicator so every tabbed screen follows the system-wide
+  // icon-vs-percent setting.
+  void setBattery(uint16_t millivolts) { _batteryMv = millivolts; _battery = true; }
   int count() const { return _count; }
   int selected() const { return _sel; }
   void setSelected(int i) { if (i >= 0 && i < _count) _sel = i; }

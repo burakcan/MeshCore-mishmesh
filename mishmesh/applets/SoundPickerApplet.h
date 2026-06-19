@@ -8,19 +8,22 @@
 
 namespace mishmesh {
 
-// Shared notification-ringtone picker (radio list). Two modes:
+// Shared ringtone picker (radio list). Three modes:
 //  - global:  set the default tone for a message type (channel vs direct);
 //             rows are the tones then "Silent" (no "Default" - these ARE it).
 //  - per-chat: override a single chat's tone; rows are "Default", the tones,
 //             then "Silent".
+//  - clock:   pick the alarm or timer ring tune; rows are the clock-tone list
+//             (no Silent - a ring you armed always sounds).
 // Select writes the choice (AppServices for global, MessagesService for
-// per-chat) and plays a preview; Back bubbles -> host pops. Launch-only
-// singleton, like the old ChatNotifyApplet / ContactPermissionsApplet.
+// per-chat, ClockService for clock) and plays a preview; Back bubbles -> host
+// pops. Launch-only singleton, like the old ChatNotifyApplet.
 class SoundPickerApplet : public Applet, public ListModel {
 public:
   SoundPickerApplet();
   void setGlobal(bool channel, const char* title);
   void setChat(const ConvoKey& key, const char* title);
+  void setClock(bool alarm, const char* title);
 
   void onStart(AppletContext& ctx) override;
   int  onRender(Canvas& c) override;
@@ -42,6 +45,7 @@ private:
   sound::SoundEngine* _snd = nullptr;
   bool      _perChat = false;
   bool      _channel = false;
+  bool      _clock   = false;   // clock mode; _channel doubles as "is alarm"
   ConvoKey  _key{};
   char      _title[44] = {0};
   ListMenu  _list;

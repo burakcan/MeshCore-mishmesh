@@ -1,8 +1,12 @@
 #include <mishmesh/applets/settings/TimeSettingsPanel.h>
 #include <mishmesh/applets/SetTimeApplet.h>
+#include <mishmesh/applets/SoundPickerApplet.h>
+#include <mishmesh/core/Actions.h>   // volumeLevelName
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/ClockService.h>
 #include <mishmesh/core/TimeFormat.h>
+#include <mishmesh/sound/Sounds.h>
 #include <stdio.h>
 
 namespace mishmesh {
@@ -21,8 +25,15 @@ static void dateFmtStepLabel(int v, char* out, uint16_t cap) {
 
 const char* TimeSettingsPanel::Model::label(int i) const {
   static const char* LABELS[] = { "Time zone", "Time format", "Date format",
+                                  "Alarm sound", "Alarm volume",
+                                  "Timer sound", "Timer volume",
                                   "Set automatically", "Set date & time" };
-  return (i >= 0 && i < 5) ? LABELS[i] : "";
+  return (i >= 0 && i < 9) ? LABELS[i] : "";
+}
+
+// 0 = follow the shared sound volume; 1..3 = fixed level (rings through Mute).
+static const char* ringVolumeName(uint8_t v) {
+  return v == 0 ? "System" : volumeLevelName(v);
 }
 
 const char* TimeSettingsPanel::Model::value(int i) const {
@@ -35,6 +46,10 @@ const char* TimeSettingsPanel::Model::value(int i) const {
     formatDate(buf, sizeof(buf), lt, (DateFormat)app->dateFormat());
     return buf;
   }
+  if (i == AlarmSound)  return sound::clockToneName(clockService().alarmToneIdx());
+  if (i == TimerSound)  return sound::clockToneName(clockService().timerToneIdx());
+  if (i == AlarmVolume) return ringVolumeName(clockService().alarmVolume());
+  if (i == TimerVolume) return ringVolumeName(clockService().timerVolume());
   if (i == SetTime) {
     LocalTime lt = applyTz(app->epochSeconds(), app->tzOffsetMinutes());
     formatDate(buf, sizeof(buf), lt, (DateFormat)app->dateFormat());
@@ -46,6 +61,7 @@ const char* TimeSettingsPanel::Model::value(int i) const {
 void TimeSettingsPanel::begin(AppletContext& ctx) {
   _app = ctx.app;
   _host = ctx.host;
+  _snd = ctx.sound;
   _model.app = _app;
   _list.setRowHeight(14);
   _list.setModel(&_model);
@@ -98,6 +114,21 @@ bool TimeSettingsPanel::onInput(InputEvent ev) {
       _stepper.configure("Date format", _app->dateFormat(), 0,
                          (int)DateFormat::COUNT - 1, dateFmtStepLabel);
       _editingDateFmt = true;
+    } else if (i == Model::AlarmSound || i == Model::TimerSound) {
+      bool alarm = i == Model::AlarmSound;
+      soundPickerApplet().setClock(alarm, alarm ? "Alarm sound" : "Timer sound");
+      if (_host) _host->push(&soundPickerApplet());
+    } else if (i == Model::AlarmVolume || i == Model::TimerVolume) {
+      // Cycle System -> Low -> Mid -> High in place, previewing the ring.
+      bool alarm = i == Model::AlarmVolume;
+      ClockService& cs = clockService();
+      uint8_t v = ((alarm ? cs.alarmVolume() : cs.timerVolume()) + 1) & 3;
+      if (alarm) cs.setAlarmVolume(v); else cs.setTimerVolume(v);
+      if (_snd) {
+        sound::SoundId id = sound::clockToneId(alarm ? cs.alarmToneIdx() : cs.timerToneIdx());
+        if (v) _snd->play(id, (sound::VolumeLevel)v);
+        else   _snd->play(id);
+      }
     } else if (i == Model::SetAuto) {
       _app->setAutoTimeSync(!_app->autoTimeSync());
       // count may shrink to 3; keep selection in range.

@@ -12,7 +12,7 @@ typedef struct ::mf_font_s Font;
 const Font* fontBody();     // Nokia Cellphone FC size 8 - lists, status bar, body (default)
 const Font* fontSubtitle(); // Nokia Cellphone FC size 12 - contact-detail header card only
 const Font* fontCaption();  // Tom Thumb 3x6 (4px advance, 6px line) - recessive metadata
-const Font* fontNum();     // Nokia Cellphone FC size 24, digits/':'/'.' — clock
+const Font* fontNum();     // Nokia Cellphone FC size 16, digits/':'/'.' - clock
 const Font* iconFont();    // Pixelarticons 12px - see Icon
 
 // Pixelarticons glyphs in iconFont(). Codepoints assigned by build_icons.py.
@@ -47,6 +47,13 @@ enum class Icon : uint16_t {
   Feather     = 0xE01B,   // quill = compose/write
   Zap         = 0xE01C,   // lightning = quick replies
   Bluetooth   = 0xE01D,   // BLE applet
+  Volume      = 0xE01E,   // sound audible (drawer tile)
+  VolumeMute  = 0xE01F,   // sound muted (top bar + drawer tile)
+  Moon        = 0xE020,   // theme tile: dark mode
+  Sun         = 0xE021,   // theme tile: light mode
+  Hourglass   = 0xE022,   // timer (tab + home indicator)
+  AlarmClock  = 0xE023,   // alarm (tab + home indicator)
+  Globe       = 0xE024,   // world clock tab
 };
 
 }  // namespace mishmesh

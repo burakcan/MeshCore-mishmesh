@@ -1,4 +1,5 @@
 #include <mishmesh/widgets/TabBar.h>
+#include <mishmesh/widgets/BatteryIndicator.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
 
@@ -19,6 +20,11 @@ void TabBar::measure(int& w, int& h) const {
 static const int DECO_GAP = 4;   // gap between the tab strip and the floating decoration
 
 int TabBar::decoWidthForTest(Canvas& c) const {
+  if (_battery) {
+    BatteryIndicator b;
+    b.setMillivolts(_batteryMv);
+    return b.measureWidth(c) + DECO_GAP;
+  }
   return _deco[0] ? c.textWidth(fontBody(), _deco) + DECO_GAP : 0;
 }
 
@@ -34,7 +40,10 @@ void TabBar::draw(Canvas& c, int x, int y, int w, int h) {
   int bodyH = view.fontHeight(fontBody());
 
   // Reserve the decoration's width on the right; the strip uses what's left.
-  int decoW = _deco[0] ? view.textWidth(fontBody(), _deco) + DECO_GAP : 0;
+  BatteryIndicator batt;
+  batt.setMillivolts(_batteryMv);
+  int decoW = _battery ? batt.measureWidth(view) + DECO_GAP
+            : _deco[0] ? view.textWidth(fontBody(), _deco) + DECO_GAP : 0;
   int stripW = w - decoW; if (stripW < 0) stripW = 0;
 
   if (_count > 0) {
@@ -81,7 +90,9 @@ void TabBar::draw(Canvas& c, int x, int y, int w, int h) {
 
   // Floating decoration: right-aligned, drawn on the full-width view so it never
   // scrolls with the strip.
-  if (_deco[0])
+  if (_battery)
+    batt.drawRightAligned(view, w, h - 1);
+  else if (_deco[0])
     view.drawText(fontBody(), w, (h - bodyH) / 2, _deco, DisplayDriver::LIGHT, TextAlign::Right);
 
   view.fillRect(0, h - 1, w, 1, DisplayDriver::LIGHT);   // full-width baseline divider

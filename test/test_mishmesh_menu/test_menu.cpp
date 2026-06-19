@@ -2,7 +2,6 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/applets/AppMenuApplet.h>
-#include <mishmesh/applets/StopwatchApplet.h>
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/core/Canvas.h>
 #include "FakeDisplayDriver.h"
@@ -112,37 +111,6 @@ TEST(AppMenu, BackBubblesToHostAndIsNotConsumed) {
   EXPECT_EQ(2, host.depth());
   host.dispatch(InputEvent::Back);       // alpha doesn't consume -> pops
   EXPECT_EQ(1, host.depth());
-}
-
-// ---- Stopwatch -------------------------------------------------------------
-
-TEST(Stopwatch, AccumulatesWhileRunning) {
-  StopwatchApplet sw;
-  sw.toggle(1000);                       // start
-  EXPECT_EQ(0u, sw.elapsedMs(1000));
-  EXPECT_EQ(1500u, sw.elapsedMs(2500));
-}
-
-TEST(Stopwatch, FreezesWhenStopped) {
-  StopwatchApplet sw;
-  sw.toggle(1000);
-  sw.toggle(2500);                       // stop at 1500ms
-  EXPECT_EQ(1500u, sw.elapsedMs(9999));
-}
-
-TEST(Stopwatch, ResumesFromBankedTime) {
-  StopwatchApplet sw;
-  sw.toggle(1000);
-  sw.toggle(2500);                       // banked 1500
-  sw.toggle(3000);                       // resume
-  EXPECT_EQ(2000u, sw.elapsedMs(3500));
-}
-
-TEST(Stopwatch, ResetClearsElapsed) {
-  StopwatchApplet sw;
-  sw.toggle(1000);
-  sw.reset();
-  EXPECT_EQ(0u, sw.elapsedMs(5000));
 }
 
 int main(int argc, char** argv) {

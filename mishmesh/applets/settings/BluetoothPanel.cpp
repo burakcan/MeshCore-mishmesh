@@ -1,4 +1,5 @@
 #include <mishmesh/applets/settings/BluetoothPanel.h>
+#include <mishmesh/core/Actions.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <stdio.h>
@@ -42,9 +43,7 @@ bool BluetoothPanel::onInput(InputEvent ev) {
   if (_list.onInput(ev)) return true;
   if (ev == InputEvent::Select) {
     if (_list.selected() == Toggle && _app) {
-      bool now = !_app->bleEnabled();
-      _app->setBleEnabled(now);
-      if (_host) _host->postToast(now ? "Bluetooth on" : "Bluetooth off");
+      toggleBle(_app, _host);   // shared with the quick drawer's BLE tile
     }
     return true;   // Status/Pin rows are read-only; swallow Select
   }

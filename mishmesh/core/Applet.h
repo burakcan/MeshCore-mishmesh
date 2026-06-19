@@ -88,6 +88,15 @@ struct AppServices {
   virtual void    setEpochSeconds(uint32_t) {}    // manual clock set (writes RTC)
   virtual uint8_t dateFormat() const { return 0; }   // mishmesh::DateFormat (0=DMY)
   virtual void    setDateFormat(uint8_t) {}
+  // GPS power. Defaults keep the framework companion-agnostic (unsupported);
+  // the adapter overrides these against the SensorManager "gps" setting.
+  virtual bool gpsSupported() const { return false; }
+  virtual bool gpsEnabled()   const { return false; }
+  virtual void setGpsEnabled(bool) {}
+  // Fix state, from the LocationProvider. Both report "no" while GPS is off
+  // so a stale last fix never shows. Satellites: 0 = none/unknown.
+  virtual bool gpsHasFix() const { return false; }
+  virtual int  gpsSatellites() const { return 0; }
   // [/mishmesh]
 };
 

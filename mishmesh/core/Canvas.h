@@ -9,6 +9,12 @@ namespace mishmesh {
 
 enum class TextAlign { Left, Center, Right };
 
+// The display theme, applied centrally: in light mode (UiPrefs::darkMode()
+// false) LIGHT and DARK swap. Canvas resolves every color through this at its
+// driver boundary; AppletHost uses it for the frame-clear background. Raw
+// blits (games) intentionally bypass it.
+DisplayDriver::Color themedColor(DisplayDriver::Color c);
+
 // A clipped drawing surface over a DisplayDriver: a value type carrying a
 // drawing origin, a clip window, and the current frame time. The origin and the
 // clip are tracked separately so a sub-region requested at a negative offset

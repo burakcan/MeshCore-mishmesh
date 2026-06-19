@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/text/Fonts.h>
 #include "FakeDisplayDriver.h"
 
@@ -131,6 +132,23 @@ TEST(CanvasFallback, UnrenderableGlyphDrawsBlockNotQuestionMark) {
     }
   }
   EXPECT_EQ(1, blocks);
+}
+
+TEST(CanvasTheme, LightModeSwapsColorsAtDriverBoundary) {
+  mishmesh::uiPrefs().resetForTest();               // dark: identity mapping
+  FakeDisplayDriver d;
+  mishmesh::Canvas c(&d);
+  c.fillRect(0, 0, 4, 4, DisplayDriver::LIGHT);
+  EXPECT_EQ(DisplayDriver::LIGHT, d.lastColor);
+
+  mishmesh::uiPrefs().setDarkMode(false);           // light mode: swap
+  c.fillRect(0, 0, 4, 4, DisplayDriver::LIGHT);
+  EXPECT_EQ(DisplayDriver::DARK, d.lastColor);
+  c.fillRect(0, 0, 4, 4, DisplayDriver::DARK);
+  EXPECT_EQ(DisplayDriver::LIGHT, d.lastColor);
+  EXPECT_EQ(DisplayDriver::DARK, mishmesh::themedColor(DisplayDriver::LIGHT));
+
+  mishmesh::uiPrefs().resetForTest();               // don't leak into other tests
 }
 
 int main(int argc, char** argv) {

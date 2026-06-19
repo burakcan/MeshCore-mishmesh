@@ -232,7 +232,13 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
   uint32_t _pt0 = millis();   // frame compose+flush cost, measured around the whole draw
 #endif
   _canvas.setNow(now_ms);
-  _display->startFrame();
+  // Themed background - except in game mode, whose raw 1bpp blits bypass the
+  // theme and expect the panel cleared dark. Drivers may ignore startFrame's
+  // bkg (SH1106 clears black unconditionally), so in light mode paint the
+  // background ourselves through the themed canvas.
+  _display->startFrame(exclusive ? DisplayDriver::DARK : themedColor(DisplayDriver::DARK));
+  if (!exclusive && themedColor(DisplayDriver::DARK) == DisplayDriver::LIGHT)
+    _canvas.fillRect(0, 0, _canvas.width(), _canvas.height(), DisplayDriver::DARK);
   int delay = fg->onRender(_canvas);
   if (now_ms < _toast_until) {
     int w = _canvas.width(), hh = 14, by = _canvas.height() - hh;

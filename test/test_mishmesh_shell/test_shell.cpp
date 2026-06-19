@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <mishmesh/core/AppletHost.h>
+#include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/applets/HomeApplet.h>
 #include "FakeDisplayDriver.h"
 
@@ -30,6 +32,8 @@ public:
 }  // namespace
 
 TEST(HomeApplet, RendersStatusAndClock) {
+  resetRegistry();                 // deterministic quick-action resolution
+  uiPrefs().resetForTest();
   FakeDisplayDriver d;
   FakeApp app;
   app.name = "alice";
@@ -45,6 +49,8 @@ TEST(HomeApplet, RendersStatusAndClock) {
 }
 
 TEST(HomeApplet, SelectPushesTheMenu) {
+  resetRegistry();                 // deterministic quick-action resolution
+  uiPrefs().resetForTest();
   FakeDisplayDriver d;
   FakeApp app;
   AppletContext ctx; ctx.app = &app;
@@ -61,6 +67,8 @@ TEST(HomeApplet, SelectPushesTheMenu) {
 }
 
 TEST(HomeApplet, SelectWithoutMenuStaysHome) {
+  resetRegistry();                 // deterministic quick-action resolution
+  uiPrefs().resetForTest();
   FakeDisplayDriver d;
   FakeApp app;
   AppletContext ctx; ctx.app = &app;

@@ -9,7 +9,6 @@
 #include <mishmesh/core/RetryEngine.h>   // RetryEngine::MAX_RETRIES (retry label)
 #include <mishmesh/text/Fonts.h>
 #include <mishmesh/core/TimeFormat.h>
-#include <mishmesh/widgets/StatusBar.h>   // batteryPercent()
 #include <mishmesh/widgets/Modal.h>
 #include <mishmesh/core/QuickReplyStore.h>
 #include <cstdio>
@@ -285,9 +284,8 @@ int MessageThreadApplet::onRender(Canvas& c) {
     if (_focus >= n) _focus = n > 0 ? n - 1 : 0;   // clamp after deletions
   }
 
-  // Header: tab bar ([0] conversation, [1] Settings) with a floating battery %.
-  snprintf(_battBuf, sizeof(_battBuf), "%d%%", batteryPercent(_app ? _app->batteryMillivolts() : 0));
-  _tabs.setDecoration(_battBuf);
+  // Header: tab bar ([0] conversation, [1] Settings) with a floating battery.
+  _tabs.setBattery(_app ? _app->batteryMillivolts() : 0);
   _tabs.draw(c, 0, 0, c.width(), HDR_H);
 
   Canvas body = c.region(0, HDR_H, c.width(), c.height() - HDR_H);

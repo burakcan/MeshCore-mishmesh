@@ -67,7 +67,6 @@ private:
   bool             _qrOpen = false;   // quick-replies picker overlay (twin of _menuOpen)
   char             _titleBuf[40] = {0};  // stable backing for the conversation tab label
   char             _fallbackName[32] = {0};   // header name when no conversation exists yet
-  char             _battBuf[8] = {0};    // stable backing for the battery decoration
 
   TabBar    _tabs;       // [0] conversation, [1] Settings
   ChatMenu  _chatMenu;   // shared chat-action menu, shown inline on the Settings tab

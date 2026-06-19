@@ -8,6 +8,8 @@ enum class SoundId : uint8_t {
   MsgChime, MsgKerplop, MsgAck,     // named, selectable notification ringtones
   UiTick, UiConfirm, UiError,
   MsgTritone, MsgDing, MsgChirp, MsgSms, MsgKnock,   // [mishmesh] added notification tones
+  TimerDone, AlarmRing,                              // [mishmesh] clock applet rings
+  NokiaTune, BigBen, FurElise, OdeToJoy, Reveille,   // [mishmesh] classic ring tunes
   COUNT
 };
 
@@ -39,5 +41,11 @@ bool resolveNotifyTone(uint8_t chatByte, uint8_t typeByte, SoundId typeDefault, 
 // Display label for an encoded byte. perChat: 0 -> "Default". !perChat: 0 -> the
 // type default tone's name. 1 -> "Silent". Else the tone's name.
 const char* notifyToneEncodedName(uint8_t encoded, bool perChat, SoundId typeDefault);
+
+// Selectable alarm/timer ring tunes, in picker display order. The alarm and the
+// timer each store an index into this list (ClockService "altn"/"tmtn").
+int         clockToneCount();
+SoundId     clockToneId(int i);     // i in [0,count); out of range -> first
+const char* clockToneName(int i);   // == soundDef(clockToneId(i))->name
 
 }}  // namespace mishmesh::sound

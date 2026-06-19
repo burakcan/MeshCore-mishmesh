@@ -6,9 +6,12 @@
 
 namespace mishmesh {
 
+namespace sound { class SoundEngine; }
+
 // Time settings: timezone offset (stepper), 12/24h format (toggle-in-place),
-// "Set automatically" (toggle), and manual "Set date & time" (opens SetTimeApplet;
-// hidden while auto is on). Source of truth: AppServices.
+// alarm/timer ring tunes (push the shared sound picker), "Set automatically"
+// (toggle), and manual "Set date & time" (opens SetTimeApplet; hidden while
+// auto is on). Source of truth: AppServices (+ ClockService for the tunes).
 class TimeSettingsPanel : public SettingsPanel {
 public:
   const char* title() const override { return "Time & date"; }
@@ -24,8 +27,9 @@ public:
 private:
   struct Model : ListModel {
     AppServices* app = nullptr;
-    enum Row : int { TimeZone, TimeFmt, DateFmt, SetAuto, SetTime };
-    int count() const override { return (app && app->autoTimeSync()) ? 4 : 5; }
+    enum Row : int { TimeZone, TimeFmt, DateFmt, AlarmSound, AlarmVolume,
+                     TimerSound, TimerVolume, SetAuto, SetTime };
+    int count() const override { return (app && app->autoTimeSync()) ? 8 : 9; }
     const char* label(int i) const override;
     bool isToggle(int i) const override { return i == SetAuto; }
     bool toggleState(int i) const override { return app && app->autoTimeSync(); }
@@ -34,6 +38,7 @@ private:
 
   AppServices*  _app = nullptr;
   AppletHost*   _host = nullptr;
+  sound::SoundEngine* _snd = nullptr;   // ring preview on volume cycle
   ListMenu      _list;
   StepperDialog _stepper;   // shared modal: timezone or date-format (one at a time)
   bool          _editingTz = false;

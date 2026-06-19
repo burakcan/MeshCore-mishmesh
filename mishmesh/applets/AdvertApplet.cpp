@@ -7,7 +7,6 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/ContactFormat.h>             // kindIcon / contactLabel / contactFormatAge
 #include <mishmesh/text/Fonts.h>
-#include <mishmesh/widgets/StatusBar.h>              // batteryPercent
 #include <stdio.h>
 
 namespace mishmesh {
@@ -68,8 +67,7 @@ void AdvertApplet::syncListToTab() {
 int AdvertApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   int barH = 13;
-  snprintf(_battBuf, sizeof(_battBuf), "%d%%", batteryPercent(_app ? _app->batteryMillivolts() : 0));
-  _tabs.setDecoration(_battBuf);
+  _tabs.setBattery(_app ? _app->batteryMillivolts() : 0);
   _tabs.draw(c, 0, 0, w, barH);
   int bodyY = barH + 1;
   if (settingsTab()) return advertSettings().renderBody(c, 0, bodyY, w, h - bodyY);

@@ -4,7 +4,10 @@
 #include <helpers/sensors/LocationProvider.h>
 // [/mishmesh]
 #include <mishmesh/applets/NotificationApplet.h>
+#include <mishmesh/applets/ClockAlertApplet.h>
+#include <mishmesh/core/ClockService.h>
 #include <mishmesh/core/QuickReplyStore.h>
+#include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/core/TelemetryDecode.h>
 #include <mishmesh/core/Mention.h>
 #include <helpers/AdvertDataHelpers.h>   // ADV_TYPE_CHAT
@@ -180,6 +183,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _theStorage.ds = the_mesh.getStore();
   ctx.storage = &_theStorage;
   mishmesh::quickReplyStore().begin(&_theStorage);   // load canned replies
+  mishmesh::uiPrefs().begin(&_theStorage);   // battery style + home shortcuts
+  mishmesh::clockService().begin(&_theStorage);   // alarm / world cities / timer duration
   ctx.sound = &_sound;          // [mishmesh]
   // [/mishmesh]
   _host = new mishmesh::AppletHost(_display, ctx);
@@ -369,6 +374,17 @@ void UITask::loop() {
   }
   // [/mishmesh]
   if (_host != nullptr) {
+    // Clock engine: the stopwatch/timer/alarm keep counting while their UI is
+    // closed; a fired timer/alarm raises the alert screen from any state.
+    mishmesh::ClockEvent cev =
+        mishmesh::clockService().tick(millis(), epochSeconds(), tzOffsetMinutes());
+    if (cev != mishmesh::ClockEvent::None) {
+      mishmesh::clockAlertApplet().raise(cev);
+      if (!_host->isDisplayOn()) _host->wakeDisplay();
+      if (_host->foreground() != &mishmesh::clockAlertApplet())
+        _host->push(&mishmesh::clockAlertApplet());
+      _host->requestRender();
+    }
     _sound.tick(millis());   // [mishmesh]
     _host->loop(millis());
   }

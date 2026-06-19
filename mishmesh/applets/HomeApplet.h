@@ -1,26 +1,36 @@
 #pragma once
 
 #include <mishmesh/core/Applet.h>
-#include <mishmesh/widgets/StatusBar.h>
+#include <mishmesh/widgets/BatteryIndicator.h>
+#include <mishmesh/widgets/QuickDrawer.h>
 
 namespace mishmesh {
 
-// The root shell: a status bar plus a centred clock. Select opens the app menu,
-// which the adapter injects via setMenu() so Home stays unaware of the menu type.
+// The root shell, watch-face style: top bar (node name + exceptional-state
+// icons + battery), left-aligned clock/date, unread line, and a persistent
+// gesture hint bar. Select opens the injected app menu; NavLeft/NavRight
+// open the UiPrefs-configured shortcuts; NavDown opens the quick-toggles
+// drawer overlay (owned here so the face stays visible beneath it).
 class HomeApplet : public Applet {
-  StatusBar _bar;
+  BatteryIndicator _batt;
+  QuickDrawer _drawer;
   Applet* _menu;
   AppletHost* _host;
   AppServices* _app;
-  // [mishmesh] total-unread indicator
+  sound::SoundEngine* _sound = nullptr;
   struct MessagesService* _msgs = nullptr;
-  // [/mishmesh]
 public:
   HomeApplet() : Applet("Home"), _menu(nullptr), _host(nullptr), _app(nullptr) {}
 
   void setMenu(Applet* m) { _menu = m; }
 
+  // First 4 chars of a registry label, for the hint bar. out must hold 5.
+  static void hintLabel(const char* label, char out[5]);
+
+  QuickDrawer& drawerForTest() { return _drawer; }
+
   void onStart(AppletContext& ctx) override;
+  void onBackground() override { _drawer.closeNow(); }
   int onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
 };

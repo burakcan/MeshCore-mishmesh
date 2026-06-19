@@ -28,6 +28,25 @@ TEST(Applet, DefaultOnInputDoesNotConsume) {
   EXPECT_FALSE(a.onInput(InputEvent::Back));
 }
 
+namespace {
+// Minimal concrete AppServices to pin the companion-agnostic GPS defaults.
+struct BareServices : mishmesh::AppServices {
+  const char* nodeName() const override { return ""; }
+  uint16_t batteryMillivolts() const override { return 0; }
+  uint32_t epochSeconds() const override { return 0; }
+};
+}  // namespace
+
+TEST(AppServices, GpsDefaultsAreOffAndInert) {
+  BareServices s;
+  EXPECT_FALSE(s.gpsSupported());
+  EXPECT_FALSE(s.gpsEnabled());
+  s.setGpsEnabled(true);             // default is a no-op
+  EXPECT_FALSE(s.gpsEnabled());
+  EXPECT_FALSE(s.gpsHasFix());
+  EXPECT_EQ(0, s.gpsSatellites());
+}
+
 TEST(Applet, LifecycleHooksAreCallable) {
   RecordingApplet a;
   AppletContext ctx;

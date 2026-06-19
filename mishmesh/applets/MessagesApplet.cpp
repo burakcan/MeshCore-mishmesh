@@ -7,7 +7,6 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/widgets/Modal.h>
-#include <mishmesh/widgets/StatusBar.h>   // batteryPercent()
 #include <mishmesh/text/Fonts.h>
 #include <cstdio>
 
@@ -122,8 +121,7 @@ int MessagesApplet::visibleRowCountForTest() const {
 int MessagesApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   int barH = 13;
-  snprintf(_battBuf, sizeof(_battBuf), "%d%%", batteryPercent(_app ? _app->batteryMillivolts() : 0));
-  _tabs.setDecoration(_battBuf);
+  _tabs.setBattery(_app ? _app->batteryMillivolts() : 0);
   _tabs.draw(c, 0, 0, w, barH);
   int bodyY = barH + 1;
   int bodyH = h - bodyY;
