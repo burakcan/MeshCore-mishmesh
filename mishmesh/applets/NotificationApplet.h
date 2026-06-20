@@ -5,7 +5,8 @@
 
 namespace mishmesh {
 
-// Full-screen "new message" banner, raised by the notification router when a
+// Modal "new message" banner (an inset card over a cleared screen), raised by
+// the notification router when a
 // message lands while the device is idle - asleep, or sitting on the home screen.
 // Back clears it, Select opens the chat, and it auto-dismisses after a few seconds
 // if left untouched. A reused singleton (see notificationApplet()); the subject

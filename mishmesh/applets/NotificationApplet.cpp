@@ -57,55 +57,60 @@ int NotificationApplet::onRender(Canvas& c) {
   if (_raisedAt == 0) _raisedAt = now ? now : 1;
   if (now - _raisedAt >= AUTO_MS) { if (_host) _host->pop(); return 0; }
 
-  const int W = c.width(), H = c.height();
-  c.fillRect(0, 0, W, H, DisplayDriver::DARK);   // clear whatever was behind
+  c.fillRect(0, 0, c.width(), c.height(), DisplayDriver::DARK);   // clear whatever was behind
+
+  // Inset the card so it reads as a floating modal rather than a full screen.
+  // Vertical inset is kept small so two wrapped preview lines still fit.
+  const int MX = 6, MY = 2;
+  Canvas card = c.region(MX, MY, c.width() - 2 * MX, c.height() - 2 * MY);
+  const int W = card.width(), H = card.height();
 
   // Inverted header band: source icon + label, with an "open" affordance at the
   // right. For channels the label is the group name; the person is the body line.
   const int HDR = 13;
-  c.fillRect(1, 1, W - 2, HDR - 1, DisplayDriver::LIGHT);
-  int gh = c.fontHeight(iconFont());  if (gh <= 0) gh = 12;
-  int fb = c.fontHeight(fontBody());  if (fb <= 0) fb = 8;
+  card.fillRect(1, 1, W - 2, HDR - 1, DisplayDriver::LIGHT);
+  int gh = card.fontHeight(iconFont());  if (gh <= 0) gh = 12;
+  int fb = card.fontHeight(fontBody());  if (fb <= 0) fb = 8;
   int hIcon = (uint16_t)(_isChannel ? Icon::Users : Icon::Message);
-  c.drawGlyph(iconFont(), 3, 1 + (HDR - 1 - gh) / 2, (uint16_t)hIcon, DisplayDriver::DARK);
+  card.drawGlyph(iconFont(), 3, 1 + (HDR - 1 - gh) / 2, (uint16_t)hIcon, DisplayDriver::DARK);
   const char* hdr = (_isChannel && _name[0]) ? _name : "New message";
-  c.drawTextEllipsized(fontBody(), 18, 1 + (HDR - 1 - fb) / 2, W - 18 - 8, hdr, DisplayDriver::DARK);
-  c.drawText(fontBody(), W - 4, 1 + (HDR - 1 - fb) / 2, ">", DisplayDriver::DARK, TextAlign::Right);
+  card.drawTextEllipsized(fontBody(), 18, 1 + (HDR - 1 - fb) / 2, W - 18 - 8, hdr, DisplayDriver::DARK);
+  card.drawText(fontBody(), W - 4, 1 + (HDR - 1 - fb) / 2, ">", DisplayDriver::DARK, TextAlign::Right);
 
-  int lh = c.lineHeight(fontBody());  if (lh <= 0) lh = 10;
+  int lh = card.lineHeight(fontBody());  if (lh <= 0) lh = 10;
 
   // Sender line: DM => contact; channel => the person who posted.
   const char* who = _isChannel ? (_sender[0] ? _sender : "Someone")
                                : (_name[0]   ? _name   : "Unknown");
   int y = HDR + 2;
-  c.drawTextEllipsized(fontBody(), 3, y, W - 6, who, DisplayDriver::LIGHT);
+  card.drawTextEllipsized(fontBody(), 3, y, W - 6, who, DisplayDriver::LIGHT);
   y += lh;
 
   // Footer: a dotted divider above either the unread tally or the dismiss hint.
   const int FOOT = 12;
   int footY = H - FOOT;
-  int cap = c.fontHeight(fontCaption()); if (cap <= 0) cap = 6;
+  int cap = card.fontHeight(fontCaption()); if (cap <= 0) cap = 6;
 
   // Preview body, wrapped and clipped to the band between the sender and footer.
   {
     int pvH = (footY - 2) - y;
     if (pvH > 0) {
-      Canvas pv = c.region(3, y, W - 6, pvH);
+      Canvas pv = card.region(3, y, W - 6, pvH);
       pv.drawTextWrapped(fontBody(), 0, 0, W - 6, _preview, DisplayDriver::LIGHT);
     }
   }
 
-  c.fillStipple(3, footY - 2, W - 6, 1, DisplayDriver::LIGHT);
+  card.fillStipple(3, footY - 2, W - 6, 1, DisplayDriver::LIGHT);
   if (_otherUnread > 0) {
     char b[24];
     snprintf(b, sizeof(b), "%u more unread", (unsigned)_otherUnread);
-    c.drawGlyph(iconFont(), 3, footY + (FOOT - gh) / 2, (uint16_t)Icon::Mail, DisplayDriver::LIGHT);
-    c.drawText(fontCaption(), 16, footY + (FOOT - cap) / 2, b, DisplayDriver::LIGHT);
+    card.drawGlyph(iconFont(), 3, footY + (FOOT - gh) / 2, (uint16_t)Icon::Mail, DisplayDriver::LIGHT);
+    card.drawText(fontCaption(), 16, footY + (FOOT - cap) / 2, b, DisplayDriver::LIGHT);
   } else {
-    c.drawText(fontCaption(), 3, footY + (FOOT - cap) / 2, "Back to dismiss", DisplayDriver::LIGHT);
+    card.drawText(fontCaption(), 3, footY + (FOOT - cap) / 2, "Back to dismiss", DisplayDriver::LIGHT);
   }
 
-  c.drawRoundRect(0, 0, W, H, DisplayDriver::LIGHT);   // rounded outer frame on top
+  card.drawRoundRect(0, 0, W, H, DisplayDriver::LIGHT);   // rounded outer frame on top
 
   uint32_t shown = now - _raisedAt;
   return (int)(shown < AUTO_MS ? AUTO_MS - shown : 0);   // wake to auto-dismiss
