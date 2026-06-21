@@ -21,7 +21,7 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
     : _display(display), _canvas(display), _ctx(ctx),
       _depth(0), _nsources(0),
       _next_render_at(0), _last_flush_ms(0), _has_rendered(false), _dirty(true),
-      _auto_off_ms(30000), _last_activity(0), _activity_init(false), _slept_at(0),
+      _loop_now(0), _auto_off_ms(30000), _last_activity(0), _activity_init(false), _slept_at(0),
       _last_input_event(InputEvent::None), _last_input_ms(0), _input_seen(false),
       _toast_until(0), _toast_pending(false),
       _bubble_start(0), _bubble_until(0), _bubble_pending(false), _bubble_unread(0) {
@@ -185,6 +185,7 @@ void AppletHost::refreshInputState() {
 }
 
 void AppletHost::loop(uint32_t now_ms) {
+  _loop_now = now_ms;
   if (!_activity_init) {
     _last_activity = now_ms;
     _activity_init = true;

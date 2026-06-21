@@ -15,6 +15,7 @@
 #include <mishmesh/core/ContactsService.h>
 #include <mishmesh/applets/HomeApplet.h>
 #include <mishmesh/applets/AppMenuApplet.h>
+#include <mishmesh/applets/LockApplet.h>
 // [mishmesh]
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/core/AppletStorage.h>
@@ -30,6 +31,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   mishmesh::AppletHost* _host;
   mishmesh::HomeApplet* _home;
   mishmesh::AppMenuApplet* _menu;
+  mishmesh::LockApplet* _lock;
 
   mutable uint16_t _batt_mv;        // smoothed; raw ADC reads are noisy
   mutable uint32_t _batt_sampled_at;
@@ -137,7 +139,7 @@ public:
   UITask(mesh::MainBoard* board, BaseSerialInterface* serial)
       : AbstractUITask(board, serial),
         _display(nullptr), _sensors(nullptr), _node_prefs(nullptr),
-        _host(nullptr), _home(nullptr), _menu(nullptr),
+        _host(nullptr), _home(nullptr), _menu(nullptr), _lock(nullptr),
         _batt_mv(0), _batt_sampled_at(0) {
 #ifdef UI_HAS_JOYSTICK
     _joystick = nullptr;

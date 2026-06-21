@@ -189,6 +189,22 @@ int HomeApplet::onRender(Canvas& c) {
 
 bool HomeApplet::onInput(InputEvent ev) {
   if (_drawer.isOpen()) return _drawer.onInput(ev);
+
+  // Triple-Back locks the screen. Back is otherwise a no-op at the root, so
+  // consuming it here changes nothing for single/double presses.
+  if (ev == InputEvent::Back) {
+    uint32_t now = _host ? _host->nowMs() : 0;
+    if (_backTaps > 0 && now - _lastBackMs > LOCK_TAP_WINDOW_MS) _backTaps = 0;
+    _backTaps++;
+    _lastBackMs = now;
+    if (_backTaps >= 3 && _lock && _host) {
+      _backTaps = 0;
+      _host->push(_lock);
+    }
+    return true;
+  }
+  _backTaps = 0;   // any other input breaks the triple-Back sequence
+
   switch (ev) {
     case InputEvent::Select:
       if (_menu && _host) { _host->push(_menu); return true; }

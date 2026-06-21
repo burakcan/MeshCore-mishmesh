@@ -15,14 +15,21 @@ class HomeApplet : public Applet {
   BatteryIndicator _batt;
   QuickDrawer _drawer;
   Applet* _menu;
+  Applet* _lock = nullptr;
   AppletHost* _host;
   AppServices* _app;
   sound::SoundEngine* _sound = nullptr;
   struct MessagesService* _msgs = nullptr;
+
+  // Triple-Back (three presses in quick succession) locks the screen.
+  static const uint32_t LOCK_TAP_WINDOW_MS = 700;   // max gap between the taps
+  uint8_t  _backTaps = 0;
+  uint32_t _lastBackMs = 0;
 public:
   HomeApplet() : Applet("Home"), _menu(nullptr), _host(nullptr), _app(nullptr) {}
 
   void setMenu(Applet* m) { _menu = m; }
+  void setLock(Applet* l) { _lock = l; }
 
   // First 4 chars of a registry label, for the hint bar. out must hold 5.
   static void hintLabel(const char* label, char out[5]);

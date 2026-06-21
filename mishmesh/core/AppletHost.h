@@ -48,6 +48,10 @@ public:
   Applet* foreground() const;
   int depth() const { return _depth; }
 
+  // Millisecond clock as of the current loop() pass. Lets an applet time input
+  // gestures (onInput carries no timestamp) without reaching for Arduino millis().
+  uint32_t nowMs() const { return _loop_now; }
+
   void dispatch(InputEvent ev, bool repeat = false);
   void loop(uint32_t now_ms);
 
@@ -104,6 +108,7 @@ private:
   bool _has_rendered;
   bool _dirty;
 
+  uint32_t _loop_now;   // now_ms of the current loop() pass; see nowMs()
   uint32_t _auto_off_ms;
   uint32_t _last_activity;
   bool _activity_init;

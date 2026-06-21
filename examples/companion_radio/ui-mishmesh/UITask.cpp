@@ -190,8 +190,10 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _host = new mishmesh::AppletHost(_display, ctx);
 
   _menu = new mishmesh::AppMenuApplet();
+  _lock = new mishmesh::LockApplet();
   _home = new mishmesh::HomeApplet();
   _home->setMenu(_menu);
+  _home->setLock(_lock);
   _host->setRoot(_home);
 
 #ifdef UI_HAS_JOYSTICK
