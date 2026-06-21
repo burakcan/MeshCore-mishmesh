@@ -22,6 +22,8 @@ public:
   void onStop() override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
+  // An open conversation stays put on wake - don't reset to home mid-chat.
+  bool keepOnWake() const override { return true; }
   int  focusedIndexForTest() const { return _focus; }
   const char* headerTitleForTest() const { return _titleBuf; }
   int  selectedTabForTest() const { return _tabs.selected(); }

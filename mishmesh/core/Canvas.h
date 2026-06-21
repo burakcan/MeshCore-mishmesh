@@ -54,6 +54,9 @@ public:
   // A 1px border with the four corner pixels left undrawn, so the rectangle reads
   // as gently rounded. The interior is untouched - fill first if a mask is needed.
   void drawRoundRect(int x, int y, int w, int h, DisplayDriver::Color c);
+  // Filled counterpart of drawRoundRect: the body plus both edge columns, with
+  // the four corner pixels left clear. Degrades to fillRect below 3px.
+  void fillRoundRect(int x, int y, int w, int h, DisplayDriver::Color c);
 
   // DisplayDriver can't clip glyphs: text is dropped only when its origin is
   // outside the canvas, so it may still overflow the right edge.

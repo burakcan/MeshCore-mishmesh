@@ -16,7 +16,17 @@ public:
   bool consume = false;            // if true, onInput consumes everything
   InputEvent lastInput = InputEvent::None;
 
+  bool overlay = false;            // if true, host composites the applet beneath
+
+  bool keepWake = false;           // keepOnWake(): stay put on a long-sleep wake
+  bool blockSleep = false;         // blocksSleep(): suppress auto-off
+  int slept = 0;                   // onSleep() call count
+
   explicit FakeApplet(const char* n) : Applet(n) {}
+  bool isOverlay() const override { return overlay; }
+  bool keepOnWake() const override { return keepWake; }
+  bool blocksSleep() const override { return blockSleep; }
+  void onSleep() override { slept++; }
   void onStart(AppletContext&) override { started++; }
   void onForeground() override { foreground++; }
   void onBackground() override { background++; }
@@ -106,6 +116,96 @@ TEST(AppletHost, PopAtRootIsNoOp) {
   EXPECT_EQ(0, root.stopped);
 }
 
+// Idle the host past auto-off so the panel sleeps, having first registered one
+// input event at `activityAt` (auto-off is input-gated). Returns the now_ms the
+// sleep loop ran at, so callers can wake relative to it.
+static uint32_t sleepPanel(AppletHost& host, QueueSource& src,
+                           FakeDisplayDriver& d, uint32_t activityAt) {
+  src.queue.push_back(InputEvent::NavDown);
+  host.loop(activityAt);                 // input consumed -> last_activity = activityAt
+  uint32_t sleepAt = activityAt + 30001; // just past the 30s auto-off
+  host.loop(sleepAt);
+  EXPECT_FALSE(d.isOn());
+  return sleepAt;
+}
+
+TEST(AppletHost, LongSleepWakeResetsToHome) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  QueueSource src; host.addSource(&src);
+  host.setAutoOffMillis(30000);
+  FakeApplet root("root"), child("child");
+  host.setRoot(&root);
+  host.push(&child);
+
+  uint32_t sleptAt = sleepPanel(host, src, d, 1000);
+  EXPECT_EQ(1, child.slept);             // onSleep fired on the foreground
+
+  src.queue.push_back(InputEvent::Select);
+  host.loop(sleptAt + 60001);            // wake past the 60s home threshold
+  EXPECT_TRUE(d.isOn());
+  EXPECT_EQ(1, host.depth());            // reset to home
+  EXPECT_EQ(&root, host.foreground());
+  EXPECT_EQ(InputEvent::None, root.lastInput);   // wake press only woke, not delivered
+}
+
+TEST(AppletHost, LongSleepWakeKeepsAppletThatOptsIn) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  QueueSource src; host.addSource(&src);
+  host.setAutoOffMillis(30000);
+  FakeApplet root("root"), child("child");
+  child.keepWake = true;                 // e.g. an open chat / running timer
+  host.setRoot(&root);
+  host.push(&child);
+
+  uint32_t sleptAt = sleepPanel(host, src, d, 1000);
+  src.queue.push_back(InputEvent::Select);
+  host.loop(sleptAt + 60001);
+  EXPECT_EQ(2, host.depth());            // stayed put
+  EXPECT_EQ(&child, host.foreground());
+}
+
+TEST(AppletHost, ShortNapWakeKeepsPlace) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  QueueSource src; host.addSource(&src);
+  host.setAutoOffMillis(30000);
+  FakeApplet root("root"), child("child");
+  host.setRoot(&root);
+  host.push(&child);
+
+  uint32_t sleptAt = sleepPanel(host, src, d, 1000);
+  src.queue.push_back(InputEvent::Select);
+  host.loop(sleptAt + 5000);             // woke well under the 60s threshold
+  EXPECT_EQ(2, host.depth());            // kept place despite no keepOnWake
+  EXPECT_EQ(&child, host.foreground());
+}
+
+TEST(AppletHost, BlocksSleepHoldsPanelOnThenGraceOnRelease) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  QueueSource src; host.addSource(&src);
+  host.setAutoOffMillis(30000);
+  FakeApplet root("root"), child("child");
+  child.blockSleep = true;               // e.g. a running stopwatch
+  host.setRoot(&root);
+  host.push(&child);
+
+  src.queue.push_back(InputEvent::NavDown);
+  host.loop(1000);
+  host.loop(1000 + 30001);               // past auto-off, but sleep is blocked
+  host.loop(1000 + 90001);
+  EXPECT_TRUE(d.isOn());
+  EXPECT_EQ(0, child.slept);
+
+  child.blockSleep = false;              // stopwatch stopped
+  host.loop(1000 + 90001 + 15000);       // within the fresh grace window
+  EXPECT_TRUE(d.isOn());
+  host.loop(1000 + 90001 + 30002);       // full auto-off after release
+  EXPECT_FALSE(d.isOn());
+}
+
 TEST(AppletHost, UnconsumedBackPopsTheStack) {
   FakeDisplayDriver d;
   AppletHost host(&d, emptyCtx());
@@ -170,6 +270,48 @@ TEST(AppletHost, InputForcesImmediateRedraw) {
   host.addSource(&src);
   host.loop(10);     // input arrives -> forced redraw despite the long delay
   EXPECT_EQ(2, root.rendered);
+}
+
+TEST(AppletHost, OverlayCompositesUnderlayEachFrame) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root"), banner("banner");
+  banner.overlay = true;
+  host.setRoot(&root);
+  host.loop(0);
+  EXPECT_EQ(1, root.rendered);
+  host.push(&banner);
+  host.loop(10);           // push -> dirty -> both drawn, underlay first
+  EXPECT_EQ(2, root.rendered);
+  EXPECT_EQ(1, banner.rendered);
+}
+
+TEST(AppletHost, NonOverlayChildDoesNotRenderUnderlay) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root"), child("child");
+  host.setRoot(&root);
+  host.loop(0);
+  host.push(&child);
+  host.loop(10);
+  EXPECT_EQ(1, root.rendered);
+  EXPECT_EQ(1, child.rendered);
+}
+
+TEST(AppletHost, OverlayMergesUnderlayDelay) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root"), banner("banner");
+  banner.overlay = true;
+  root.renderDelay = 100;     // underlay animates faster than the overlay
+  banner.renderDelay = 100000;
+  host.setRoot(&root);
+  host.push(&banner);
+  host.loop(0);
+  EXPECT_EQ(1, root.rendered);
+  host.loop(100);             // due at the underlay's shorter delay
+  EXPECT_EQ(2, root.rendered);
+  EXPECT_EQ(2, banner.rendered);
 }
 
 TEST(AppletHost, RenderWrapsInStartAndEndFrame) {

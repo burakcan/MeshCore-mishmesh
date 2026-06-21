@@ -6,7 +6,6 @@
 #include <mishmesh/core/TimeFormat.h>
 #include <mishmesh/core/WorldClock.h>
 #include <mishmesh/widgets/Modal.h>
-#include <mishmesh/widgets/StatusBar.h>   // batteryPercent()
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 #include <string.h>
@@ -114,8 +113,7 @@ void ClockApplet::onStart(AppletContext& ctx) {
 int ClockApplet::onRender(Canvas& c) {
   _now = c.now();
   int w = c.width(), h = c.height();
-  snprintf(_battBuf, sizeof(_battBuf), "%d%%", batteryPercent(_app ? _app->batteryMillivolts() : 0));
-  _tabs.setDecoration(_battBuf);
+  _tabs.setBattery(_app ? _app->batteryMillivolts() : 0);
   _tabs.draw(c, 0, 0, w, BAR_H);
   int bodyY = BAR_H + 1;
   int bodyH = h - bodyY;

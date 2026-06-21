@@ -31,6 +31,7 @@ public:
 
   void onStart(AppletContext& ctx) override;
   void onBackground() override { _drawer.closeNow(); }
+  void onSleep() override { _drawer.closeNow(); }
   int onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
 };

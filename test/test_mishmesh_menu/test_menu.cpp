@@ -95,7 +95,7 @@ TEST(AppMenu, NavThenSelectPushesSecondApplet) {
   AppMenuApplet menu;
   host.setRoot(&menu);
 
-  host.dispatch(InputEvent::NavDown);
+  host.dispatch(InputEvent::NavRight);
   host.dispatch(InputEvent::Select);
   EXPECT_EQ(&beta, host.foreground());
 }

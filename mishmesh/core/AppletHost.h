@@ -37,6 +37,8 @@ public:
   void setRoot(Applet* root);
   void push(Applet* a);
   void pop();
+  // Pop every drill-in back to the root (home). No-op when already at root.
+  void popToRoot();
   // Swap the foreground applet for another without changing stack depth: the current
   // top is stopped and `a` takes its place, so a later Back pops to whatever was
   // underneath (not back to the replaced applet). Used to hand off between sibling
@@ -105,6 +107,11 @@ private:
   uint32_t _auto_off_ms;
   uint32_t _last_activity;
   bool _activity_init;
+
+  // A user wake this long after the panel blanked resets navigation to home
+  // (unless the foreground opts out via keepOnWake). Short naps keep your place.
+  static const uint32_t WAKE_HOME_THRESHOLD_MS = 60000;
+  uint32_t _slept_at;   // now_ms when auto-off last blanked the panel (0 = not slept)
 
   // Contact-bounce coalescing: a noisy joystick press can emit the same event
   // twice within a few ms (multi-click debounce is off for snappy nav). Drop a

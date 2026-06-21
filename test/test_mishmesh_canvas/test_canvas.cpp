@@ -151,6 +151,35 @@ TEST(CanvasTheme, LightModeSwapsColorsAtDriverBoundary) {
   mishmesh::uiPrefs().resetForTest();               // don't leak into other tests
 }
 
+TEST(CanvasRoundRect, FillLeavesCornersClearAndFillsBody) {
+  FakeDisplayDriver d;
+  Canvas c(&d);
+  c.fillRoundRect(0, 0, 10, 10, DisplayDriver::LIGHT);
+  // Three rects: center block (full height, inset 1px in x) + two edge columns
+  // (trimmed 1px top/bottom). The four corner pixels are never drawn.
+  ASSERT_EQ(3u, d.fills.size());
+  bool center = false, left = false, right = false;
+  for (const auto& f : d.fills) {
+    if (f.x == 1 && f.y == 0 && f.w == 8 && f.h == 10) center = true;
+    if (f.x == 0 && f.y == 1 && f.w == 1 && f.h == 8) left = true;
+    if (f.x == 9 && f.y == 1 && f.w == 1 && f.h == 8) right = true;
+  }
+  EXPECT_TRUE(center);
+  EXPECT_TRUE(left);
+  EXPECT_TRUE(right);
+}
+
+TEST(CanvasRoundRect, FillSmallFallsBackToPlainRect) {
+  FakeDisplayDriver d;
+  Canvas c(&d);
+  c.fillRoundRect(3, 4, 2, 2, DisplayDriver::LIGHT);   // w<3||h<3 -> plain fillRect
+  ASSERT_EQ(1u, d.fills.size());
+  EXPECT_EQ(3, d.fills[0].x);
+  EXPECT_EQ(4, d.fills[0].y);
+  EXPECT_EQ(2, d.fills[0].w);
+  EXPECT_EQ(2, d.fills[0].h);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

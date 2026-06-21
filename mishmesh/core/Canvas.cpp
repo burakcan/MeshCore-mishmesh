@@ -68,6 +68,13 @@ void Canvas::drawRoundRect(int x, int y, int w, int h, DisplayDriver::Color c) {
   fillRect(x + w - 1, y + 1, 1, h - 2, c);   // right
 }
 
+void Canvas::fillRoundRect(int x, int y, int w, int h, DisplayDriver::Color c) {
+  if (w < 3 || h < 3) { fillRect(x, y, w, h, c); return; }
+  fillRect(x + 1, y,         w - 2, h,     c);   // center block, full height
+  fillRect(x,         y + 1, 1,     h - 2, c);   // left edge, corners trimmed
+  fillRect(x + w - 1, y + 1, 1,     h - 2, c);   // right edge, corners trimmed
+}
+
 void Canvas::text(int x, int y, const char* str, DisplayDriver::Color c) {
   if (!_d || str == nullptr) return;
   if (x < _cl || y < _ct || x >= _cr || y >= _cb) return;

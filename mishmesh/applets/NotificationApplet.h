@@ -5,7 +5,8 @@
 
 namespace mishmesh {
 
-// Modal "new message" banner (an inset card over a cleared screen), raised by
+// Modal "new message" banner - an inset card over the dimmed underlying screen
+// (isOverlay: the host keeps rendering what's beneath) - raised by
 // the notification router when a
 // message lands while the device is idle - asleep, or sitting on the home screen.
 // Back clears it, Select opens the chat, and it auto-dismisses after a few seconds
@@ -21,6 +22,7 @@ public:
   void onForeground() override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
+  bool isOverlay() const override { return true; }
 
   // test seams
   const char* nameForTest() const { return _name; }

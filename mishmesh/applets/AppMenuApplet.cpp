@@ -25,26 +25,19 @@ void AppMenuApplet::onStart(AppletContext& ctx) {
     }
     _entries[i] = r;
   }
-  _list.setRowHeight(14);
-  _list.setModel(this);
+  _grid.setModel(this);
+  _grid.setRowHeight(20);
 }
 
 int AppMenuApplet::onRender(Canvas& c) {
-  int w = c.width();
-  // const int headH = c.fontHeight(fontBody()) + 3;
-  // int ty = (headH - 1 - c.fontHeight(fontBody())) / 2;
-  // if (ty < 0) ty = 0;
-  // c.drawText(fontBody(), 4, ty, "Apps", DisplayDriver::LIGHT);
-  // c.fillRect(0, headH - 1, w, 1, DisplayDriver::LIGHT);
-  // _list.draw(c, 0, headH, w, c.height() - headH);
-  _list.draw(c, 0, 0, w, c.height());
-  return _list.needsAnimation() ? ListMenu::TICK_MS : 1000;
+  _grid.draw(c, 0, 0, c.width(), c.height());
+  return _grid.needsAnimation() ? IconGrid::TICK_MS : 1000;
 }
 
 bool AppMenuApplet::onInput(InputEvent ev) {
-  if (_list.onInput(ev)) return true;
+  if (_grid.onInput(ev)) return true;
   if (ev == InputEvent::Select && _count > 0 && _host) {
-    _host->push(_entries[_list.selected()]->applet);
+    _host->push(_entries[_grid.selected()]->applet);
     return true;
   }
   return false;

@@ -21,7 +21,7 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
     : _display(display), _canvas(display), _ctx(ctx),
       _depth(0), _nsources(0),
       _next_render_at(0), _last_flush_ms(0), _has_rendered(false), _dirty(true),
-      _auto_off_ms(30000), _last_activity(0), _activity_init(false),
+      _auto_off_ms(30000), _last_activity(0), _activity_init(false), _slept_at(0),
       _last_input_event(InputEvent::None), _last_input_ms(0), _input_seen(false),
       _toast_until(0), _toast_pending(false),
       _bubble_start(0), _bubble_until(0), _bubble_pending(false), _bubble_unread(0) {
@@ -109,6 +109,10 @@ void AppletHost::pop() {
   _dirty = true;
 }
 
+void AppletHost::popToRoot() {
+  while (_depth > 1) pop();
+}
+
 void AppletHost::replace(Applet* a) {
   if (a == nullptr || _depth == 0) return;
   Applet* top = _stack[_depth - 1];
@@ -148,6 +152,13 @@ void AppletHost::pumpInput(uint32_t now_ms) {
       if (!rep.repeat) _prof.recordPolled();   // a discrete press edge was sampled
 #endif
       if (_display != nullptr && !_display->isOn()) {
+        // A user wake (not the passive notification path). After a long sleep,
+        // reset navigation to home unless the foreground wants to stay put.
+        if (_slept_at != 0 && now_ms - _slept_at > WAKE_HOME_THRESHOLD_MS) {
+          Applet* fg = foreground();
+          if (fg == nullptr || !fg->keepOnWake()) popToRoot();
+        }
+        _slept_at = 0;
         _display->turnOn();   // first press only wakes; it isn't delivered
         _dirty = true;
       } else {
@@ -203,9 +214,17 @@ void AppletHost::loop(uint32_t now_ms) {
     _dirty = true;
   }
 
-  if (_auto_off_ms > 0 && _display != nullptr && _display->isOn() &&
-      now_ms - _last_activity > _auto_off_ms) {
-    _display->turnOff();
+  if (_auto_off_ms > 0 && _display != nullptr && _display->isOn()) {
+    Applet* fg = foreground();
+    if (fg != nullptr && fg->blocksSleep()) {
+      // Hold the panel on; keep the deadline fresh so it gets the full grace
+      // period (not an instant blank) once the applet stops blocking.
+      _last_activity = now_ms;
+    } else if (now_ms - _last_activity > _auto_off_ms) {
+      _slept_at = now_ms;               // for the wake-to-home decision
+      if (fg != nullptr) fg->onSleep();
+      _display->turnOff();
+    }
   }
 
   renderIfDue(now_ms);
@@ -239,7 +258,18 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
   _display->startFrame(exclusive ? DisplayDriver::DARK : themedColor(DisplayDriver::DARK));
   if (!exclusive && themedColor(DisplayDriver::DARK) == DisplayDriver::LIGHT)
     _canvas.fillRect(0, 0, _canvas.width(), _canvas.height(), DisplayDriver::DARK);
-  int delay = fg->onRender(_canvas);
+  // Composite an overlay over the applet beneath it. Merge the delays so the
+  // underlay keeps animating (clock etc.) behind the overlay's card.
+  Applet* under = (fg->isOverlay() && _depth >= 2) ? _stack[_depth - 2] : nullptr;
+  int delay;
+  if (under != nullptr) {
+    int ud = under->onRender(_canvas);
+    delay = fg->onRender(_canvas);
+    if (ud < 0) ud = 0;
+    if (delay < 0 || ud < delay) delay = ud;
+  } else {
+    delay = fg->onRender(_canvas);
+  }
   if (now_ms < _toast_until) {
     int w = _canvas.width(), hh = 14, by = _canvas.height() - hh;
     _canvas.fillRect(0, by, w, hh, DisplayDriver::DARK);

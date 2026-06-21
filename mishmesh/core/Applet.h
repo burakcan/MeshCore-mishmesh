@@ -148,6 +148,26 @@ public:
   // calls onRender every main-loop pass (no dirty/delay gating) and the returned
   // delay is ignored. Default false: normal applets stay dirty/event-driven.
   virtual bool wantsExclusive() const { return false; }
+
+  // Overlays (notification banner, popups) return true: each frame the host
+  // renders the applet beneath first, so the overlay paints only its own card
+  // (plus a scrim) and the covered screen stays visible around it. One level
+  // only - an overlay under another overlay is not re-rendered.
+  virtual bool isOverlay() const { return false; }
+
+  // The panel just blanked (auto-off). Fires on the foreground applet regardless
+  // of how long it stays asleep - shed transient UI here (close a drawer/popup).
+  virtual void onSleep() {}
+
+  // Stay on this screen when the user wakes the device after a long sleep instead
+  // of resetting to home. Default false: most screens return home. May be dynamic
+  // (e.g. only while a session is in progress).
+  virtual bool keepOnWake() const { return false; }
+
+  // Suppress auto-off entirely while this applet is foreground and returns true
+  // (e.g. a running stopwatch the user is watching). May be dynamic. Costs battery
+  // and, on OLED, risks burn-in - return true only while it genuinely matters.
+  virtual bool blocksSleep() const { return false; }
 };
 
 }  // namespace mishmesh

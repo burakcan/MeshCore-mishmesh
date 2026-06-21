@@ -20,6 +20,18 @@ public:
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
 
+  // A running stopwatch holds the screen on (you're watching it tick) and stays
+  // put on wake. A countdown timer counts down in the background and rings via
+  // ClockAlertApplet, so it must NOT block sleep - but if you wake mid-countdown,
+  // stay on it rather than resetting to home. An idle tab goes home like anything else.
+  bool blocksSleep() const override {
+    return _tab == TAB_STOPWATCH && clockService().swRunning();
+  }
+  bool keepOnWake() const override {
+    return (_tab == TAB_STOPWATCH && clockService().swRunning()) ||
+           (_tab == TAB_TIMER && (clockService().tmRunning() || clockService().tmPaused()));
+  }
+
   // test seams
   int  selectedTabForTest() const { return _tab; }
   bool editingAlarmForTest() const { return _editor.open && !_editor.forTimer; }
@@ -47,7 +59,6 @@ private:
   AppServices* _app = nullptr;
   TabBar   _tabs;
   int      _tab = 0;
-  char     _battBuf[8] = {0};   // stable backing for the battery decoration
   uint32_t _now = 0;            // last frame tick, for input-time toggles
 
   struct AlarmModel : ListModel {

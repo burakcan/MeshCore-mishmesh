@@ -20,7 +20,7 @@ class Marquee {
   bool     _active;
 public:
   Marquee() : _start(0), _lastDraw(0), _active(false) {}
-  void reset() { _start = 0; }
+  void reset() { _start = 0; _active = false; }   // not marqueeing until a draw proves otherwise
   bool active() const { return _active; }
   void draw(Canvas& c, const mf_font_s* font, int x, int y, int availW, int rowH,
             const char* text, DisplayDriver::Color col, uint32_t now);

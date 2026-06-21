@@ -2,17 +2,17 @@
 
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/core/AppletRegistry.h>
-#include <mishmesh/widgets/ListMenu.h>
+#include <mishmesh/widgets/IconGrid.h>
 
 namespace mishmesh {
 
-// App drawer: lists every Placement::AppMenu registration and pushes the chosen
-// one. LaunchOnly itself (the adapter pushes it from Home).
+// App drawer: an icon grid of every Placement::AppMenu registration; Select
+// pushes the focused one. LaunchOnly itself (the adapter pushes it from Home).
 class AppMenuApplet : public Applet, public ListModel {
   static const int MAX_ENTRIES = 16;
   const AppletRegistration* _entries[MAX_ENTRIES];
   int _count;
-  ListMenu _list;
+  IconGrid _grid;
   AppletHost* _host;
   // [mishmesh] unread badge: pointer to messages service, set in onStart
   struct MessagesService* _ctx_messages = nullptr;

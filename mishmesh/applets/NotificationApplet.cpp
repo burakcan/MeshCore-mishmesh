@@ -57,13 +57,14 @@ int NotificationApplet::onRender(Canvas& c) {
   if (_raisedAt == 0) _raisedAt = now ? now : 1;
   if (now - _raisedAt >= AUTO_MS) { if (_host) _host->pop(); return 0; }
 
-  c.fillRect(0, 0, c.width(), c.height(), DisplayDriver::DARK);   // clear whatever was behind
-
-  // Inset the card so it reads as a floating modal rather than a full screen.
-  // Vertical inset is kept small so two wrapped preview lines still fit.
-  const int MX = 6, MY = 2;
+  // The host renders the covered screen first (isOverlay), so dim it with a
+  // scrim and paint only the card. Inset enough that the background shows;
+  // the preview drops to one line, but Select opens the full chat anyway.
+  c.fillStipple(0, 0, c.width(), c.height(), DisplayDriver::DARK);
+  const int MX = 8, MY = 6;
   Canvas card = c.region(MX, MY, c.width() - 2 * MX, c.height() - 2 * MY);
   const int W = card.width(), H = card.height();
+  card.fillRect(0, 0, W, H, DisplayDriver::DARK);
 
   // Inverted header band: source icon + label, with an "open" affordance at the
   // right. For channels the label is the group name; the person is the body line.
@@ -91,9 +92,11 @@ int NotificationApplet::onRender(Canvas& c) {
   int footY = H - FOOT;
   int cap = card.fontHeight(fontCaption()); if (cap <= 0) cap = 6;
 
-  // Preview body, wrapped and clipped to the band between the sender and footer.
+  // Preview body, wrapped in the band between the sender and footer. Snap the
+  // band to whole lines - a half-clipped text row reads as pixel garbage.
   {
     int pvH = (footY - 2) - y;
+    pvH -= pvH % lh;
     if (pvH > 0) {
       Canvas pv = card.region(3, y, W - 6, pvH);
       pv.drawTextWrapped(fontBody(), 0, 0, W - 6, _preview, DisplayDriver::LIGHT);
