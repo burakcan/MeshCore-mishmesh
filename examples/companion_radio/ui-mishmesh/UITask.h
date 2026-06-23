@@ -20,6 +20,8 @@
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/core/AppletStorage.h>
 #include <mishmesh/core/RetryEngine.h>
+#include <mishmesh/core/ScreenSleep.h>
+#include <mishmesh/core/NameValidation.h>
 #include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/sound/Sounds.h>
 // [/mishmesh]
@@ -250,6 +252,27 @@ public:
     if (!p) return;
     p->date_format = (f <= 2) ? f : 0;
     the_mesh.savePrefs();
+  }
+  uint8_t screenSleepIndex() const override {
+    return (uint8_t)mishmesh::screenSleepStoredToIndex(_node_prefs ? _node_prefs->screen_sleep : 0);
+  }
+  void setScreenSleepIndex(uint8_t idx) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->screen_sleep = mishmesh::screenSleepIndexToStored(idx);
+    the_mesh.savePrefs();
+    if (_host) _host->setAutoOffMillis(mishmesh::screenSleepMillis(idx));   // live
+  }
+  bool setNodeName(const char* name) override {
+    if (!mishmesh::isValidNodeName(name)) return false;
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return false;
+    size_t n = strlen(name);
+    if (n > sizeof(p->node_name) - 1) n = sizeof(p->node_name) - 1;
+    memcpy(p->node_name, name, n);
+    p->node_name[n] = 0;
+    the_mesh.savePrefs();
+    return true;
   }
   bool gpsSupported() const override {
     return _sensors && _sensors->getSettingByKey("gps") != nullptr;

@@ -188,6 +188,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   ctx.sound = &_sound;          // [mishmesh]
   // [/mishmesh]
   _host = new mishmesh::AppletHost(_display, ctx);
+  // [mishmesh]
+  _host->setAutoOffMillis(mishmesh::screenSleepMillis(screenSleepIndex()));   // honor saved sleep pref
+  // [/mishmesh]
 
   _menu = new mishmesh::AppMenuApplet();
   _lock = new mishmesh::LockApplet();

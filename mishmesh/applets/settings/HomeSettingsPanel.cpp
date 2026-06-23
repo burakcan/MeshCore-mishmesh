@@ -3,6 +3,9 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/ScreenSleep.h>
+#include <mishmesh/widgets/StepperDialog.h>
+#include <stdio.h>
 #include <string.h>
 
 namespace mishmesh {
@@ -50,9 +53,13 @@ QuickActionPickerPanel& quickActionPicker() {
 
 // --- HomeSettingsPanel ---
 
+static void sleepStepLabel(int idx, char* out, uint16_t cap) {
+  snprintf(out, cap, "%s", screenSleepLabel(idx));
+}
+
 const char* HomeSettingsPanel::Model::label(int i) const {
   static const char* const LABELS[ROW_COUNT] = {
-    "Battery percent", "Left shortcut", "Right shortcut" };
+    "Battery percent", "Screen sleep", "Left shortcut", "Right shortcut" };
   return (i >= 0 && i < ROW_COUNT) ? LABELS[i] : "";
 }
 
@@ -61,6 +68,7 @@ bool HomeSettingsPanel::Model::toggleState(int i) const {
 }
 
 const char* HomeSettingsPanel::Model::value(int i) const {
+  if (i == ScreenSleep) return app ? screenSleepLabel(app->screenSleepIndex()) : "";
   if (i == LeftAction)  return uiPrefs().quickActionLabel(UiPrefs::SLOT_LEFT);
   if (i == RightAction) return uiPrefs().quickActionLabel(UiPrefs::SLOT_RIGHT);
   return nullptr;
@@ -68,22 +76,44 @@ const char* HomeSettingsPanel::Model::value(int i) const {
 
 void HomeSettingsPanel::begin(AppletContext& ctx) {
   _host = ctx.host;
+  _model.app = ctx.app;
   _list.setRowHeight(14);
   _list.setModel(&_model);
   _list.resetSelection();   // singleton reuse: setModel skips reset on same-ptr rebind
+  _editingSleep = false;
 }
 
 int HomeSettingsPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
   _list.draw(c, x, y, w, h);
+  if (_editingSleep) { _stepper.draw(c, 0, 0, c.width(), c.height()); return 100; }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool HomeSettingsPanel::onInput(InputEvent ev) {
+  if (_editingSleep) {
+    if (_stepper.onInput(ev)) {
+      StepperResult r = _stepper.result();
+      if (r != StepperResult::None) {
+        if (r == StepperResult::Confirmed && _model.app)
+          _model.app->setScreenSleepIndex((uint8_t)_stepper.value());
+        _editingSleep = false;
+        _stepper.reset();
+      }
+    }
+    return true;   // swallow everything while modal
+  }
+
   if (_list.onInput(ev)) return true;
   if (ev == InputEvent::Select) {
     int i = _list.selected();
     if (i == Model::BattPercent) {
       uiPrefs().setBattShowPercent(!uiPrefs().battShowPercent());
+    } else if (i == Model::ScreenSleep) {
+      if (_model.app) {
+        _stepper.configure("Screen sleep", _model.app->screenSleepIndex(),
+                           0, SCREEN_SLEEP_COUNT - 1, sleepStepLabel);
+        _editingSleep = true;
+      }
     } else if (_host) {
       static SettingsDetailApplet detail;   // one level below the shared detail
       quickActionPicker().setSlot(i == Model::LeftAction ? UiPrefs::SLOT_LEFT

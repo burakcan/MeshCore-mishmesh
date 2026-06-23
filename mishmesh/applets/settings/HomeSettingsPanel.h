@@ -4,6 +4,7 @@
 #include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/widgets/ListMenu.h>
+#include <mishmesh/widgets/StepperDialog.h>
 
 namespace mishmesh {
 
@@ -44,19 +45,23 @@ public:
   void begin(AppletContext& ctx) override;
   int  renderBody(Canvas& c, int x, int y, int w, int h) override;
   bool onInput(InputEvent ev) override;
+  bool modalActive() const override { return _editingSleep; }
 
 private:
   struct Model : ListModel {
-    enum Row : int { BattPercent, LeftAction, RightAction, ROW_COUNT };
+    AppServices* app = nullptr;
+    enum Row : int { BattPercent, ScreenSleep, LeftAction, RightAction, ROW_COUNT };
     int count() const override { return ROW_COUNT; }
     const char* label(int i) const override;
     bool isToggle(int i) const override { return i == BattPercent; }
     bool toggleState(int i) const override;
-    const char* value(int i) const override;   // current shortcut labels
+    const char* value(int i) const override;   // shortcut labels + sleep label
   } _model;
 
   AppletHost* _host = nullptr;
   ListMenu _list;
+  StepperDialog _stepper;          // in-panel modal for the sleep picker
+  bool _editingSleep = false;
 };
 
 HomeSettingsPanel& homeSettings();

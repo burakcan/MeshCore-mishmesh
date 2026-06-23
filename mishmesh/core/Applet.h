@@ -97,6 +97,15 @@ struct AppServices {
   // so a stale last fix never shows. Satellites: 0 = none/unknown.
   virtual bool gpsHasFix() const { return false; }
   virtual int  gpsSatellites() const { return 0; }
+  // Screen auto-off timeout, as an index into the mishmesh SCREEN_SLEEP options
+  // (mishmesh/core/ScreenSleep.h). Default index 1 = 30s. The adapter persists
+  // it to NodePrefs and applies it live to the AppletHost.
+  virtual uint8_t screenSleepIndex() const { return 1; }
+  virtual void    setScreenSleepIndex(uint8_t) {}
+  // Set + persist the device (advert) name. Rejects invalid/empty names
+  // (isValidNodeName). Returns true if applied. Save only - no advert is sent.
+  // Defaults keep the framework companion-agnostic (not settable).
+  virtual bool    setNodeName(const char*) { return false; }
   // [/mishmesh]
 };
 

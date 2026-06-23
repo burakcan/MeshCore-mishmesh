@@ -131,6 +131,7 @@ TEST(AdvertSettingsPanel, SelectTogglesShareLocation) {
   panel.begin(ctx);
   EXPECT_STREQ("Advert", panel.title());
 
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::NavDown));  // row 0=DeviceName -> row 1=SharePosition
   EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
   EXPECT_TRUE(app.share);                       // off -> on
   EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));

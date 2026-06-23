@@ -3,7 +3,9 @@
 #include <mishmesh/applets/AdvertApplet.h>
 #include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/applets/DiscoverDetailApplet.h>
+#include <mishmesh/applets/settings/AdvertSettingsPanel.h>
 #include <mishmesh/core/AppletHost.h>
+#include <mishmesh/core/NameValidation.h>
 #include "FakeDisplayDriver.h"
 #include "FakeContactsService.h"
 #include <cstring>
@@ -33,7 +35,54 @@ FakeContactsService::Row mkRow(const char* name, const char* key6, uint8_t type,
   FakeContactsService::Row r; r.name = name; memcpy(r.pubkey, key6, 6); r.type = type; r.heardAt = heardAt;
   return r;
 }
+
+// AppServices with a settable name + share flag, for the settings panel.
+class FakeNameApp : public AppServices {
+public:
+  char name[32] = "Old";
+  bool share = false;
+  const char* nodeName() const override { return name; }
+  uint16_t batteryMillivolts() const override { return 0; }
+  uint32_t epochSeconds() const override { return 0; }
+  bool shareLocationInAdvert() const override { return share; }
+  void setShareLocationInAdvert(bool on) override { share = on; }
+  bool setNodeName(const char* n) override {
+    if (!isValidNodeName(n)) return false;
+    strncpy(name, n, sizeof(name) - 1); name[sizeof(name) - 1] = 0; return true;
+  }
+};
 }  // namespace
+
+TEST(AdvertSettingsPanel, ModelRowsAndValues) {
+  FakeNameApp app;
+  AppletContext ctx; ctx.app = &app;
+  AdvertSettingsPanel& p = advertSettings();
+  p.begin(ctx);
+  EXPECT_EQ(2, p.rowCountForTest());
+  EXPECT_STREQ("Device name",    p.labelForTest(0));
+  EXPECT_STREQ("Share position", p.labelForTest(1));
+  EXPECT_STREQ("Old",            p.valueForTest(0));
+}
+
+TEST(AdvertSettingsPanel, SharePositionRowStillToggles) {
+  FakeNameApp app;
+  AppletContext ctx; ctx.app = &app;
+  AdvertSettingsPanel& p = advertSettings();
+  p.begin(ctx);
+  EXPECT_FALSE(app.share);
+  EXPECT_TRUE(p.onInput(InputEvent::NavDown));   // -> row 1 (Share position)
+  EXPECT_TRUE(p.onInput(InputEvent::Select));
+  EXPECT_TRUE(app.share);
+}
+
+TEST(AdvertSettingsPanel, DeviceNameRowOpensEditorWithoutCrashing) {
+  FakeNameApp app;
+  AppletContext ctx; ctx.app = &app;             // no host -> push is skipped
+  AdvertSettingsPanel& p = advertSettings();
+  p.begin(ctx);
+  EXPECT_TRUE(p.onInput(InputEvent::Select));    // row 0 = Device name
+  EXPECT_STREQ("Old", app.name);                 // no change until keypad confirms
+}
 
 TEST(AppServicesAdvert, DefaultSendIsSafeNoop) {
   BareApp a;

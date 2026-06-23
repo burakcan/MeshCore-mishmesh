@@ -2,6 +2,7 @@
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/UiPrefs.h>
+#include <mishmesh/core/Applet.h>
 #include <mishmesh/applets/settings/HomeSettingsPanel.h>
 #include "FakeDisplayDriver.h"
 
@@ -25,6 +26,15 @@ void prime() {
   uiPrefs().resetForTest();
   uiPrefs().begin(nullptr);
 }
+
+struct FakeSleepApp : AppServices {
+  uint8_t idx = 1;                                  // 30s
+  const char* nodeName() const override { return "n"; }
+  uint16_t batteryMillivolts() const override { return 0; }
+  uint32_t epochSeconds() const override { return 0; }
+  uint8_t screenSleepIndex() const override { return idx; }
+  void setScreenSleepIndex(uint8_t i) override { idx = i; }
+};
 
 }  // namespace
 
@@ -64,6 +74,23 @@ TEST(HomeSettingsPanel, RendersWithoutHost) {
   Canvas c(&d);
   p.renderBody(c, 0, 13, 128, 51);
   EXPECT_GT(d.fills.size(), 0u);
+}
+
+TEST(HomeSettingsPanel, ScreenSleepStepperAppliesSelection) {
+  prime();
+  FakeSleepApp app;
+  AppletContext ctx; ctx.app = &app;
+  HomeSettingsPanel& p = homeSettings();
+  p.begin(ctx);
+  EXPECT_FALSE(p.modalActive());
+  // Row 0 = battery, row 1 = Screen sleep.
+  EXPECT_TRUE(p.onInput(InputEvent::NavDown));       // -> row 1
+  EXPECT_TRUE(p.onInput(InputEvent::Select));        // open stepper at idx 1 (30s)
+  EXPECT_TRUE(p.modalActive());
+  EXPECT_TRUE(p.onInput(InputEvent::NavRight));       // 30s -> 1m (idx 2)
+  EXPECT_TRUE(p.onInput(InputEvent::Select));         // confirm
+  EXPECT_FALSE(p.modalActive());
+  EXPECT_EQ(2, app.idx);
 }
 
 int main(int argc, char** argv) {
