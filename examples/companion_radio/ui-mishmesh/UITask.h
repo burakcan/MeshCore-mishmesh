@@ -22,6 +22,7 @@
 #include <mishmesh/core/RetryEngine.h>
 #include <mishmesh/core/ScreenSleep.h>
 #include <mishmesh/core/NameValidation.h>
+#include <mishmesh/core/RepeatFreq.h>
 #include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/sound/Sounds.h>
 // [/mishmesh]
@@ -93,6 +94,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     mishmesh::ChanResult joinPublicChannel() override;
     mishmesh::ChanResult joinHashtagChannel(const char* hashtag) override;
     bool publicChannelJoined() const override;
+    bool channelKeyHex(const mishmesh::ConvoKey& k, char* dst, int cap) const override;
   private:
     int freeChannelSlot() const;                                   // -1 if full
     mishmesh::ChanResult setSecret(const char* name, const uint8_t secret16[16]);
@@ -209,6 +211,7 @@ public:
     out.sf         = _node_prefs->sf;
     out.cr         = _node_prefs->cr;
     out.txPowerDbm = _node_prefs->tx_power_dbm;
+    out.repeater   = _node_prefs->client_repeat != 0;
     return true;
   }
   int8_t txPowerMax() const override { return the_mesh.uiTxPowerMax(); }
@@ -217,8 +220,35 @@ public:
     if (!p) return;
     p->freq = c.freqMhz; p->bw = c.bwKhz; p->sf = c.sf; p->cr = c.cr;
     p->tx_power_dbm = c.txPowerDbm;
+    // Off-grid repeat only where the frequency is a permitted repeat band.
+    bool allowRepeat = c.repeater &&
+        the_mesh.uiIsValidRepeatFreq((uint32_t)(c.freqMhz * 1000.0f + 0.5f));
+    p->client_repeat = allowRepeat ? 1 : 0;
     the_mesh.savePrefs();
     the_mesh.uiApplyRadioParams();   // live, no reboot
+  }
+  bool repeaterMode() const override {
+    return _node_prefs && _node_prefs->client_repeat != 0;
+  }
+  bool offGridFreqForBand(float curMhz, float& outMhz) const override {
+    int n = the_mesh.uiRepeatFreqCount();
+    if (n <= 0) return false;
+    if (n > 16) n = 16;
+    uint32_t allowed[16];
+    for (int i = 0; i < n; i++) allowed[i] = the_mesh.uiRepeatFreqKhz(i);
+    uint32_t khz = mishmesh::pickRepeatFreqKhz(curMhz, allowed, n);
+    if (!khz) return false;
+    outMhz = (float)khz / 1000.0f;
+    return true;
+  }
+  float savedRepeatFreq() const override {
+    return _node_prefs ? _node_prefs->repeat_saved_freq : 0.0f;
+  }
+  void setSavedRepeatFreq(float f) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->repeat_saved_freq = f;
+    the_mesh.savePrefs();
   }
   int16_t tzOffsetMinutes() const override {
     return _node_prefs ? (int16_t)_node_prefs->tz_quarter_hours * 15 : 0;

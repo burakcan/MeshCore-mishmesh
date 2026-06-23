@@ -245,6 +245,12 @@ public:
   uint32_t getStorageTotalKb() const { return _store->getStorageTotalKb(); }
   // [/mishmesh]
 
+  // [mishmesh] off-grid repeat frequency introspection for the on-device UI
+  bool uiIsValidRepeatFreq(uint32_t khz) const { return isValidClientRepeatFreq(khz); }
+  int uiRepeatFreqCount() const;
+  uint32_t uiRepeatFreqKhz(int i) const;
+  // [/mishmesh]
+
 #if ENV_INCLUDE_GPS == 1
   void applyGpsPrefs() {
     sensors.setSettingValue("gps", _prefs.gps_enabled ? "1" : "0");

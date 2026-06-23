@@ -1409,6 +1409,15 @@ bool MyMesh::isValidClientRepeatFreq(uint32_t f) const {
   }
   return false;
 }
+// [mishmesh] expose the board's allowed off-grid repeat frequencies (kHz) to the UI
+int MyMesh::uiRepeatFreqCount() const {
+  return (int)(sizeof(repeat_freq_ranges) / sizeof(repeat_freq_ranges[0]));
+}
+uint32_t MyMesh::uiRepeatFreqKhz(int i) const {
+  if (i < 0 || i >= uiRepeatFreqCount()) return 0;
+  return repeat_freq_ranges[i].lower_freq;
+}
+// [/mishmesh]
 
 void MyMesh::startInterface(BaseSerialInterface &serial) {
   _serial = &serial;

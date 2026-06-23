@@ -37,6 +37,7 @@ struct RadioConfig {
   uint8_t sf;           // 5..12
   uint8_t cr;           // 5..8
   int8_t  txPowerDbm;   // -9..txPowerMax()
+  bool    repeater;     // off-grid repeat mode (client_repeat); applied with the rest
 };
 
 // Live app/device state applets read. Implemented by the adapter and queried on
@@ -106,6 +107,14 @@ struct AppServices {
   // (isValidNodeName). Returns true if applied. Save only - no advert is sent.
   // Defaults keep the framework companion-agnostic (not settable).
   virtual bool    setNodeName(const char*) { return false; }
+  // Off-grid repeat (client_repeat). repeaterMode() drives the home indicator.
+  // offGridFreqForBand returns the firmware-permitted off-grid frequency (MHz)
+  // for curMhz's band (false if none). savedRepeatFreq persists the pre-repeat
+  // frequency so disabling restores it. Defaults keep the framework agnostic.
+  virtual bool  repeaterMode() const { return false; }
+  virtual bool  offGridFreqForBand(float curMhz, float& outMhz) const { (void)curMhz; (void)outMhz; return false; }
+  virtual float savedRepeatFreq() const { return 0.0f; }
+  virtual void  setSavedRepeatFreq(float) {}
   // [/mishmesh]
 };
 

@@ -12,6 +12,7 @@ namespace {
 
 struct FakeApp : AppServices {
   bool ble = false, conn = false, gps = false, fix = false;
+  bool repeater = false;
   const char* nodeName() const override { return "alice"; }
   uint16_t batteryMillivolts() const override { return 4000; }
   uint32_t epochSeconds() const override { return 13 * 3600 + 37 * 60; }
@@ -21,6 +22,7 @@ struct FakeApp : AppServices {
   bool gpsSupported() const override { return true; }
   bool gpsEnabled() const override { return gps; }
   bool gpsHasFix() const override { return fix; }
+  bool repeaterMode() const override { return repeater; }
 };
 
 struct StubApplet : Applet {
@@ -117,6 +119,23 @@ TEST(HomeApplet, GpsFixDrawsInvertedChip) {
     fills[pass] = d.fills.size();
   }
   EXPECT_GT(fills[1], fills[0]);
+}
+
+TEST(HomeApplet, RepeaterModeDrawsExtraIcon) {
+  primeRegistry();
+  FakeApp app;
+  size_t lit[2];
+  for (int pass = 0; pass < 2; pass++) {
+    app.repeater = pass == 1;
+    FakeDisplayDriver d;
+    AppletContext ctx; ctx.app = &app;
+    AppletHost host(&d, ctx);
+    HomeApplet home;
+    host.setRoot(&home);
+    host.loop(0);
+    lit[pass] = d.litPixels.size();
+  }
+  EXPECT_GT(lit[1], lit[0]);   // repeater icon lights additional pixels
 }
 
 TEST(HomeApplet, HintLabelTruncatesToFourChars) {

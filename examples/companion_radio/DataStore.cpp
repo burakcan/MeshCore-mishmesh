@@ -242,6 +242,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     _prefs.time_fmt_12h = 0;        // 24-hour
     _prefs.manual_time_set = 0;     // automatic
     _prefs.date_format = 0;         // DMY
+    _prefs.screen_sleep = 0;        // 0 = unset -> 30s default
+    _prefs.repeat_saved_freq = 0.0f; // 0 = none
     file.read((uint8_t *)&_prefs.sound_volume, sizeof(_prefs.sound_volume));      // 137
     file.read((uint8_t *)&_prefs.sound_mute_mask, sizeof(_prefs.sound_mute_mask)); // 138
     file.read((uint8_t *)&_prefs.notify_tone_ch, sizeof(_prefs.notify_tone_ch));   // 139
@@ -250,6 +252,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     file.read((uint8_t *)&_prefs.time_fmt_12h, sizeof(_prefs.time_fmt_12h));         // 142
     file.read((uint8_t *)&_prefs.manual_time_set, sizeof(_prefs.manual_time_set));   // 143
     file.read((uint8_t *)&_prefs.date_format, sizeof(_prefs.date_format));           // 144
+    file.read((uint8_t *)&_prefs.screen_sleep, sizeof(_prefs.screen_sleep));               // 145
+    file.read((uint8_t *)&_prefs.repeat_saved_freq, sizeof(_prefs.repeat_saved_freq));     // 146
     // [/mishmesh]
 
     file.close();
@@ -300,6 +304,8 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.time_fmt_12h, sizeof(_prefs.time_fmt_12h));         // 142
     file.write((uint8_t *)&_prefs.manual_time_set, sizeof(_prefs.manual_time_set));   // 143
     file.write((uint8_t *)&_prefs.date_format, sizeof(_prefs.date_format));           // 144
+    file.write((uint8_t *)&_prefs.screen_sleep, sizeof(_prefs.screen_sleep));               // 145
+    file.write((uint8_t *)&_prefs.repeat_saved_freq, sizeof(_prefs.repeat_saved_freq));     // 146
     // [/mishmesh]
 
     file.close();

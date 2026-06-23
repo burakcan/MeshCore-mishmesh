@@ -29,6 +29,7 @@ TEST(RadioPresets, NoMatchReturnsMinusOne) {
 }
 
 #include <mishmesh/core/Applet.h>
+#include <mishmesh/core/RepeatFreq.h>
 
 namespace {
 // Minimal AppServices with radio backing store, for panel/seam tests.
@@ -43,6 +44,19 @@ public:
   bool radioConfig(mishmesh::RadioConfig& out) const override { out = cfg; return true; }
   int8_t txPowerMax() const override { return maxTx; }
   void setRadioConfig(const mishmesh::RadioConfig& c) override { cfg = c; setCalls++; }
+  // repeater seam
+  float savedFreq = 0.0f;
+  bool repeaterMode() const override { return cfg.repeater; }
+  float savedRepeatFreq() const override { return savedFreq; }
+  void setSavedRepeatFreq(float f) override { savedFreq = f; }
+  // firmware default allowed off-grid set: 433 / 869.495 / 918 (kHz)
+  bool offGridFreqForBand(float curMhz, float& outMhz) const override {
+    const uint32_t allowed[] = { 433000u, 869495u, 918000u };
+    uint32_t khz = mishmesh::pickRepeatFreqKhz(curMhz, allowed, 3);
+    if (!khz) return false;
+    outMhz = (float)khz / 1000.0f;
+    return true;
+  }
 };
 }
 
@@ -161,7 +175,7 @@ TEST(RadioPanel, RowValuesReflectConfig) {
   mishmesh::RadioSettingsPanel& panel = mishmesh::radioSettings();
   auto ctx = ctxWith(&app);
   panel.begin(ctx);
-  ASSERT_EQ(panel.rowCountForTest(), 6);
+  ASSERT_EQ(panel.rowCountForTest(), 7);
   EXPECT_STREQ(panel.rowValueForTest(0), "USA/Canada");   // preset match
   EXPECT_STREQ(panel.rowValueForTest(1), "910.525 MHz");
   EXPECT_STREQ(panel.rowValueForTest(2), "62.5 kHz");
@@ -227,6 +241,50 @@ TEST(RadioPanel, OnHideAppliesOnlyWhenDirty) {
   panel.onHide();
   EXPECT_EQ(app.setCalls, 1);       // dirty -> applied once
   EXPECT_EQ(app.cfg.sf, 9);
+}
+
+TEST(RadioSettingsPanel, RepeaterEnableSwitchesToOffGridFreqAndRemembers) {
+  FakeRadioApp app;
+  app.cfg = {915.8f, 250.0f, 10, 5, 20, false};   // normal-band, repeat off
+  mishmesh::AppletContext ctx = ctxWith(&app);
+  mishmesh::RadioSettingsPanel& panel = mishmesh::radioSettings();
+  panel.begin(ctx);
+  for (int i = 0; i < 6; i++) EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::NavDown));
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));   // enable repeater
+  panel.onHide();                                             // apply staged
+  EXPECT_TRUE(app.cfg.repeater);
+  EXPECT_FLOAT_EQ(918.0f, app.cfg.freqMhz);                   // 915-band -> 918 off-grid
+  EXPECT_FLOAT_EQ(915.8f, app.savedFreq);                     // pre-repeat freq remembered
+}
+
+TEST(RadioSettingsPanel, RepeaterDisableRestoresSavedFreq) {
+  FakeRadioApp app;
+  app.cfg = {918.0f, 250.0f, 10, 5, 20, true};    // repeat on, off-grid freq
+  app.savedFreq = 915.8f;
+  mishmesh::AppletContext ctx = ctxWith(&app);
+  mishmesh::RadioSettingsPanel& panel = mishmesh::radioSettings();
+  panel.begin(ctx);
+  for (int i = 0; i < 6; i++) EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::NavDown));
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));   // disable repeater
+  panel.onHide();
+  EXPECT_FALSE(app.cfg.repeater);
+  EXPECT_FLOAT_EQ(915.8f, app.cfg.freqMhz);                   // restored
+}
+
+TEST(RadioSettingsPanel, RepeaterEnableRejectedWhenNoOffGridFreqForBand) {
+  struct NoBandApp : FakeRadioApp {
+    bool offGridFreqForBand(float, float&) const override { return false; }
+  } app;
+  app.cfg = {915.8f, 250.0f, 10, 5, 20, false};
+  mishmesh::AppletContext ctx = ctxWith(&app);   // no host in ctx -> toast is skipped
+  mishmesh::RadioSettingsPanel& panel = mishmesh::radioSettings();
+  panel.begin(ctx);
+  for (int i = 0; i < 6; i++) EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::NavDown));
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));   // attempt enable
+  panel.onHide();
+  EXPECT_FALSE(app.cfg.repeater);                            // stayed off
+  EXPECT_EQ(0, app.setCalls);                                // nothing applied (not dirty)
+  EXPECT_FLOAT_EQ(915.8f, app.cfg.freqMhz);                  // unchanged
 }
 
 int main(int argc, char** argv) {

@@ -99,6 +99,44 @@ TEST(ChatMenu, NotificationsRowReturnsEditNotify) {
   EXPECT_FALSE(menu.modalActive());              // no stepper
 }
 
+static ConvoKey chan(uint8_t idx) { ConvoKey k{}; k.type = 1; k.id[0] = idx; return k; }
+
+TEST(ChatMenu, ChannelExposesShareRow) {
+  FakeMessagesService svc;
+  ChatMenu m; m.setTarget(chan(1)); m.reset();
+  m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown);   // Region -> Notifications -> Share
+  EXPECT_EQ(2, m.selected());
+  const char* toast = nullptr;
+  EXPECT_EQ(ChatMenu::Result::Share, m.activate(&svc, toast));   // caller pushes the share screen
+  EXPECT_FALSE(m.modalActive());                                  // Share arms no dialog
+}
+
+TEST(ChatMenu, DirectChatHasNoShareRow) {
+  FakeMessagesService svc = twoChats();
+  ChatMenu m; m.setTarget(dm("ALICE!")); m.reset();
+  // Row 2 on a DM is "Clear chat", not Share (Share is channel-only).
+  m.onInput(InputEvent::NavDown); m.onInput(InputEvent::NavDown);
+  const char* toast = nullptr;
+  EXPECT_EQ(ChatMenu::Result::None, m.activate(&svc, toast));    // Clear arms the dialog
+  EXPECT_TRUE(m.modalActive());
+}
+
+TEST(ChatMenu, ChannelDeleteIndexShiftsPastShare) {
+  FakeMessagesService svc;
+  svc.store.appendInbound(chan(1), "hi", 2, 1, 1, 0, nullptr, 0);
+  ChatMenu m; m.setTarget(chan(1)); m.reset();
+  // Region, Notifications, Share, Clear, Mark unread, Delete -> Delete is index 5.
+  for (int i = 0; i < 5; i++) m.onInput(InputEvent::NavDown);
+  EXPECT_EQ(5, m.selected());
+  const char* toast = nullptr;
+  EXPECT_EQ(ChatMenu::Result::None, m.activate(&svc, toast));    // arms the confirm dialog
+  EXPECT_TRUE(m.modalActive());
+  EXPECT_EQ(1, svc.convoCount());
+  EXPECT_EQ(ChatMenu::Result::Deleted, confirm(m, toast));
+  EXPECT_STREQ("Chat deleted", toast);
+  EXPECT_EQ(0, svc.convoCount());
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

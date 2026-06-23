@@ -115,6 +115,12 @@ struct MessagesService {
   virtual ChanResult joinPublicChannel() { return ChanResult::Error; }
   virtual ChanResult joinHashtagChannel(const char* hashtag) { (void)hashtag; return ChanResult::Error; }
   virtual bool publicChannelJoined() const { return false; }
+  // Fills the channel's shareable PSK as a 32-char hex string (dst, cap>=33) and
+  // returns true. Only meaningful for channels (k.type==1); default no-op keeps
+  // non-adapter impls (tests) inert.
+  virtual bool channelKeyHex(const ConvoKey& k, char* dst, int cap) const {
+    (void)k; if (dst && cap > 0) dst[0] = 0; return false;
+  }
   virtual uint32_t seq() const = 0;
 };
 

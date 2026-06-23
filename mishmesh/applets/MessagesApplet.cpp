@@ -2,6 +2,7 @@
 #include <mishmesh/applets/settings/MessagesSettingsPanel.h>
 #include "MessageThreadApplet.h"
 #include "ChatNotifyApplet.h"
+#include "ChannelShareApplet.h"
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/AppletHost.h>
@@ -173,6 +174,17 @@ bool MessagesApplet::onInput(InputEvent ev) {
         }
         chatNotifyApplet().setTarget(_menuKey, n);
         if (_host) _host->push(&chatNotifyApplet());
+        return true;
+      }
+      if (r == ChatMenu::Result::Share) {
+        const char* n = "";
+        ConvoView cv;
+        for (int i = 0; _svc && i < _svc->convoCount(); i++) {
+          if (_svc->getConvo(i, cv) && cv.key.equals(_menuKey)) { n = cv.name; break; }
+        }
+        channelShareApplet().setTarget(_menuKey, n);
+        _menuOpen = false;                 // returning from Share lands back on the list
+        if (_host) _host->push(&channelShareApplet());
         return true;
       }
       if (_host && toast) _host->postToast(toast);

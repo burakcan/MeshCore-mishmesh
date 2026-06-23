@@ -967,6 +967,15 @@ bool UITask::MsgSvc::publicChannelJoined() const {
   return false;
 }
 
+bool UITask::MsgSvc::channelKeyHex(const mishmesh::ConvoKey& k, char* dst, int cap) const {
+  if (dst && cap > 0) dst[0] = 0;
+  if (k.type != 1 || !dst || cap < 33) return false;   // channels only; 32 hex + NUL
+  ChannelDetails cd;
+  if (!the_mesh.getChannel(k.id[0], cd)) return false;
+  mesh::Utils::toHex(dst, cd.channel.secret, 16);       // first 16 bytes = the PSK
+  return true;
+}
+
 // --- MishmeshStorage: filesystem key->blob persistence for applets ---
 // Files live under /mm/<key> on the secondary FS (fallback primary), capped at 128 B.
 

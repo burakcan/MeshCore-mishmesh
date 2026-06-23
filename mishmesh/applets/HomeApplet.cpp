@@ -83,6 +83,11 @@ int HomeApplet::onRender(Canvas& c) {
     }
     xr -= 3;
   }
+  if (_app && _app->repeaterMode()) {
+    xr -= 12;
+    c.drawGlyph(iconFont(), xr, 0, (uint16_t)Icon::Radio, DisplayDriver::LIGHT);
+    xr -= 3;
+  }
   // Clock-engine indicators: armed alarm, pending timer, running stopwatch.
   if (clockService().alarmEnabled()) {
     xr -= 12;

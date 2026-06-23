@@ -33,9 +33,12 @@ private:
   struct Model : ListModel {
     const RadioConfig* cfg = nullptr;
     mutable char vbuf[24];
-    int count() const override { return 6; }
+    enum Row : int { Preset, Freq, Bw, Sf, Cr, Tx, Repeater, ROW_COUNT };
+    int count() const override { return ROW_COUNT; }
     const char* label(int i) const override;
     const char* value(int i) const override;
+    bool isToggle(int i) const override { return i == Repeater; }
+    bool toggleState(int i) const override { return i == Repeater && cfg && cfg->repeater; }
   } _model;
 
   // keypad onConfirm trampolines (ctx = this)
@@ -43,8 +46,9 @@ private:
   static void onTxDone(void* ctx, const char* text);
   void editFrequency();
   void editTxPower();
+  void toggleRepeater();
 
-  RadioConfig  _staged{915.0f, 250.0f, 10, 5, 20};
+  RadioConfig  _staged{915.0f, 250.0f, 10, 5, 20, false};
   bool         _dirty = false;
   AppServices* _app = nullptr;
   AppletHost*  _host = nullptr;

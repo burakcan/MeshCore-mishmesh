@@ -21,10 +21,11 @@ namespace mishmesh {
 // row's via setNotifyLabel(). The widget itself just displays them.
 class ChatMenu {
 public:
-  enum class Result { None, Cleared, Deleted, EditRegion, EditNotify };
+  enum class Result { None, Cleared, Deleted, EditRegion, EditNotify, Share };
 
   ChatMenu() { _model.region = _region; _model.notify = _notify; }   // point the model at our buffers once
-  void setTarget(const ConvoKey& k) { _key = k; }
+  // Channels (k.type==1) get an extra "Share" row; direct chats don't.
+  void setTarget(const ConvoKey& k) { _key = k; _model.isChannel = (k.type == 1); }
   // Shows `name` in the Region row's value column, or "None" when empty/null.
   void setRegion(const char* name) {
     if (name && name[0]) { strncpy(_region, name, sizeof(_region) - 1); _region[sizeof(_region) - 1] = 0; }
@@ -83,18 +84,33 @@ private:
   struct Model : ListModel {
     const char* region = "None";     // points at the owner's _region buffer
     const char* notify = "All";      // points at the owner's _notify buffer
-    int count() const override { return 5; }
+    bool isChannel = false;          // channels expose the extra "Share" row
+    enum Action : uint8_t { ARegion, ANotify, AShare, AClear, AMarkUnread, ADelete };
+    // Visible order: Region, Notifications, [Share], Clear, Mark unread, Delete.
+    Action actionAt(int i) const {
+      Action seq[6]; int n = 0;
+      seq[n++] = ARegion; seq[n++] = ANotify;
+      if (isChannel) seq[n++] = AShare;
+      seq[n++] = AClear; seq[n++] = AMarkUnread; seq[n++] = ADelete;
+      return (i >= 0 && i < n) ? seq[i] : ADelete;
+    }
+    int count() const override { return isChannel ? 6 : 5; }
     const char* label(int i) const override {
-      if (i == 0) return "Region";
-      if (i == 1) return "Notifications";
-      if (i == 2) return "Clear chat";
-      if (i == 3) return "Mark unread";
-      return "Delete chat";
+      switch (actionAt(i)) {
+        case ARegion:     return "Region";
+        case ANotify:     return "Notifications";
+        case AShare:      return "Share";
+        case AClear:      return "Clear chat";
+        case AMarkUnread: return "Mark unread";
+        default:          return "Delete chat";
+      }
     }
     const char* value(int i) const override {
-      if (i == 0) return region;
-      if (i == 1) return notify;
-      return nullptr;
+      switch (actionAt(i)) {
+        case ARegion: return region;
+        case ANotify: return notify;
+        default:      return nullptr;
+      }
     }
   } _model;
 };

@@ -17,7 +17,8 @@ const char* RadioSettingsPanel::Model::label(int i) const {
     case 2: return "Bandwidth";
     case 3: return "Spreading factor";
     case 4: return "Coding rate";
-    default: return "Transmit power";
+    case 5: return "Transmit power";
+    default: return "Repeater";
   }
 }
 
@@ -32,7 +33,8 @@ const char* RadioSettingsPanel::Model::value(int i) const {
     case 2: snprintf(vbuf, sizeof(vbuf), "%g kHz", cfg->bwKhz);  return vbuf;
     case 3: snprintf(vbuf, sizeof(vbuf), "SF%u", (unsigned)cfg->sf); return vbuf;
     case 4: snprintf(vbuf, sizeof(vbuf), "CR%u", (unsigned)cfg->cr); return vbuf;
-    default: snprintf(vbuf, sizeof(vbuf), "%d dBm", (int)cfg->txPowerDbm); return vbuf;
+    case 5: snprintf(vbuf, sizeof(vbuf), "%d dBm", (int)cfg->txPowerDbm); return vbuf;
+    default: return nullptr;   // Repeater renders as a toggle pill
   }
 }
 
@@ -40,7 +42,7 @@ void RadioSettingsPanel::begin(AppletContext& ctx) {
   _app = ctx.app;
   _host = ctx.host;
   if (!_app || !_app->radioConfig(_staged)) {
-    _staged = {915.0f, 250.0f, 10, 5, 20};   // fallback when the seam is unavailable
+    _staged = {915.0f, 250.0f, 10, 5, 20, false};   // fallback when the seam is unavailable
   }
   _dirty = false;
   _model.cfg = &_staged;
@@ -99,6 +101,26 @@ void RadioSettingsPanel::editTxPower() {
   if (_host) _host->push(&keypadApplet());
 }
 
+void RadioSettingsPanel::toggleRepeater() {
+  if (!_app) return;
+  if (_staged.repeater) {                       // disable -> restore remembered freq
+    float s = _app->savedRepeatFreq();
+    if (s > 0.0f) _staged.freqMhz = s;
+    _staged.repeater = false;
+    _dirty = true;
+  } else {                                      // enable -> switch to off-grid freq
+    float og = 0.0f;
+    if (_app->offGridFreqForBand(_staged.freqMhz, og)) {
+      _app->setSavedRepeatFreq(_staged.freqMhz); // remember pre-repeat freq (persisted)
+      _staged.freqMhz = og;
+      _staged.repeater = true;
+      _dirty = true;
+    } else if (_host) {
+      _host->postToast("Repeat needs 433/869/918 MHz");
+    }
+  }
+}
+
 bool RadioSettingsPanel::onInput(InputEvent ev) {
   if (_list.onInput(ev)) return true;
   if (ev != InputEvent::Select) return false;   // Back bubbles -> commit happens in onHide
@@ -120,7 +142,8 @@ bool RadioSettingsPanel::onInput(InputEvent ev) {
       radioValuePickerApplet().configure(this, RadioField::CR, "Coding rate");
       if (_host) _host->push(&radioValuePickerApplet());
       return true;
-    default: editTxPower(); return true;
+    case 5: editTxPower(); return true;
+    default: toggleRepeater(); return true;
   }
 }
 

@@ -2,6 +2,7 @@
 #include "MessageThreadApplet.h"
 #include "MessagePathApplet.h"
 #include "ChatNotifyApplet.h"
+#include "ChannelShareApplet.h"
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
@@ -485,6 +486,11 @@ bool MessageThreadApplet::onInput(InputEvent ev) {
       if (r == ChatMenu::Result::EditNotify) {
         chatNotifyApplet().setTarget(_key, resolveTitle());
         if (_host) _host->push(&chatNotifyApplet());
+        return true;
+      }
+      if (r == ChatMenu::Result::Share) {
+        channelShareApplet().setTarget(_key, resolveTitle());
+        if (_host) _host->push(&channelShareApplet());
         return true;
       }
       if (_host && toast) _host->postToast(toast);

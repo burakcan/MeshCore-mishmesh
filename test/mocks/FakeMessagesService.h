@@ -119,6 +119,16 @@ struct FakeMessagesService : mishmesh::MessagesService {
     lastChanOp = OP_JOIN_HASH; lastChanName = hashtag ? hashtag : ""; chanCalls++; return chanResult;
   }
   bool publicChannelJoined() const override { return publicJoined; }
+  std::map<std::string, std::string> channelKeys;   // per-channel PSK hex (default: a fixed key)
+  bool channelKeyHex(const mishmesh::ConvoKey& k, char* dst, int cap) const override {
+    if (dst && cap > 0) dst[0] = 0;
+    if (k.type != 1 || !dst || cap < 33) return false;
+    auto it = channelKeys.find(keyName(k));
+    std::string hex = it == channelKeys.end()
+                        ? std::string("8b3387e9c5cdea6ac9e5edbaa115cd72") : it->second;
+    std::strncpy(dst, hex.c_str(), cap - 1); dst[cap - 1] = 0;
+    return true;
+  }
   mishmesh::MessagesConfig msgConfig;
   mishmesh::MessagesConfig getMessagesConfig() const override { return msgConfig; }
   void setMessagesConfig(const mishmesh::MessagesConfig& c) override { msgConfig = c; }
