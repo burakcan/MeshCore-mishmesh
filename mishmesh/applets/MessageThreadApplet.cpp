@@ -310,6 +310,13 @@ int MessageThreadApplet::onRender(Canvas& c) {
                   "No messages", DisplayDriver::LIGHT, TextAlign::Center);
     Canvas barC = body.region(0, barTop, body.width(), BTN_H);
     drawActionBar(barC);
+    // Quick replies open from the empty-thread action bar, so the modal must
+    // still paint here - the main modal draw below is past this early return.
+    if (_qrOpen) {
+      Canvas box = drawModalChrome(c);
+      _menu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
+      return _menu.needsAnimation() ? ListMenu::TICK_MS : 250;
+    }
     return 500;
   }
 

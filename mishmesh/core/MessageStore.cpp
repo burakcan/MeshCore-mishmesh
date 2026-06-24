@@ -1,217 +1,560 @@
 // mishmesh/core/MessageStore.cpp
 #include "MessageStore.h"
+#include "MsgCodec.h"
 namespace mishmesh {
 
 ConvoKey directKey(const uint8_t* p)   { ConvoKey k; k.type = 0; memcpy(k.id, p, 6); return k; }
 ConvoKey channelKey(uint8_t idx)       { ConvoKey k; k.type = 1; memset(k.id, 0, 6); k.id[0] = idx; return k; }
 
 void MessageStore::reset() {
-  _used = 0; _deadBytes = 0; _seq = 0; _convoCount = 0;
+  _backend = nullptr;
+  _index.reset();
+  _seq = 0;
   _hasActive = false;
   _hasLastInbound = false;
   memset(_tracked, 0, sizeof(_tracked));
+  _windowValid = false;
+  _winCount = _winFirst = _winTotal = 0;
 }
 
-// --- record field helpers ---
-static const int REC_HDR = 17;   // flags(1)+type(1)+id(6)+senderTime(4)+localTime(4)+textLen(1)
-static uint8_t  recKind(const uint8_t* r)     { return (r[0] >> 3) & 0x03; }
-static bool     recDead(const uint8_t* r)     { return r[0] & 0x04; }
-static uint16_t recTextLen(const uint8_t* r)  { return r[16]; }
-
-static void rdKey(const uint8_t* r, ConvoKey& k) { k.type = r[1]; memcpy(k.id, r + 2, 6); }
-static uint32_t rd32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
-static void     wr32(uint8_t* p, uint32_t v) { memcpy(p, &v, 4); }
-
-uint32_t MessageStore::recordSize(const uint8_t* r) const {
-  uint32_t n = REC_HDR + recTextLen(r);
-  switch (recKind(r)) {
-    case KIND_INBOUND:  n += 2 + r[n + 1]; break;      // snrx4(1)+pathLen(1)+path
-    case KIND_OUT_DM:   n += 3; break;                  // status(1)+trip(2)
-    case KIND_OUT_CHAN: n += 2; break;                  // status(1)+heard(1)
+void MessageStore::begin(MsgLogBackend* b) {
+  _backend = b;
+  _index.reset();
+  _seq = 0;
+  _hasActive = _hasLastInbound = false;
+  memset(_tracked, 0, sizeof(_tracked));
+  _windowValid = false;
+  _winCount = _winFirst = _winTotal = 0;
+  if (b) {
+    uint32_t n = b->loadIndex(_idxBuf, sizeof(_idxBuf));
+    if (!n || !_index.deserialize(_idxBuf, n)) rebuildIndex();
   }
-  return n;
 }
 
-int MessageStore::findConvo(const ConvoKey& key) const {
-  for (int i = 0; i < _convoCount; i++) if (_convos[i].key.equals(key)) return i;
-  return -1;
-}
+// ---- window management ----
 
-int MessageStore::ensureConvo(const ConvoKey& key) {
-  int ci = findConvo(key);
-  if (ci >= 0) return ci;
-  if (_convoCount >= MAX_CONVOS) {
-    // evict the least-recently-active convo to make room
-    int lru = 0;
-    for (int i = 1; i < _convoCount; i++)
-      if (_convos[i].lastTime < _convos[lru].lastTime) lru = i;
-    ConvoKey victim = _convos[lru].key;
-    while (_convos[lru].count > 0) {
-      tombstoneOldestOf(victim);
-      lru = findConvo(victim);
-      if (lru < 0) break;
+void MessageStore::loadWindow(const ConvoKey& key) const {
+  _windowKey   = key;
+  _windowValid = false;
+  _winCount    = 0;
+  _winFirst    = 0;
+  _winTotal    = 0;
+
+  if (!_backend) { _windowValid = true; return; }
+  char name[15]; codec::keyToName(key, name);
+  uint32_t fileSize = _backend->size(name);
+  if (fileSize == 0) { _windowValid = true; return; }
+
+  // Pass 1: scan the whole file counting live records and recording their offsets
+  // so we know which tail records fit in WINDOW_BYTES.
+  // We work in _recBuf-sized chunks to find record boundaries without a big buffer.
+  // offsets[] stores the byte offset of each live record (we only need the tail ones).
+  // We keep a rolling ring of the last PER_CHAT_CAP offsets.
+  static const int MAX_LIVE = PER_CHAT_CAP; // can't exceed cap after rotation
+  uint32_t liveOff[MAX_LIVE];   // byte offsets of last MAX_LIVE live records
+  uint32_t liveSz[MAX_LIVE];    // sizes
+  int liveHead = 0, liveUsed = 0;
+  int totalLive = 0;
+
+  uint32_t pos = 0;
+  while (pos < fileSize) {
+    // Read up to MAX_REC bytes so recSize() can dereference the full trailer
+    // (KIND_INBOUND reads pathLen at REC_HDR+textLen+1, beyond REC_HDR bytes).
+    uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+    if (got < (uint32_t)codec::REC_HDR) break;
+    uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+    if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+    if (pos + sz > fileSize) break;
+    if (!codec::recDead(_recBuf)) {
+      liveOff[liveHead] = pos;
+      liveSz[liveHead]  = sz;
+      liveHead = (liveHead + 1) % MAX_LIVE;
+      if (liveUsed < MAX_LIVE) liveUsed++;
+      totalLive++;
     }
-    if (lru >= 0) dropConvoIfEmpty(lru);
-    // _convoCount is now < MAX_CONVOS; fall through to allocate the new slot
+    pos += sz;
   }
-  ci = _convoCount++;
-  _convos[ci].key = key; _convos[ci].lastTime = 0; _convos[ci].unread = 0;
-  _convos[ci].notifyUnread = 0; _convos[ci].count = 0;
-  return ci;
+  _winTotal = totalLive;
+
+  // Find how many tail records fit in WINDOW_BYTES (scan backwards through liveOff ring)
+  uint32_t arenaUsed = 0;
+  int fitCount = 0;
+  for (int i = 0; i < liveUsed; i++) {
+    // Walk ring backwards: index of i-th-from-end
+    int ri = (liveHead - 1 - i + MAX_LIVE) % MAX_LIVE;
+    if (arenaUsed + liveSz[ri] > (uint32_t)WINDOW_BYTES) break;
+    arenaUsed += liveSz[ri];
+    fitCount++;
+  }
+
+  _winCount = fitCount;
+  _winFirst = totalLive - fitCount;
+
+  // Fill _arena: read those tail records in forward order
+  uint32_t arenaPos = 0;
+  for (int i = fitCount - 1; i >= 0; i--) {
+    int ri = (liveHead - 1 - i + MAX_LIVE) % MAX_LIVE;
+    uint32_t off = liveOff[ri];
+    uint32_t sz  = liveSz[ri];
+    _winOffs[fitCount - 1 - i] = (uint16_t)arenaPos;
+    _backend->read(name, off, _arena + arenaPos, sz);
+    arenaPos += sz;
+  }
+
+  _windowValid = true;
 }
 
-void MessageStore::touchConvo(int ci, uint32_t time) {
-  // lastTime drives recency sort (getConvo) and LRU eviction — it is never shown.
-  // Make the touched convo always become the newest: use the real timestamp when
-  // it's actually ahead, else one past the current maximum. This keeps ordering by
-  // true receive order even when the RTC is unset (time==0) or senders' clocks are
-  // skewed (a per-sender senderTime would otherwise misorder the list).
-  uint32_t maxT = 0;
-  for (int i = 0; i < _convoCount; i++) if (_convos[i].lastTime > maxT) maxT = _convos[i].lastTime;
-  uint32_t nt = time > maxT ? time : maxT + 1;
-  if (nt > _convos[ci].lastTime) _convos[ci].lastTime = nt;
+void MessageStore::invalidateWindow(const ConvoKey& key) {
+  if (_windowValid && _windowKey.equals(key)) _windowValid = false;
 }
 
-// writes a header + text into _arena at _used; returns offset, advances _used.
-// trailerLen bytes are left zeroed after the text for the caller to fill.
-static uint32_t writeHeader(uint8_t* arena, uint32_t& used, uint8_t kind, bool isChan,
-                            const ConvoKey& key, const char* text, uint16_t textLen,
-                            uint32_t senderTime, uint32_t localTime) {
-  uint32_t off = used;
-  uint8_t* r = arena + off;
-  r[0] = (uint8_t)((kind & 0x03) << 3) | (isChan ? 0x02 : 0) | (kind != KIND_INBOUND ? 0x01 : 0);
-  r[1] = key.type; memcpy(r + 2, key.id, 6);
-  wr32(r + 8, senderTime); wr32(r + 12, localTime);
-  if (textLen > MAX_TEXT) textLen = MAX_TEXT;
-  r[16] = (uint8_t)textLen; memcpy(r + 17, text, textLen);
-  used += REC_HDR + textLen;
-  return off;
+// ---- streaming helper ----
+
+bool MessageStore::findRecordOffset(const char* name, int targetIdx,
+                                    uint32_t& offOut, uint32_t& lenOut) const {
+  if (!_backend) return false;
+  uint32_t fileSize = _backend->size(name);
+  uint32_t pos = 0;
+  int n = 0;
+  while (pos < fileSize) {
+    uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+    if (got < (uint32_t)codec::REC_HDR) break;
+    uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+    if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+    if (pos + sz > fileSize) break;
+    if (!codec::recDead(_recBuf)) {
+      if (n == targetIdx) { offOut = pos; lenOut = sz; return true; }
+      n++;
+    }
+    pos += sz;
+  }
+  return false;
 }
+
+// ---- index rebuild ----
+
+void MessageStore::rebuildIndex() {
+  _index.reset();
+  if (!_backend) return;
+  MsgLogInfo infos[MAX_CONVOS];
+  int m = _backend->list(infos, MAX_CONVOS);
+  for (int i = 0; i < m; i++) {
+    ConvoKey k;
+    // Bad filename -> stray file; remove it and move on.
+    if (!codec::nameToKey(infos[i].name, k)) { _backend->remove(infos[i].name); continue; }
+    uint32_t fileSize = _backend->size(infos[i].name);
+    int liveCount = 0;
+    uint32_t maxT = 0;
+    uint32_t pos = 0;
+    uint32_t validEnd = 0;  // byte offset past the last fully-verified record
+    // Track last live record's text for preview; slot doesn't exist until after the loop.
+    char previewBuf[PREVIEW_LEN];
+    uint16_t previewLen = 0;
+    while (pos < fileSize) {
+      uint32_t got = _backend->read(infos[i].name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+      if (got < (uint32_t)codec::REC_HDR) break;
+      uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+      if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+      if (pos + sz > fileSize) break;  // torn tail: record overruns the file
+      if (!codec::recDead(_recBuf)) {
+        liveCount++;
+        uint32_t lt = codec::rd32(_recBuf + 12);
+        uint32_t st = codec::rd32(_recBuf + 8);
+        uint32_t t  = lt ? lt : st;
+        if (t > maxT) maxT = t;
+        uint16_t tlen = codec::recTextLen(_recBuf);
+        if (tlen) {
+          uint16_t cap = (uint16_t)(PREVIEW_LEN - 1);
+          previewLen = tlen < cap ? tlen : cap;
+          memcpy(previewBuf, _recBuf + codec::REC_HDR, previewLen);
+        }
+      }
+      pos += sz;
+      validEnd = pos;
+    }
+    // No live records -> nothing to index; remove the dead/empty file.
+    // [note] Cleared chats (0-byte files) are also removed here and not preserved in the
+    // conversation list after a rebuild - this is intentional; do not change this behavior.
+    if (liveCount == 0) { _backend->remove(infos[i].name); continue; }
+    // Heal a torn tail: truncate to the last complete record boundary.
+    // truncate() is buffer-free (no size limit), so this works for any file size.
+    if (validEnd < fileSize) _backend->truncate(infos[i].name, validEnd);
+    ConvoSummary& c = ensureSlot(k);
+    c.count    = (uint16_t)liveCount;
+    c.lastTime = maxT;
+    c.logBytes = validEnd;  // valid-record bytes only (torn tail excluded)
+    if (previewLen) _index.setPreview(k, previewBuf, previewLen);
+  }
+}
+
+void MessageStore::saveIndex() {
+  if (!_backend) return;
+  uint32_t n = _index.serialize(_idxBuf, sizeof(_idxBuf));
+  if (n) _backend->saveIndex(_idxBuf, n);
+}
+
+// ---- internal helpers ----
+
+bool MessageStore::ensureSpace(const ConvoKey& key, uint32_t need) {
+  if (!_backend) return true;
+  while (_index.totalLogBytes() + need > MSG_FLASH_BUDGET || _backend->freeBytes() < need) {
+    if (_index.count() == 0) break;
+    if (_index.lruKey().equals(key)) return false;  // can't evict the append target; drop message
+    ConvoKey v; _index.evictLRU(v);                  // guaranteed != key
+    char vn[15]; codec::keyToName(v, vn);
+    _backend->remove(vn);
+    if (_windowValid && _windowKey.equals(v)) _windowValid = false;
+  }
+  return true;
+}
+
+ConvoSummary& MessageStore::ensureSlot(const ConvoKey& key) {
+  if (_index.count() >= MAX_CONVOS && _index.find(key) < 0) {
+    ConvoKey victim;
+    if (_index.evictLRU(victim) && _backend) {
+      char name[15]; codec::keyToName(victim, name);
+      _backend->remove(name);
+    }
+  }
+  return _index.ensure(key);
+}
+
+void MessageStore::rotateIfNeeded(const ConvoKey& key, ConvoSummary& c) {
+  if (!_backend || c.count < PER_CHAT_CAP) return;
+  char name[15]; codec::keyToName(key, name);
+  // Batch rotation: drop ROTATE_DROP live records in one dropFront, amortising
+  // the cost of a full tail-rewrite over multiple appends (vs. one per message).
+  static const int ROTATE_DROP = 16;
+  uint32_t fileSize = _backend->size(name);
+  uint32_t cut = 0;
+  uint32_t pos = 0;
+  int live = 0;
+  while (pos < fileSize) {
+    uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+    if (got < (uint32_t)codec::REC_HDR) break;
+    uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+    if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+    if (pos + sz > fileSize) break;
+    if (!codec::recDead(_recBuf)) {
+      live++;
+      if (live == ROTATE_DROP) { cut = pos + sz; break; }
+    }
+    pos += sz;
+  }
+  if (cut == 0 || cut > fileSize) return;
+  _backend->dropFront(name, cut);
+  c.count = (c.count >= (uint16_t)live) ? c.count - (uint16_t)live : 0;
+  c.logBytes = (c.logBytes >= cut) ? c.logBytes - cut : 0;
+  invalidateWindow(key);
+}
+
+// ---- capture ----
 
 void MessageStore::appendInbound(const ConvoKey& key, const char* text, uint16_t textLen,
-                                 uint32_t senderTime, uint32_t recvTime,
-                                 int8_t snrx4, const uint8_t* path, uint8_t pathLen) {
+                                  uint32_t senderTime, uint32_t recvTime,
+                                  int8_t snrx4, const uint8_t* path, uint8_t pathLen) {
   if (textLen > MAX_TEXT) textLen = MAX_TEXT;
   if (pathLen > MAX_PATH) pathLen = MAX_PATH;
-  uint32_t need = REC_HDR + textLen + 2 + pathLen;
-  if (!reserve(need)) return;                       // Task 4 makes reserve real; Task1 stub returns true
-  int ci = ensureConvo(key);
-  if (ci < 0) return;
-  writeHeader(_arena, _used, KIND_INBOUND, key.type == 1, key, text, textLen, senderTime, recvTime);
-  _arena[_used++] = (uint8_t)snrx4;
-  _arena[_used++] = pathLen;
-  if (pathLen) { memcpy(_arena + _used, path, pathLen); _used += pathLen; }
-  _convos[ci].count++;
-  if (_convos[ci].count > PER_CHAT_CAP) tombstoneOldestOf(key);
-  if (!(_hasActive && _active.equals(key))) _convos[ci].unread++;
-  touchConvo(ci, recvTime ? recvTime : senderTime);
-  _lastInbound = key; _hasLastInbound = true;   // subject of the next notification
+
+  if (_backend) {
+    uint32_t recLen = (uint32_t)(codec::REC_HDR + textLen + 2 + pathLen);
+    if (!ensureSpace(key, recLen)) return;
+  }
+
+  ConvoSummary& c = ensureSlot(key);
+  if (_backend) rotateIfNeeded(key, c);
+
+  if (_backend) {
+    uint8_t trailer[2 + MAX_PATH];
+    trailer[0] = (uint8_t)snrx4;
+    trailer[1] = pathLen;
+    if (pathLen) memcpy(trailer + 2, path, pathLen);
+    int n = codec::writeRecord(_recBuf, KIND_INBOUND, key, text, textLen,
+                               senderTime, recvTime, trailer, (uint8_t)(2 + pathLen));
+    char name[15]; codec::keyToName(key, name);
+    if (!_backend->append(name, _recBuf, (uint32_t)n)) return;
+    c.logBytes += (uint32_t)n;
+    invalidateWindow(key);
+  }
+
+  c.count++;
+  if (!(_hasActive && _active.equals(key))) c.unread++;
+  int ci = _index.find(key);
+  _index.touch(ci, recvTime ? recvTime : senderTime);
+  _index.setPreview(key, text, textLen);
+  _lastInbound = key; _hasLastInbound = true;
   _seq++;
 }
 
-int MessageStore::messageCount(const ConvoKey& key) const {
-  int n = 0;
-  for (uint32_t off = 0; off < _used; ) {
-    const uint8_t* r = _arena + off;
-    uint32_t sz = recordSize(r);
-    if (!recDead(r)) { ConvoKey k; rdKey(r, k); if (k.equals(key)) n++; }
-    off += sz;
+void MessageStore::appendOutboundDM(const ConvoKey& key, const char* text, uint16_t textLen,
+                                     uint32_t senderTime, uint32_t sendTime,
+                                     uint32_t expectedAck, uint32_t sentMillis) {
+  if (textLen > MAX_TEXT) textLen = MAX_TEXT;
+
+  if (_backend) {
+    uint32_t recLen = (uint32_t)(codec::REC_HDR + textLen + 3);
+    if (!ensureSpace(key, recLen)) return;
   }
-  return n;
+
+  ConvoSummary& c = ensureSlot(key);
+  if (_backend) rotateIfNeeded(key, c);
+
+  if (_backend) {
+    uint8_t trailer[3] = { ST_PENDING, 0, 0 };
+    int n = codec::writeRecord(_recBuf, KIND_OUT_DM, key, text, textLen,
+                               senderTime, sendTime, trailer, 3);
+    char name[15]; codec::keyToName(key, name);
+    if (!_backend->append(name, _recBuf, (uint32_t)n)) return;
+    c.logBytes += (uint32_t)n;
+    invalidateWindow(key);
+  }
+
+  c.count++;
+  int ci = _index.find(key);
+  _index.touch(ci, sendTime);
+  _index.setPreview(key, text, textLen);
+  Tracked* t = openTracked(key, senderTime, KIND_OUT_DM);
+  t->expectedAck = expectedAck; (void)sentMillis;
+  _seq++;
+}
+
+void MessageStore::appendOutboundChannel(const ConvoKey& key, const char* text, uint16_t textLen,
+                                          uint32_t senderTime, uint32_t sendTime) {
+  if (textLen > MAX_TEXT) textLen = MAX_TEXT;
+
+  if (_backend) {
+    uint32_t recLen = (uint32_t)(codec::REC_HDR + textLen + 2);
+    if (!ensureSpace(key, recLen)) return;
+  }
+
+  ConvoSummary& c = ensureSlot(key);
+  if (_backend) rotateIfNeeded(key, c);
+
+  if (_backend) {
+    uint8_t trailer[2] = { ST_PENDING, 0 };
+    int n = codec::writeRecord(_recBuf, KIND_OUT_CHAN, key, text, textLen,
+                               senderTime, sendTime, trailer, 2);
+    char name[15]; codec::keyToName(key, name);
+    if (!_backend->append(name, _recBuf, (uint32_t)n)) return;
+    c.logBytes += (uint32_t)n;
+    invalidateWindow(key);
+  }
+
+  c.count++;
+  int ci = _index.find(key);
+  _index.touch(ci, sendTime);
+  _index.setPreview(key, text, textLen);
+  openTracked(key, senderTime, KIND_OUT_CHAN);
+  _seq++;
+}
+
+void MessageStore::markDelivered(uint32_t expectedAck, uint16_t tripTimeMs) {
+  for (int i = 0; i < MAX_TRACKED; i++) {
+    if (!_tracked[i].used || _tracked[i].kind != KIND_OUT_DM) continue;
+    if (_tracked[i].expectedAck != expectedAck) continue;
+    if (!_backend) { _seq++; return; }
+    char name[15]; codec::keyToName(_tracked[i].key, name);
+    // Find the matching record's byte offset using senderTime
+    uint32_t fileSize = _backend->size(name);
+    uint32_t pos = 0;
+    while (pos < fileSize) {
+      uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+      if (got < (uint32_t)codec::REC_HDR) break;
+      uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+      if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+      if (pos + sz > fileSize) break;
+      if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
+        ConvoKey k; codec::rdKey(_recBuf, k);
+        if (k.equals(_tracked[i].key) && codec::rd32(_recBuf + 8) == _tracked[i].senderTime) {
+          uint16_t textLen = codec::recTextLen(_recBuf);
+          uint32_t trailerOff = pos + (uint32_t)codec::REC_HDR + textLen;
+          uint8_t patch[3] = { ST_DELIVERED, (uint8_t)(tripTimeMs & 0xFF), (uint8_t)(tripTimeMs >> 8) };
+          _backend->patch(name, trailerOff, patch, 3);
+          invalidateWindow(_tracked[i].key);
+          _seq++; return;
+        }
+      }
+      pos += sz;
+    }
+    return;
+  }
+}
+
+void MessageStore::markFailed(const ConvoKey& key, uint32_t senderTime) {
+  if (!_backend) return;
+  char name[15]; codec::keyToName(key, name);
+  uint32_t fileSize = _backend->size(name);
+  uint32_t pos = 0;
+  while (pos < fileSize) {
+    uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+    if (got < (uint32_t)codec::REC_HDR) break;
+    uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+    if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+    if (pos + sz > fileSize) break;
+    if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
+      ConvoKey k; codec::rdKey(_recBuf, k);
+      if (k.equals(key) && codec::rd32(_recBuf + 8) == senderTime) {
+        uint16_t textLen = codec::recTextLen(_recBuf);
+        const uint8_t* trailerInBuf = _recBuf + codec::REC_HDR + textLen;
+        if (trailerInBuf[0] == ST_PENDING) {
+          uint32_t trailerOff = pos + (uint32_t)codec::REC_HDR + textLen;
+          uint8_t patch[1] = { ST_FAILED };
+          _backend->patch(name, trailerOff, patch, 1);
+          invalidateWindow(key);
+          _seq++;
+        }
+        return;
+      }
+    }
+    pos += sz;
+  }
+}
+
+void MessageStore::updateExpectedAck(const ConvoKey& key, uint32_t senderTime, uint32_t newAck) {
+  Tracked* t = findTracked(key, senderTime);
+  if (!t) t = openTracked(key, senderTime, KIND_OUT_DM);
+  if (t) t->expectedAck = newAck;
+}
+
+void MessageStore::addRepeat(const ConvoKey& key, uint32_t senderTime,
+                              int8_t snrx4, const uint8_t* path, uint8_t pathLen) {
+  Tracked* t = findTracked(key, senderTime);
+  if (!t || t->kind != KIND_OUT_CHAN) return;
+  if (pathLen > MAX_PATH) pathLen = MAX_PATH;
+  if (t->rptCount < MAX_REPEATS) {
+    RepeatRec& rr = t->repeats[t->rptCount];
+    rr.snrx4 = snrx4; rr.pathLen = pathLen; rr.hops = pathLen;
+    if (pathLen && path) memcpy(t->rptStore[t->rptCount], path, pathLen);
+    rr.path = t->rptStore[t->rptCount];
+    t->rptCount++;
+  }
+  if (!_backend) { _seq++; return; }
+  char name[15]; codec::keyToName(key, name);
+  uint32_t fileSize = _backend->size(name);
+  uint32_t pos = 0;
+  while (pos < fileSize) {
+    uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+    if (got < (uint32_t)codec::REC_HDR) break;
+    uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+    if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+    if (pos + sz > fileSize) break;
+    if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_CHAN) {
+      ConvoKey k; codec::rdKey(_recBuf, k);
+      if (k.equals(key) && codec::rd32(_recBuf + 8) == senderTime) {
+        uint16_t textLen = codec::recTextLen(_recBuf);
+        uint32_t trailerOff = pos + (uint32_t)codec::REC_HDR + textLen;
+        const uint8_t* trailerInBuf = _recBuf + codec::REC_HDR + textLen;
+        uint8_t heard = trailerInBuf[1] < 255 ? trailerInBuf[1] + 1 : 255;
+        uint8_t patch[2] = { ST_SENT, heard };
+        _backend->patch(name, trailerOff, patch, 2);
+        invalidateWindow(key);
+        _seq++; return;
+      }
+    }
+    pos += sz;
+  }
+  _seq++;
+}
+
+// ---- queries ----
+
+int MessageStore::messageCount(const ConvoKey& key) const {
+  int ci = _index.find(key);
+  return ci < 0 ? 0 : (int)_index.rawCount(ci);
 }
 
 bool MessageStore::getMessage(const ConvoKey& key, int index, MsgRecord& out) const {
+  if (!_backend) return false;
+
+  // Ensure window is loaded for this key
+  if (!_windowValid || !_windowKey.equals(key)) loadWindow(key);
+
+  auto decodeRecord = [&](const uint8_t* r) {
+    out.key  = key; out.kind = codec::recKind(r);
+    out.senderTime = codec::rd32(r + 8); out.localTime = codec::rd32(r + 12);
+    out.textLen = codec::recTextLen(r); out.text = (const char*)(r + codec::REC_HDR);
+    out.snrx4 = 0; out.hops = 0; out.path = nullptr; out.pathLen = 0;
+    out.status = ST_PENDING; out.tripTimeMs = 0; out.heardCount = 0;
+    const uint8_t* t = r + codec::REC_HDR + out.textLen;
+    if (out.kind == KIND_INBOUND) {
+      out.snrx4 = (int8_t)t[0]; out.pathLen = t[1]; out.hops = t[1];
+      out.path = t + 2;
+    } else if (out.kind == KIND_OUT_DM) {
+      out.status = t[0]; memcpy(&out.tripTimeMs, t + 1, 2);
+    } else {
+      out.status = t[0]; out.heardCount = t[1];
+      // heardCount is maintained in flash by addRepeat - no _tracked overlay needed
+    }
+  };
+
+  if (index >= _winFirst) {
+    // In window: zero-copy from _arena
+    int wi = index - _winFirst;
+    if (wi < _winCount) {
+      decodeRecord(_arena + _winOffs[wi]);
+      return true;
+    }
+  }
+
+  // Page: stream to the index-th live record
+  char name[15]; codec::keyToName(key, name);
+  uint32_t fileSize = _backend->size(name);
+  uint32_t pos = 0;
   int n = 0;
-  for (uint32_t off = 0; off < _used; ) {
-    const uint8_t* r = _arena + off;
-    uint32_t sz = recordSize(r);
-    if (!recDead(r)) {
-      ConvoKey k; rdKey(r, k);
+  while (pos < fileSize) {
+    uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+    if (got < (uint32_t)codec::REC_HDR) break;
+    uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+    if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+    if (pos + sz > fileSize) break;
+    if (!codec::recDead(_recBuf)) {
+      ConvoKey k; codec::rdKey(_recBuf, k);
       if (k.equals(key)) {
         if (n == index) {
-          out.key = k; out.kind = recKind(r);
-          out.senderTime = rd32(r + 8); out.localTime = rd32(r + 12);
-          out.textLen = recTextLen(r); out.text = (const char*)(r + 17);
-          out.snrx4 = 0; out.hops = 0; out.path = nullptr; out.pathLen = 0;
-          out.status = ST_PENDING; out.tripTimeMs = 0; out.heardCount = 0;
-          const uint8_t* t = r + REC_HDR + out.textLen;
-          if (out.kind == KIND_INBOUND) {
-            out.snrx4 = (int8_t)t[0]; out.pathLen = t[1]; out.hops = t[1];
-            out.path = t + 2;
-          } else if (out.kind == KIND_OUT_DM) {
-            out.status = t[0]; memcpy(&out.tripTimeMs, t + 1, 2);
-          } else { out.status = t[0]; out.heardCount = t[1]; }
+          decodeRecord(_recBuf);
           return true;
         }
         n++;
       }
     }
-    off += sz;
+    pos += sz;
   }
   return false;
 }
 
+int  MessageStore::convoCount() const { return _index.count(); }
+
 bool MessageStore::getConvo(int index, ConvoSummary& out) const {
-  if (index < 0 || index >= _convoCount) return false;
-  // selection-rank by lastTime descending without mutating _convos
-  int rank = 0, best = -1; uint32_t bestTime = 0; bool bestSet = false;
-  for (int pass = 0; pass <= index; pass++) {
-    best = -1; bestSet = false;
-    for (int i = 0; i < _convoCount; i++) {
-      uint32_t t = _convos[i].lastTime;
-      bool after = false;
-      // pick the i with the (pass+1)-th largest lastTime, tie-break by index
-      (void)after;
-      if (!bestSet || t > bestTime || (t == bestTime && i > best)) {
-        // skip ones already chosen in earlier passes
-        bool chosen = false;
-        // count how many have strictly greater time, or equal-time-with-greater-index
-        int greater = 0;
-        for (int j = 0; j < _convoCount; j++) {
-          if (j == i) continue;
-          uint32_t tj = _convos[j].lastTime;
-          if (tj > t || (tj == t && j > i)) greater++;
-        }
-        if (greater == pass) { best = i; bestTime = t; bestSet = true; }
-      }
-    }
-  }
-  if (best < 0) return false;
-  out = _convos[best];
-  return true;
+  return _index.get(index, out);
 }
 
-uint16_t MessageStore::totalUnread() const {
-  uint32_t t = 0;
-  for (int i = 0; i < _convoCount; i++) t += _convos[i].unread;
-  return t > 0xFFFF ? 0xFFFF : (uint16_t)t;
-}
+uint16_t MessageStore::totalUnread() const       { return _index.totalUnread(); }
+uint16_t MessageStore::totalNotifyUnread() const { return _index.totalNotifyUnread(); }
 
-int  MessageStore::convoCount() const { return _convoCount; }
 void MessageStore::setActiveConvo(const ConvoKey& key) {
   _active = key; _hasActive = true;
-  int ci = findConvo(key);
-  if (ci >= 0 && (_convos[ci].unread || _convos[ci].notifyUnread)) {
-    _convos[ci].unread = 0; _convos[ci].notifyUnread = 0; _seq++;
+  int ci = _index.find(key);
+  if (ci >= 0) {
+    ConvoSummary& c = _index.ensure(key);
+    if (c.unread || c.notifyUnread) { c.unread = 0; c.notifyUnread = 0; _seq++; }
   }
 }
 void MessageStore::clearActiveConvo() { _hasActive = false; }
 bool MessageStore::activeConvo(ConvoKey& out) const {
-  if (!_hasActive) return false;
-  out = _active; return true;
+  if (!_hasActive) return false; out = _active; return true;
 }
 bool MessageStore::lastInbound(ConvoKey& out) const {
-  if (!_hasLastInbound) return false;
-  out = _lastInbound; return true;
+  if (!_hasLastInbound) return false; out = _lastInbound; return true;
 }
-int  MessageStore::repeatCount(const ConvoKey& key, int msgIndex) const {
+
+int MessageStore::repeatCount(const ConvoKey& key, int msgIndex) const {
   MsgRecord r; if (!getMessage(key, msgIndex, r)) return 0;
   if (r.kind != KIND_OUT_CHAN) return 0;
   for (int i = 0; i < MAX_TRACKED; i++)
     if (_tracked[i].used && _tracked[i].kind == KIND_OUT_CHAN &&
         _tracked[i].senderTime == r.senderTime && _tracked[i].key.equals(key))
       return _tracked[i].rptCount;
-  return 0;   // aged out of tracking -> summary-only
+  return 0;
 }
 bool MessageStore::getRepeat(const ConvoKey& key, int msgIndex, int rIdx, RepeatRec& out) const {
   MsgRecord r; if (!getMessage(key, msgIndex, r)) return false;
@@ -223,356 +566,159 @@ bool MessageStore::getRepeat(const ConvoKey& key, int msgIndex, int rIdx, Repeat
     }
   return false;
 }
-void MessageStore::deleteMessage(const ConvoKey& key, int index) {
-  int n = 0;
-  for (uint32_t off = 0; off < _used; ) {
-    uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-    if (!recDead(r)) {
-      ConvoKey k; rdKey(r, k);
-      if (k.equals(key)) {
-        if (n == index) {
-          r[0] |= 0x04; _deadBytes += sz;
-          int ci = findConvo(key);
-          // Keep the convo summary even when its last message is deleted; a
-          // chat only leaves the list via an explicit chat-delete (or eviction).
-          if (ci >= 0) _convos[ci].count--;
-          _seq++; return;
-        }
-        n++;
-      }
-    }
-    off += sz;
-  }
-}
-
-void MessageStore::clearConvo(const ConvoKey& key) {
-  int ci = findConvo(key);
-  if (ci < 0) return;
-  // Tombstone every message but keep the convo summary so the chat stays in
-  // the list (emptied, not deleted). Don't route through tombstoneOldestOf:
-  // it drops the slot once count hits 0. Eviction paths still want that drop.
-  for (uint32_t off = 0; off < _used; ) {
-    uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-    if (!recDead(r)) {
-      ConvoKey k; rdKey(r, k);
-      if (k.equals(key)) { r[0] |= 0x04; _deadBytes += sz; }
-    }
-    off += sz;
-  }
-  _convos[ci].count = 0;
-  _convos[ci].unread = 0;
-  _convos[ci].notifyUnread = 0;   // keep lastTime -> chat holds its place in the list
-  _seq++;
-}
-
-void MessageStore::deleteConvo(const ConvoKey& key) {
-  int ci = findConvo(key);
-  if (ci < 0) return;
-  clearConvo(key);          // tombstone every message (keeps the slot for now)
-  dropConvoIfEmpty(ci);     // ...then drop the (now empty) summary entirely
-  _seq++;
-}
-
-void MessageStore::markUnread(const ConvoKey& key) {
-  int ci = findConvo(key);
-  if (ci < 0 || _convos[ci].unread) return;   // already unread -> nothing to do
-  _convos[ci].unread = 1;
-  _seq++;
-}
-
-void MessageStore::markNotifiable(const ConvoKey& key) {
-  int ci = findConvo(key);
-  if (ci < 0) return;
-  if (_hasActive && _active.equals(key)) return;   // open chat -> nothing to flag
-  _convos[ci].notifyUnread++;
-  _seq++;
-}
-
-uint16_t MessageStore::totalNotifyUnread() const {
-  uint32_t t = 0;
-  for (int i = 0; i < _convoCount; i++) t += _convos[i].notifyUnread;
-  return t > 0xFFFF ? 0xFFFF : (uint16_t)t;
-}
-
-void MessageStore::ensureChannel(uint8_t channelIdx) {
-  ConvoKey k = channelKey(channelIdx);
-  if (findConvo(k) >= 0) return;   // already seeded or has messages
-  ensureConvo(k);                  // empty slot; lastTime 0 -> sorts below active chats
-  _seq++;                          // mark dirty: refresh the list + persist the chat
-}
-size_t MessageStore::serialize(uint8_t* out, size_t cap) const {
-  const size_t CONVO_REC = 16;
-  size_t need = 4 + 1 + 4 + 2 + (size_t)_convoCount * CONVO_REC + _used;
-  if (cap < need) return 0;
-  size_t i = 0;
-  memcpy(out + i, "MMSG", 4); i += 4;
-  out[i++] = 2;                                  // format version 2
-  memcpy(out + i, &_used, 4); i += 4;
-  uint16_t cc = (uint16_t)_convoCount; memcpy(out + i, &cc, 2); i += 2;
-  for (int c = 0; c < _convoCount; c++) {
-    out[i++] = _convos[c].key.type;
-    memcpy(out + i, _convos[c].key.id, 6); i += 6;
-    memcpy(out + i, &_convos[c].lastTime, 4); i += 4;
-    memcpy(out + i, &_convos[c].unread, 2); i += 2;
-    out[i++] = _convos[c].count;
-    memcpy(out + i, &_convos[c].notifyUnread, 2); i += 2;
-  }
-  memcpy(out + i, _arena, _used); i += _used;
-  return i;
-}
-bool MessageStore::deserialize(const uint8_t* in, size_t len) {
-  if (len < 11 || memcmp(in, "MMSG", 4) != 0) return false;
-  uint8_t ver = in[4];
-  if (ver != 1 && ver != 2) return false;
-  size_t i = 5;
-  uint32_t used; memcpy(&used, in + i, 4); i += 4;
-  uint16_t cc;   memcpy(&cc, in + i, 2);  i += 2;
-  if (used > (uint32_t)ARENA_BYTES || cc > (uint16_t)MAX_CONVOS) return false;
-  // v1 wrote whole padded ConvoSummary structs (16-byte stride); v2 writes
-  // 16-byte packed records. Both strides are 16, disambiguated by `ver`.
-  const size_t STRIDE = 16;
-  if (len < i + (size_t)cc * STRIDE + used) return false;
-  reset();
-  _convoCount = (int)cc;
-  for (int c = 0; c < (int)cc; c++) {
-    const uint8_t* r = in + i + (size_t)c * STRIDE;
-    ConvoSummary& s = _convos[c];
-    if (ver == 2) {
-      s.key.type = r[0];
-      memcpy(s.key.id, r + 1, 6);
-      memcpy(&s.lastTime, r + 7, 4);
-      memcpy(&s.unread, r + 11, 2);
-      s.count = r[13];
-      memcpy(&s.notifyUnread, r + 14, 2);
-    } else {                                  // ver == 1 (old padded layout)
-      s.key.type = r[0];
-      memcpy(s.key.id, r + 1, 6);
-      memcpy(&s.lastTime, r + 8, 4);          // padded to a 4-byte boundary
-      memcpy(&s.unread, r + 12, 2);
-      s.count = r[14];
-      s.notifyUnread = 0;
-    }
-  }
-  i += (size_t)cc * STRIDE;
-  memcpy(_arena, in + i, used); _used = used;
-  _deadBytes = 0;
-  for (uint32_t off = 0; off < _used; ) {
-    const uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-    if (recDead(r)) _deadBytes += sz;
-    off += sz;
-  }
-  return true;
-}
-void MessageStore::appendOutboundDM(const ConvoKey& key, const char* text, uint16_t textLen,
-                                    uint32_t senderTime, uint32_t sendTime,
-                                    uint32_t expectedAck, uint32_t sentMillis) {
-  if (textLen > MAX_TEXT) textLen = MAX_TEXT;
-  if (!reserve(REC_HDR + textLen + 3)) return;
-  int ci = ensureConvo(key); if (ci < 0) return;
-  writeHeader(_arena, _used, KIND_OUT_DM, key.type == 1, key, text, textLen, senderTime, sendTime);
-  _arena[_used++] = ST_PENDING;        // status
-  _arena[_used++] = 0; _arena[_used++] = 0;  // tripTimeMs = 0
-  _convos[ci].count++;
-  if (_convos[ci].count > PER_CHAT_CAP) tombstoneOldestOf(key);
-  touchConvo(ci, sendTime);
-  Tracked* t = openTracked(key, senderTime, KIND_OUT_DM);
-  t->expectedAck = expectedAck; (void)sentMillis;
-  _seq++;
-}
-void MessageStore::appendOutboundChannel(const ConvoKey& key, const char* text, uint16_t textLen,
-                                         uint32_t senderTime, uint32_t sendTime) {
-  if (textLen > MAX_TEXT) textLen = MAX_TEXT;
-  if (!reserve(REC_HDR + textLen + 2)) return;
-  int ci = ensureConvo(key); if (ci < 0) return;
-  writeHeader(_arena, _used, KIND_OUT_CHAN, true, key, text, textLen, senderTime, sendTime);
-  _arena[_used++] = ST_PENDING;   // status
-  _arena[_used++] = 0;            // heardCount
-  _convos[ci].count++;
-  if (_convos[ci].count > PER_CHAT_CAP) tombstoneOldestOf(key);
-  touchConvo(ci, sendTime);
-  openTracked(key, senderTime, KIND_OUT_CHAN);
-  _seq++;
-}
-void MessageStore::markDelivered(uint32_t expectedAck, uint16_t tripTimeMs) {
-  for (int i = 0; i < MAX_TRACKED; i++) {
-    if (_tracked[i].used && _tracked[i].kind == KIND_OUT_DM && _tracked[i].expectedAck == expectedAck) {
-      for (uint32_t off = 0; off < _used; ) {
-        uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-        if (!recDead(r) && recKind(r) == KIND_OUT_DM) {
-          ConvoKey k; rdKey(r, k);
-          if (k.equals(_tracked[i].key) && rd32(r + 8) == _tracked[i].senderTime) {
-            uint8_t* trailer = r + REC_HDR + recTextLen(r);
-            trailer[0] = ST_DELIVERED; memcpy(trailer + 1, &tripTimeMs, 2);
-            _seq++; return;
-          }
-        }
-        off += sz;
-      }
-      return;
-    }
-  }
-}
-void MessageStore::markFailed(const ConvoKey& key, uint32_t senderTime) {
-  for (uint32_t off = 0; off < _used; ) {
-    uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-    if (!recDead(r) && recKind(r) == KIND_OUT_DM) {
-      ConvoKey k; rdKey(r, k);
-      if (k.equals(key) && rd32(r + 8) == senderTime) {
-        uint8_t* trailer = r + REC_HDR + recTextLen(r);
-        if (trailer[0] == ST_PENDING) { trailer[0] = ST_FAILED; _seq++; }
-        return;
-      }
-    }
-    off += sz;
-  }
-}
-
-void MessageStore::updateExpectedAck(const ConvoKey& key, uint32_t senderTime, uint32_t newAck) {
-  Tracked* t = findTracked(key, senderTime);
-  if (!t) t = openTracked(key, senderTime, KIND_OUT_DM);
-  if (t) t->expectedAck = newAck;
-}
 
 int MessageStore::pendingDMCount() const {
-  int n = 0;
-  for (uint32_t off = 0; off < _used; ) {
-    const uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-    if (!recDead(r) && recKind(r) == KIND_OUT_DM) {
-      const uint8_t* trailer = r + REC_HDR + recTextLen(r);
-      if (trailer[0] == ST_PENDING) n++;
+  if (!_backend) return 0;
+  int total = 0;
+  int n = _index.count();
+  for (int ci = 0; ci < n; ci++) {
+    ConvoSummary cs; if (!_index.get(ci, cs)) continue;
+    char name[15]; codec::keyToName(cs.key, name);
+    uint32_t fileSize = _backend->size(name);
+    uint32_t pos = 0;
+    while (pos < fileSize) {
+      uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+      if (got < (uint32_t)codec::REC_HDR) break;
+      uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+      if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+      if (pos + sz > fileSize) break;
+      if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
+        const uint8_t* trailer = _recBuf + codec::REC_HDR + codec::recTextLen(_recBuf);
+        if (trailer[0] == ST_PENDING) total++;
+      }
+      pos += sz;
     }
-    off += sz;
   }
-  return n;
+  return total;
 }
 
 bool MessageStore::getPendingDM(int index, ConvoKey& outKey, uint32_t& outSenderTime) const {
-  int n = 0;
-  for (uint32_t off = 0; off < _used; ) {
-    const uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-    if (!recDead(r) && recKind(r) == KIND_OUT_DM) {
-      const uint8_t* trailer = r + REC_HDR + recTextLen(r);
-      if (trailer[0] == ST_PENDING) {
-        if (n == index) { rdKey(r, outKey); outSenderTime = rd32(r + 8); return true; }
-        n++;
+  if (!_backend) return false;
+  int n = 0, count = _index.count();
+  for (int ci = 0; ci < count; ci++) {
+    ConvoSummary cs; if (!_index.get(ci, cs)) continue;
+    char name[15]; codec::keyToName(cs.key, name);
+    uint32_t fileSize = _backend->size(name);
+    uint32_t pos = 0;
+    while (pos < fileSize) {
+      uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+      if (got < (uint32_t)codec::REC_HDR) break;
+      uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+      if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+      if (pos + sz > fileSize) break;
+      if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
+        const uint8_t* trailer = _recBuf + codec::REC_HDR + codec::recTextLen(_recBuf);
+        if (trailer[0] == ST_PENDING) {
+          if (n == index) {
+            codec::rdKey(_recBuf, outKey); outSenderTime = codec::rd32(_recBuf + 8); return true;
+          }
+          n++;
+        }
       }
+      pos += sz;
     }
-    off += sz;
   }
   return false;
 }
 
 int MessageStore::getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const {
-  if (!buf || cap <= 0) return 0;
+  if (!buf || cap <= 0 || !_backend) return 0;
   buf[0] = 0;
-  for (uint32_t off = 0; off < _used; ) {
-    const uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-    if (!recDead(r) && recKind(r) == KIND_OUT_DM) {
-      ConvoKey k; rdKey(r, k);
-      if (k.equals(key) && rd32(r + 8) == senderTime) {
-        uint16_t len = recTextLen(r);
+  char name[15]; codec::keyToName(key, name);
+  uint32_t fileSize = _backend->size(name);
+  uint32_t pos = 0;
+  while (pos < fileSize) {
+    uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+    if (got < (uint32_t)codec::REC_HDR) break;
+    uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+    if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+    if (pos + sz > fileSize) break;
+    if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
+      ConvoKey k; codec::rdKey(_recBuf, k);
+      if (k.equals(key) && codec::rd32(_recBuf + 8) == senderTime) {
+        uint16_t len = codec::recTextLen(_recBuf);
         if (len > (uint16_t)(cap - 1)) len = (uint16_t)(cap - 1);
-        memcpy(buf, r + REC_HDR, len); buf[len] = 0;
+        memcpy(buf, _recBuf + codec::REC_HDR, len); buf[len] = 0;
         return len;
       }
     }
-    off += sz;
+    pos += sz;
   }
   return 0;
 }
 
-void MessageStore::addRepeat(const ConvoKey& key, uint32_t senderTime,
-                             int8_t snrx4, const uint8_t* path, uint8_t pathLen) {
-  Tracked* t = findTracked(key, senderTime);
-  if (!t || t->kind != KIND_OUT_CHAN) return;
-  if (pathLen > MAX_PATH) pathLen = MAX_PATH;
-  if (t->rptCount < MAX_REPEATS) {
-    RepeatRec& rr = t->repeats[t->rptCount];
-    rr.snrx4 = snrx4; rr.pathLen = pathLen; rr.hops = pathLen;
-    memcpy(t->rptStore[t->rptCount], path, pathLen);
-    rr.path = t->rptStore[t->rptCount];
-    t->rptCount++;
+void MessageStore::deleteMessage(const ConvoKey& key, int index) {
+  int ci = _index.find(key);
+  if (ci < 0) return;
+  if (!_backend) {
+    ConvoSummary& c = _index.ensure(key);
+    if (c.count > 0) { c.count--; _seq++; }
+    return;
   }
-  // bump heardCount + status in the arena record (heardCount saturates at 255)
-  for (uint32_t off = 0; off < _used; ) {
-    uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-    if (!recDead(r) && recKind(r) == KIND_OUT_CHAN) {
-      ConvoKey k; rdKey(r, k);
-      if (k.equals(key) && rd32(r + 8) == senderTime) {
-        uint8_t* trailer = r + REC_HDR + recTextLen(r);
-        trailer[0] = ST_SENT;
-        if (trailer[1] < 255) trailer[1]++;
-        _seq++; return;
-      }
-    }
-    off += sz;
-  }
-}
-void MessageStore::compact() {
-  if (_deadBytes == 0) return;
-  uint32_t w = 0;
-  for (uint32_t off = 0; off < _used; ) {
-    const uint8_t* r = _arena + off;
-    uint32_t sz = recordSize(r);
-    if (!recDead(r)) { if (w != off) memmove(_arena + w, r, sz); w += sz; }
-    off += sz;
-  }
-  _used = w; _deadBytes = 0;
+  char name[15]; codec::keyToName(key, name);
+  uint32_t offOut = 0, lenOut = 0;
+  if (!findRecordOffset(name, index, offOut, lenOut)) return;
+  _backend->removeRange(name, offOut, lenOut);
+  ConvoSummary& c = _index.ensure(key);
+  if (c.count > 0) c.count--;
+  c.logBytes = (c.logBytes >= lenOut) ? c.logBytes - lenOut : 0;
+  invalidateWindow(key);
+  _seq++;
 }
 
-bool MessageStore::reserve(uint32_t need) {
-  if (need > (uint32_t)ARENA_BYTES) return false;
-  if (_used + need <= (uint32_t)ARENA_BYTES) return true;
-  compact();
-  int guard = MAX_CONVOS * PER_CHAT_CAP;
-  while (_used + need > (uint32_t)ARENA_BYTES && guard-- > 0) {
-    evictOldestOfLargest();
-    compact();
+void MessageStore::clearConvo(const ConvoKey& key) {
+  int ci = _index.find(key);
+  if (ci < 0) return;
+  if (_backend) {
+    char name[15]; codec::keyToName(key, name);
+    _backend->rewrite(name, _recBuf, 0);   // empty file; _recBuf is valid pointer with len=0
   }
-  return _used + need <= (uint32_t)ARENA_BYTES;
+  invalidateWindow(key);
+  ConvoSummary& c = _index.ensure(key);
+  c.count = 0; c.logBytes = 0; c.unread = 0; c.notifyUnread = 0;
+  _seq++;
 }
 
-void MessageStore::evictOldestOfLargest() {
-  // find convo with the most messages (ties -> oldest lastTime)
-  int big = -1; uint8_t bestCount = 0; uint32_t bestTime = 0xFFFFFFFF;
-  for (int i = 0; i < _convoCount; i++) {
-    if (_convos[i].count > bestCount ||
-        (_convos[i].count == bestCount && _convos[i].lastTime < bestTime)) {
-      big = i; bestCount = _convos[i].count; bestTime = _convos[i].lastTime;
-    }
+void MessageStore::deleteConvo(const ConvoKey& key) {
+  if (_backend) {
+    char name[15]; codec::keyToName(key, name);
+    _backend->remove(name);
   }
-  if (big < 0) return;
-  tombstoneOldestOf(_convos[big].key);   // may drop the convo summary if count hits 0
+  invalidateWindow(key);
+  _index.dropByKey(key);
+  _seq++;
 }
 
-void MessageStore::dropConvoIfEmpty(int ci) {
-  if (_convos[ci].count == 0) {
-    for (int i = ci; i < _convoCount - 1; i++) _convos[i] = _convos[i + 1];
-    _convoCount--;
-  }
+void MessageStore::markUnread(const ConvoKey& key) {
+  int ci = _index.find(key);
+  if (ci < 0) return;
+  ConvoSummary& c = _index.ensure(key);
+  if (c.unread) return;
+  c.unread = 1; _seq++;
 }
 
-void MessageStore::tombstoneOldestOf(const ConvoKey& key) {
-  for (uint32_t off = 0; off < _used; ) {
-    uint8_t* r = _arena + off; uint32_t sz = recordSize(r);
-    if (!recDead(r)) {
-      ConvoKey k; rdKey(r, k);
-      if (k.equals(key)) {
-        r[0] |= 0x04; _deadBytes += sz;
-        int ci = findConvo(key);
-        if (ci >= 0) { _convos[ci].count--; dropConvoIfEmpty(ci); }
-        return;
-      }
-    }
-    off += sz;
-  }
+void MessageStore::markNotifiable(const ConvoKey& key) {
+  int ci = _index.find(key);
+  if (ci < 0) return;
+  if (_hasActive && _active.equals(key)) return;
+  ConvoSummary& c = _index.ensure(key);
+  c.notifyUnread++; _seq++;
 }
+
+void MessageStore::ensureChannel(uint8_t channelIdx) {
+  ConvoKey k = channelKey(channelIdx);
+  if (_index.find(k) >= 0) return;
+  ensureSlot(k);
+  _seq++;
+}
+
+// ---- tracked table ----
+
 MessageStore::Tracked* MessageStore::openTracked(const ConvoKey& key, uint32_t senderTime, uint8_t kind) {
   int slot = -1;
   for (int i = 0; i < MAX_TRACKED; i++) if (!_tracked[i].used) { slot = i; break; }
   if (slot < 0) {
     memmove(&_tracked[0], &_tracked[1], sizeof(Tracked) * (MAX_TRACKED - 1));
-    // re-anchor each survivor's repeat paths to their (now-shifted) backing store
     for (int i = 0; i < MAX_TRACKED - 1; i++) {
       if (!_tracked[i].used) continue;
       for (int j = 0; j < _tracked[i].rptCount; j++)
@@ -585,6 +731,7 @@ MessageStore::Tracked* MessageStore::openTracked(const ConvoKey& key, uint32_t s
   t.used = true; t.key = key; t.senderTime = senderTime; t.kind = kind;
   return &t;
 }
+
 MessageStore::Tracked* MessageStore::findTracked(const ConvoKey& key, uint32_t senderTime) {
   for (int i = 0; i < MAX_TRACKED; i++)
     if (_tracked[i].used && _tracked[i].senderTime == senderTime && _tracked[i].key.equals(key))

@@ -327,42 +327,6 @@ TEST(SystemInfoPanel, UnavailableServiceRendersSafely) {
   SUCCEED();
 }
 
-#include <mishmesh/applets/settings/BluetoothPanel.h>
-
-namespace {
-class FakeBleApp2 : public mishmesh::AppServices {
-public:
-  bool supported = true, enabled = false, connected = false; uint32_t pin = 0; int setCalls = 0;
-  const char* nodeName() const override { return "n"; }
-  uint16_t batteryMillivolts() const override { return 4000; }
-  uint32_t epochSeconds() const override { return 0; }
-  bool bleSupported() const override { return supported; }
-  bool bleEnabled() const override { return enabled; }
-  bool bleConnected() const override { return connected; }
-  uint32_t blePin() const override { return pin; }
-  void setBleEnabled(bool v) override { enabled = v; setCalls++; }
-};
-}  // namespace
-
-TEST(BluetoothPanel, ToggleRowFlipsRadioAndStatusRowReflectsLink) {
-  FakeBleApp2 app; app.pin = 123456;
-  mishmesh::AppletContext ctx; ctx.app = &app;
-  mishmesh::BluetoothPanel panel; panel.begin(ctx);
-  EXPECT_STREQ("Bluetooth", panel.title());
-
-  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));   // row 0 = toggle
-  EXPECT_TRUE(app.enabled);
-  EXPECT_EQ(1, app.setCalls);
-}
-
-TEST(BluetoothPanel, PinRowHiddenOncePairedOrNoPin) {
-  EXPECT_STREQ("Connected", mishmesh::BluetoothPanel::statusText(true));
-  EXPECT_STREQ("Not connected", mishmesh::BluetoothPanel::statusText(false));
-  EXPECT_TRUE (mishmesh::BluetoothPanel::showPin(123456, false));
-  EXPECT_FALSE(mishmesh::BluetoothPanel::showPin(0, false));
-  EXPECT_FALSE(mishmesh::BluetoothPanel::showPin(123456, true));
-}
-
 #include <mishmesh/sound/Sounds.h>
 
 namespace {
@@ -392,21 +356,14 @@ TEST(MessagesSettingsPanel, ShowsPerTypeSoundRows) {
   EXPECT_STREQ("Droplet", panel.rowValueForTest(4));
 }
 
-TEST(SettingsApplet, HidesBluetoothWhenUnavailable) {
+TEST(SettingsApplet, ListsAllSections) {
   FakeDisplayDriver d;
-  mishmesh::AppletContext ctx;            // no app -> no BLE
+  mishmesh::AppletContext ctx;
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  EXPECT_EQ(7, menu.entryCountForTest());   // Home/Contacts/Messages/Advert/Radio/Time/System Info
-}
-
-TEST(SettingsApplet, ShowsBluetoothWhenAvailable) {
-  FakeDisplayDriver d;
-  FakeBleApp2 app;                          // bleSupported() == true
-  mishmesh::AppletContext ctx; ctx.app = &app;
-  mishmesh::AppletHost host(&d, ctx);
-  mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  EXPECT_EQ(8, menu.entryCountForTest());   // all eight visible
+  // Home/Contacts/Messages/Advert/Radio/Time/System Info. Bluetooth moved to the
+  // home-screen quick toggle, so it is no longer a settings section.
+  EXPECT_EQ(7, menu.entryCountForTest());
 }
 
 TEST(SettingsPanelLifecycle, DetailAppletCallsOnHideOnStop) {

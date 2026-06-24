@@ -9,8 +9,8 @@ namespace mishmesh {
 
 // App-menu entry. Lists the settings sections; selecting one pushes the shared
 // SettingsDetailApplet bound to that section's panel. Entries are gated by an
-// availability predicate so build/hardware-specific sections (Bluetooth, Sound)
-// only appear when usable. Add a section by appending one row to ENTRIES.
+// availability predicate so build/hardware-specific sections only appear when
+// usable. Add a section by appending one row to ENTRIES.
 class SettingsApplet : public Applet {
 public:
   SettingsApplet() : Applet("Settings") {}
@@ -26,7 +26,7 @@ private:
     uint16_t       icon;
     bool           (*available)(const AppletContext&);
   };
-  static const int ENTRY_COUNT = 8;
+  static const int ENTRY_COUNT = 7;
   static const Entry ENTRIES[ENTRY_COUNT];
 
   struct Model : ListModel {

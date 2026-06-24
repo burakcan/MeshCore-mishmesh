@@ -50,6 +50,7 @@ ICONS = [
     ("Hourglass",  "hourglass",   0xE022),   # timer (vendored: not on github master)
     ("AlarmClock", "alarm-clock", 0xE023),   # alarm (vendored: not on github master)
     ("Globe",      "globe",       0xE024),   # world clock
+    ("Grid",       "grid-3x3-sharp", 0xE025),   # 3x3 grid = 2048 board
 ]
 
 # Iconify-sourced compound paths whose inner subpaths are holes (even-odd),

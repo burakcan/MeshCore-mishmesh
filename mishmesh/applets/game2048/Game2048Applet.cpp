@@ -52,6 +52,6 @@ void Game2048Applet::onStop() {
 
 static Game2048Applet s_game2048;
 MISHMESH_REGISTER_APPLET_ICON(&s_game2048, ::mishmesh::Placement::AppMenu,
-                              "2048", 8, (uint16_t)::mishmesh::Icon::Menu);
+                              "2048", 8, (uint16_t)::mishmesh::Icon::Grid);
 
 }  // namespace mishmesh

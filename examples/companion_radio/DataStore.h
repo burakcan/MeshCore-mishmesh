@@ -53,6 +53,8 @@ public:
   // [mishmesh]
   bool loadMessages(uint8_t* buf, size_t cap, size_t& outLen);
   bool saveMessages(const uint8_t* buf, size_t len);
+  // Returns the best FS for message log storage: secondary (QSPI) if present, else primary.
+  FILESYSTEM* extraFs() { return _fsExtra ? _fsExtra : _fs; }
   // [/mishmesh]
 
 private:

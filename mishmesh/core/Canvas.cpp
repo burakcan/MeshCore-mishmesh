@@ -134,6 +134,14 @@ bool mm_line(mf_str line, uint16_t count, void* state) {
   return true;
 }
 
+// Measure-only line callback: advances y past each wrapped line, draws nothing.
+bool mm_measure_line(mf_str line, uint16_t count, void* state) {
+  (void)line; (void)count;
+  TextState* s = (TextState*)state;
+  s->y += s->font->line_height;
+  return true;
+}
+
 }  // namespace
 
 int Canvas::textWidth(const mf_font_s* font, const char* str) const {
@@ -164,6 +172,13 @@ int Canvas::drawTextWrapped(const mf_font_s* font, int x, int y, int w,
   if (!font || !str) return y;
   TextState st = { this, font, c, (int16_t)x, (int16_t)y };
   mf_wordwrap(font, w, str, mm_line, &st);
+  return st.y;
+}
+
+int Canvas::measureTextWrapped(const mf_font_s* font, int w, const char* str) const {
+  if (!font || !str) return 0;
+  TextState st = { const_cast<Canvas*>(this), font, DisplayDriver::LIGHT, 0, 0 };
+  mf_wordwrap(font, w, str, mm_measure_line, &st);
   return st.y;
 }
 

@@ -2,6 +2,7 @@
 #include <mishmesh/applets/RepeaterApplet.h>
 #include <mishmesh/applets/settings/RadioStaging.h>
 #include <mishmesh/core/Applet.h>
+#include <mishmesh/core/Canvas.h>
 #include "FakeDisplayDriver.h"
 
 using namespace mishmesh;
@@ -20,8 +21,9 @@ struct FakeTgt : RadioStagingTarget {
 };
 struct FakeApp : AppServices {
   float saved = 0.0f;
+  uint16_t batt = 0;
   const char* nodeName() const override { return "n"; }
-  uint16_t batteryMillivolts() const override { return 0; }
+  uint16_t batteryMillivolts() const override { return batt; }
   uint32_t epochSeconds() const override { return 0; }
   int repeatFreqCount() const override { return 3; }
   float repeatFreqMhz(int i) const override {
@@ -72,6 +74,54 @@ TEST(RepeaterApplet, SelectOffRestoresSavedFreq) {
   EXPECT_FALSE(tgt.cfg.repeater);
   EXPECT_FLOAT_EQ(915.8f, tgt.cfg.freqMhz);
   EXPECT_TRUE(a.radioOn(0));
+}
+
+// Regression: the status bar must reflect the live battery level. The applet used
+// to never call setBattery(), so the gauge rendered empty regardless of charge.
+TEST(RepeaterApplet, StatusBarShowsBatteryLevel) {
+  FakeTgt tgt;
+  size_t fills[2];
+  for (int pass = 0; pass < 2; pass++) {
+    FakeApp app; app.batt = pass == 0 ? 0 : 4200;   // empty vs full
+    AppletContext ctx = ctxWith(&app, &tgt);
+    RepeaterApplet& a = repeaterApplet();
+    a.onStart(ctx);
+    FakeDisplayDriver d(160, 80);
+    Canvas c(&d, 0);
+    a.onRender(c);
+    fills[pass] = d.fills.size();
+  }
+  EXPECT_NE(fills[0], fills[1]);   // battery level now affects what is drawn
+}
+
+// Regression: the description + options scroll as one unit, so the list is handed
+// the whole body (below the status bar), not just the strip left under a static
+// caption. A longer paragraph used to leave under one row for the list.
+TEST(RepeaterApplet, ListGetsWholeBodyHeight) {
+  FakeApp app; FakeTgt tgt;             // repeater off -> row 0 (Off) selected
+  AppletContext ctx = ctxWith(&app, &tgt);
+  RepeaterApplet& a = repeaterApplet();
+  a.onStart(ctx);
+  FakeDisplayDriver d(160, 80);
+  Canvas c(&d, 0);
+  a.onRender(c);
+  EXPECT_GE(a.bodyHeightForTest(), 4 * a.rowHeightForTest());   // room for the whole content
+}
+
+// Regression for "when Off is selected, we can't see the list": at the top of the
+// scroll (Off selected), the description header must still leave room for at least
+// two option rows below it. The old 4-line paragraph filled the screen and hid
+// every frequency; the short one does not.
+TEST(RepeaterApplet, OffLeavesRoomForOptionsBelowCaption) {
+  FakeApp app; FakeTgt tgt;
+  AppletContext ctx = ctxWith(&app, &tgt);
+  RepeaterApplet& a = repeaterApplet();
+  a.onStart(ctx);                       // Off (row 0) selected -> scroll at top
+  FakeDisplayDriver d(160, 80);
+  Canvas c(&d, 0);
+  a.onRender(c);
+  int belowCaption = a.bodyHeightForTest() - a.captionHeightForTest() - 2;
+  EXPECT_GE(belowCaption, 2 * a.rowHeightForTest());
 }
 
 int main(int argc, char** argv) {

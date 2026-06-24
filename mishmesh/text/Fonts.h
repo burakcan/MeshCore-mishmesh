@@ -54,6 +54,7 @@ enum class Icon : uint16_t {
   Hourglass   = 0xE022,   // timer (tab + home indicator)
   AlarmClock  = 0xE023,   // alarm (tab + home indicator)
   Globe       = 0xE024,   // world clock tab
+  Grid        = 0xE025,   // 3x3 grid (2048 board)
 };
 
 }  // namespace mishmesh

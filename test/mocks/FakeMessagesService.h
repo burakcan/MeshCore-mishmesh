@@ -1,6 +1,7 @@
 #pragma once
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/core/MessageStore.h>
+#include "FakeMsgLogBackend.h"
 #include <vector>
 #include <string>
 #include <map>
@@ -8,7 +9,9 @@
 #include <cstring>
 
 struct FakeMessagesService : mishmesh::MessagesService {
+  mishmesh::FakeMsgLogBackend backend;
   mishmesh::MessageStore store;
+  FakeMessagesService() { store.begin(&backend); }
   std::string nameBuf, prevBuf, sndBuf;
   std::string senderName;   // surfaced from getMessage (default "" = no sender)
   uint32_t deletes = 0;

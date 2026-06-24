@@ -25,8 +25,7 @@
   }
 #endif
 
-// [mishmesh] shared load/save scratch (definition of the class-level static)
-uint8_t UITask::_msgIoBuf[mishmesh::ARENA_BYTES + 2048];
+// [mishmesh] (ExtraFsMsgBackend replaces the old _msgIoBuf snapshot approach)
 // [/mishmesh]
 
 // Free and total heap in bytes, best-effort per platform; 0 where unavailable.
@@ -145,13 +144,12 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
   if (_display == nullptr) return;   // headless build
 
-  // [mishmesh] load persisted messages before wiring the store so that any
-  // inbound messages captured after uiSetMessageStore append to loaded history.
+  // [mishmesh] wire the flash backend and load persisted index/history.
   {
-    size_t n = 0;
     DataStore* ds = the_mesh.getStore();
-    if (ds && ds->loadMessages(_msgIoBuf, sizeof(_msgIoBuf), n)) _msgStore.deserialize(_msgIoBuf, n);
+    if (ds && ds->extraFs()) _backend.begin(*ds->extraFs());
   }
+  _msgStore.begin(&_backend);
   _msgSvc.store = &_msgStore;
   _msgSvc.retry = &_retry;            // expose live retry counts to the thread view
   _retryGlue.store = &_msgStore;      // auto-retry acts on the same store
@@ -365,11 +363,7 @@ void UITask::loop() {
   bool capHit = _msgDirtySince && (millis() - _msgDirtySince >= MSG_FLUSH_MAX_DEFER_MS);
   if ((_msgFlushAt && millis() >= _msgFlushAt) || capHit) {
     _msgFlushAt = 0; _msgDirtySince = 0;
-    DataStore* ds = the_mesh.getStore();
-    if (ds) {
-      size_t n = _msgStore.serialize(_msgIoBuf, sizeof(_msgIoBuf));
-      if (n) ds->saveMessages(_msgIoBuf, n);
-    }
+    _msgStore.saveIndex();   // [mishmesh] persist the in-RAM index to flash
   }
   // Drain a deferred message notification now that the store is up to date.
   if (_notifyPending) {
@@ -641,18 +635,15 @@ bool UITask::MsgSvc::getConvo(int i, mishmesh::ConvoView& out) const {
   out.name      = nameFor(c.key);
   out.lastTime  = c.lastTime;
   out.unread    = c.unread;
-  // preview: last message text, null-terminated, truncated to 47 chars
+  // preview: the store keeps a truncated last-message preview per convo in RAM
+  // (ConvoSummary.preview) precisely so the list never reads flash per row.
+  // Reading the last message via getMessage() here streams the whole chat log
+  // from flash for every visible row on every navigation - pathologically slow.
+  // Copy into a static buffer so the returned pointer outlives the local `c`.
   static char prevBuf[48];
-  prevBuf[0] = '\0';
-  int cnt = store->messageCount(c.key);
-  if (cnt > 0) {
-    mishmesh::MsgRecord r;
-    if (store->getMessage(c.key, cnt - 1, r)) {
-      uint16_t n = r.textLen < (uint16_t)(sizeof(prevBuf) - 1) ? r.textLen : (uint16_t)(sizeof(prevBuf) - 1);
-      memcpy(prevBuf, r.text, n);
-      prevBuf[n] = '\0';
-    }
-  }
+  size_t n = 0;
+  while (c.preview[n] && n < sizeof(prevBuf) - 1) { prevBuf[n] = c.preview[n]; n++; }
+  prevBuf[n] = '\0';
   out.preview = prevBuf;
   return true;
 }

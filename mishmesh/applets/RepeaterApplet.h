@@ -28,13 +28,28 @@ public:
   bool radioOn(int i) const override;
 
   void selectRowForTest(int i) { _list.setSelected(i); }
+  int  bodyHeightForTest() const { return _lastBodyH; }     // area the list+header share
+  int  captionHeightForTest() const { return _lastCaptionH; }
+  int  rowHeightForTest() const { return _list.rowHeight(); }
 
 private:
+  // The description, drawn as a ListMenu header so it scrolls together with the
+  // frequency rows: the whole screen moves as one unit. Kept short (see INFO) so
+  // that at the top of the scroll the options are still visible below it.
+  class InfoHeader : public Widget {
+  public:
+    const char* text = nullptr;
+    void draw(Canvas& c, int x, int y, int w, int h) override;
+  };
+
   RadioStagingTarget* _tgt = nullptr;
   AppServices* _app = nullptr;
   mutable char _lbl[16];
-  ListMenu  _list;
-  StatusBar _bar;
+  ListMenu   _list;
+  StatusBar  _bar;
+  InfoHeader _info;
+  int _lastBodyH = 0;      // body height handed to the list on the last render (test seam)
+  int _lastCaptionH = 0;   // measured header height on the last render (test seam)
 };
 
 RepeaterApplet& repeaterApplet();

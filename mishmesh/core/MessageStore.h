@@ -1,67 +1,26 @@
 // mishmesh/core/MessageStore.h
 #pragma once
-#include <stdint.h>
-#include <string.h>
+// Shared type definitions - split to MsgTypes.h so MsgCodec.h and
+// ConvoIndex.h can include them without creating a circular dependency
+// with this file.
+#include "MsgTypes.h"
+#include "MsgCodec.h"
+#include "ConvoIndex.h"
+#include "MsgLogBackend.h"
 
 namespace mishmesh {
 
-static const int ARENA_BYTES  = 6144;
-static const int MAX_CONVOS   = 64;
-static const int PER_CHAT_CAP = 30;
-static const int MAX_TRACKED  = 8;
-static const int MAX_REPEATS  = 8;
-static const int MAX_PATH     = 8;     // max path hash bytes stored per record/repeat
-static const int MAX_TEXT     = 160;
-
-enum MsgKind   : uint8_t { KIND_INBOUND = 0, KIND_OUT_DM = 1, KIND_OUT_CHAN = 2 };
-enum MsgStatus : uint8_t { ST_PENDING = 0, ST_SENT = 1, ST_DELIVERED = 2, ST_FAILED = 3 };
-
-struct ConvoKey {
-  uint8_t type;       // 0 = direct, 1 = channel
-  uint8_t id[6];      // direct: pubkey prefix; channel: id[0] = channel index
-  bool equals(const ConvoKey& o) const { return type == o.type && memcmp(id, o.id, 6) == 0; }
-};
-ConvoKey directKey(const uint8_t* pubkeyPrefix6);
-ConvoKey channelKey(uint8_t channelIdx);
-
-// Read-only view into a stored message. Pointers are valid until the next
-// store mutation. snrx4/hops/path/pathLen are meaningful for inbound; status/
-// tripTimeMs for outbound DM; heardCount for outbound channel.
-struct MsgRecord {
-  ConvoKey       key;
-  uint8_t        kind;          // MsgKind
-  uint32_t       senderTime;
-  uint32_t       localTime;
-  const char*    text;          // not null-terminated; use textLen
-  uint16_t       textLen;
-  int8_t         snrx4;
-  uint8_t        hops;
-  const uint8_t* path;
-  uint8_t        pathLen;
-  uint8_t        status;        // MsgStatus (outbound)
-  uint16_t       tripTimeMs;    // outbound DM when delivered
-  uint8_t        heardCount;    // outbound channel
-};
-
-struct ConvoSummary {
-  ConvoKey key;
-  uint32_t lastTime;
-  uint16_t unread;
-  uint16_t notifyUnread;   // alert-worthy unread (drives the global indicator)
-  uint8_t  count;
-};
-
-struct RepeatRec {
-  int8_t         snrx4;
-  uint8_t        hops;
-  const uint8_t* path;
-  uint8_t        pathLen;       // last hop (repeater) = path[pathLen-1]
-};
-
 class MessageStore {
 public:
+  static const uint32_t MSG_FLASH_BUDGET = 1200u * 1024;  // global log budget in bytes
+
   MessageStore() { reset(); }
   void reset();
+  // Wire up the backend before use. Loads the saved index from the backend;
+  // falls back to rebuildIndex() if the index blob is absent or corrupt.
+  void begin(MsgLogBackend* b);
+  // Persist the in-RAM index to the backend's index blob.
+  void saveIndex();
 
   // ---- capture ----
   void appendInbound(const ConvoKey& key, const char* text, uint16_t textLen,
@@ -73,9 +32,6 @@ public:
   void appendOutboundChannel(const ConvoKey& key, const char* text, uint16_t textLen,
                              uint32_t senderTime, uint32_t sendTime);
   void markDelivered(uint32_t expectedAck, uint16_t tripTimeMs);
-  // Auto-retry support. markFailed flips a still-pending DM to ST_FAILED;
-  // updateExpectedAck re-points the delivery match at a re-sent message's new
-  // ack hash so a later ACK still lands on the original record.
   void markFailed(const ConvoKey& key, uint32_t senderTime);
   void updateExpectedAck(const ConvoKey& key, uint32_t senderTime, uint32_t newAck);
   void addRepeat(const ConvoKey& key, uint32_t senderTime,
@@ -85,25 +41,17 @@ public:
   int  convoCount() const;                              // recency-sorted (newest first)
   bool getConvo(int index, ConvoSummary& out) const;
   uint16_t totalUnread() const;
-  uint16_t totalNotifyUnread() const;   // sum of notifyUnread across convos
+  uint16_t totalNotifyUnread() const;
   int  messageCount(const ConvoKey& key) const;
   bool getMessage(const ConvoKey& key, int index, MsgRecord& out) const;  // index 0 = oldest
   void setActiveConvo(const ConvoKey& key);
   void clearActiveConvo();
-  // The chat currently open on screen, if any (set by the thread view on
-  // foreground). The notification router uses it to stay silent for the open chat.
   bool activeConvo(ConvoKey& out) const;
-  // The chat that received the most recent inbound message — the subject of a
-  // notification. Valid once any inbound message has been captured.
   bool lastInbound(ConvoKey& out) const;
 
-  int  repeatCount(const ConvoKey& key, int msgIndex) const;              // 0 if summary-only
+  int  repeatCount(const ConvoKey& key, int msgIndex) const;
   bool getRepeat(const ConvoKey& key, int msgIndex, int r, RepeatRec& out) const;
 
-  // Undelivered direct messages (KIND_OUT_DM still at ST_PENDING), in arena
-  // order. Drives the auto-retry scan. getDMText copies the (NUL-terminated)
-  // body of a specific pending DM for re-transmission; returns its length, 0 if
-  // not found.
   int  pendingDMCount() const;
   bool getPendingDM(int index, ConvoKey& outKey, uint32_t& outSenderTime) const;
   int  getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const;
@@ -111,38 +59,39 @@ public:
   void deleteMessage(const ConvoKey& key, int index);
   void clearConvo(const ConvoKey& key);    // empties messages, keeps the chat in the list
   void deleteConvo(const ConvoKey& key);   // empties messages AND removes the chat
-  void markUnread(const ConvoKey& key);    // flags the chat unread if it isn't already
-  // Bump the chat's alert-worthy unread (driven by the notification router for
-  // messages that pass the chat's notification level). No-op for the open chat.
+  void markUnread(const ConvoKey& key);
   void markNotifiable(const ConvoKey& key);
-  // Ensure an (empty) chat exists for a joined channel so it shows in the list
-  // before any message arrives. No-op if the convo already exists.
   void ensureChannel(uint8_t channelIdx);
 
   uint32_t seq() const { return _seq; }
 
-  // ---- persistence (no file I/O here; caller does the file) ----
-  size_t serialize(uint8_t* out, size_t cap) const;     // returns bytes written, 0 if cap too small
-  bool   deserialize(const uint8_t* in, size_t len);     // false on bad magic/version
-
 private:
-  // arena holds packed records, see MessageStore.cpp for the byte layout
-  uint8_t  _arena[ARENA_BYTES];
-  uint32_t _used;          // bytes used (live + tombstoned) from arena[0..]
-  uint32_t _deadBytes;     // tombstoned bytes pending compaction
-  uint32_t _seq;
+  MsgLogBackend* _backend;
+  ConvoIndex     _index;
+  uint32_t       _seq;
 
-  ConvoSummary _convos[MAX_CONVOS];
-  int          _convoCount;
+  // Open-chat window: holds the tail records of the active convo that fit WINDOW_BYTES.
+  // getMessage() zero-copies from here for recent messages, pages older ones via _recBuf.
+  static const int WINDOW_BYTES = 5120;
+  mutable uint8_t  _arena[WINDOW_BYTES];
+  mutable ConvoKey _windowKey;
+  mutable bool     _windowValid;
+  mutable uint16_t _winOffs[PER_CHAT_CAP];  // in-arena offsets for each windowed record
+  mutable int      _winCount;               // records in window
+  mutable int      _winFirst;              // full-sequence index of first windowed record
+  mutable int      _winTotal;              // total live records in the chat
+
+  mutable uint8_t _recBuf[codec::MAX_REC]; // scratch for single-record reads (paging)
+  uint8_t _idxBuf[4096];   // serialised ConvoIndex (MIDX blob, ~3911 bytes max)
 
   struct Tracked {
     bool     used;
     ConvoKey key;
-    uint32_t senderTime;     // correlates to the arena record
+    uint32_t senderTime;
     uint8_t  kind;
-    uint32_t expectedAck;    // DM
+    uint32_t expectedAck;
     RepeatRec repeats[MAX_REPEATS];
-    uint8_t  rptStore[MAX_REPEATS][MAX_PATH];  // backing for RepeatRec.path
+    uint8_t  rptStore[MAX_REPEATS][MAX_PATH];
     uint8_t  rptCount;
   };
   Tracked _tracked[MAX_TRACKED];
@@ -152,18 +101,24 @@ private:
   bool _hasLastInbound;
   ConvoKey _lastInbound;
 
-  // helpers (implemented across tasks)
-  int  findConvo(const ConvoKey& key) const;
-  int  ensureConvo(const ConvoKey& key);
-  void touchConvo(int ci, uint32_t time);
-  uint32_t recordSize(const uint8_t* rec) const;
-  void compact();
-  bool reserve(uint32_t need);              // ensure `need` free bytes (evict/compact)
-  void evictOldestOfLargest();
-  void dropConvoIfEmpty(int ci);
-  void tombstoneOldestOf(const ConvoKey& key);
   Tracked* openTracked(const ConvoKey& key, uint32_t senderTime, uint8_t kind);
   Tracked* findTracked(const ConvoKey& key, uint32_t senderTime);
+
+  // Evict LRU chat(s) until there's room for `need` bytes; returns false if the only
+  // candidate to evict is `key` itself (hopeless - drop the incoming message).
+  bool ensureSpace(const ConvoKey& key, uint32_t need);
+
+  ConvoSummary& ensureSlot(const ConvoKey& key);
+  void rebuildIndex();
+  void rotateIfNeeded(const ConvoKey& key, ConvoSummary& c);
+
+  // Window management
+  void loadWindow(const ConvoKey& key) const;
+  void invalidateWindow(const ConvoKey& key);
+
+  // Streaming helper: find byte offset+len of the nth live record
+  bool findRecordOffset(const char* name, int targetIdx,
+                        uint32_t& offOut, uint32_t& lenOut) const;
 };
 
 } // namespace mishmesh

@@ -25,6 +25,7 @@
 #include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/sound/Sounds.h>
 #include <mishmesh/core/AirtimeHistory.h>
+#include <mishmesh/core/ExtraFsMsgBackend.h>
 // [/mishmesh]
 
 class UITask : public AbstractUITask, public mishmesh::AppServices, public mishmesh::ContactsService {
@@ -45,13 +46,11 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   static void fillView(const ContactInfo& c, mishmesh::ContactView& out);
 
   // [mishmesh]
+  mishmesh::ExtraFsMsgBackend _backend;  // flash backend; wired to store in begin()
   mishmesh::MessageStore _msgStore;
   uint32_t _msgDirtySeq = 0;
   uint32_t _msgFlushAt  = 0;
   uint32_t _msgDirtySince = 0;   // when the store first went dirty; caps flush deferral
-  // Shared load/save scratch — load runs once in begin(), save later in loop();
-  // never concurrent, so one BSS buffer serves both (saves ~8 KB vs. two).
-  static uint8_t _msgIoBuf[mishmesh::ARENA_BYTES + 2048];
 
   struct MsgSvc : public mishmesh::MessagesService {
     mishmesh::MessageStore* store = nullptr;

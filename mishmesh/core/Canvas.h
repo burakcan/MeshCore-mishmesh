@@ -79,6 +79,8 @@ public:
   // Word-wraps within w; returns the y just below the last line.
   int drawTextWrapped(const mf_font_s* font, int x, int y, int w,
                       const char* str, DisplayDriver::Color c);
+  // Height (px) the same wrapped text would occupy, without drawing anything.
+  int measureTextWrapped(const mf_font_s* font, int w, const char* str) const;
   // Renders a single glyph (used for icon fonts) at (x,y).
   void drawGlyph(const mf_font_s* font, int x, int y, uint16_t codepoint,
                  DisplayDriver::Color c);

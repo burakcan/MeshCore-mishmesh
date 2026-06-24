@@ -6,9 +6,10 @@
 
 namespace mishmesh {
 
+// Kept to two lines: it scrolls with the list as a header, so on a short (160x80)
+// screen the options must still be visible below it at the top of the scroll.
 static const char* INFO =
-  "Repeats messages for nearby nodes on a shared off-grid frequency. "
-  "Leaves your normal mesh while active.";
+  "Off-grid repeater. Leaves your normal mesh while on.";
 
 RepeaterApplet::RepeaterApplet() : Applet("Repeater") {}
 
@@ -38,14 +39,26 @@ void RepeaterApplet::onStart(AppletContext& ctx) {
   for (int i = 0; i < count(); i++) if (radioOn(i)) { _list.setSelected(i); break; }
 }
 
+void RepeaterApplet::InfoHeader::draw(Canvas& c, int x, int y, int w, int h) {
+  (void)h;
+  c.drawTextWrapped(fontBody(), x + 2, y, w - 4, text, DisplayDriver::LIGHT);
+}
+
 int RepeaterApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   const int barH = c.fontHeight(fontBody()) + 3;
   _bar.setTitle("Repeater");
+  _bar.setBattery(_app ? _app->batteryMillivolts() : 0);
   _bar.draw(c, 0, 0, w, barH);
-  int y = c.drawTextWrapped(fontBody(), 2, barH + 2, w - 4, INFO, DisplayDriver::LIGHT);
-  y += 2;
-  _list.draw(c, 0, y, w, h - y);
+
+  // Description + options scroll as one unit: the description is a ListMenu header,
+  // so the whole body moves together as the selection walks the list.
+  _info.text = INFO;
+  _lastCaptionH = c.measureTextWrapped(fontBody(), w - 4, INFO);
+  _list.setHeader(&_info, _lastCaptionH);
+  int y = barH + 1;
+  _lastBodyH = h - y;
+  _list.draw(c, 0, y, w, _lastBodyH);
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
