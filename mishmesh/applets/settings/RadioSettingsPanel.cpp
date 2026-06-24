@@ -3,6 +3,7 @@
 #include <mishmesh/applets/RadioValuePickerApplet.h>
 #include <mishmesh/applets/RadioPresetPickerApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
+#include <mishmesh/applets/RepeaterApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <stdio.h>
@@ -34,7 +35,9 @@ const char* RadioSettingsPanel::Model::value(int i) const {
     case 3: snprintf(vbuf, sizeof(vbuf), "SF%u", (unsigned)cfg->sf); return vbuf;
     case 4: snprintf(vbuf, sizeof(vbuf), "CR%u", (unsigned)cfg->cr); return vbuf;
     case 5: snprintf(vbuf, sizeof(vbuf), "%d dBm", (int)cfg->txPowerDbm); return vbuf;
-    default: return nullptr;   // Repeater renders as a toggle pill
+    default:   // Repeater: Off, or the active off-grid frequency
+      if (cfg->repeater) { snprintf(vbuf, sizeof(vbuf), "%.3f MHz", cfg->freqMhz); return vbuf; }
+      return "Off";
   }
 }
 
@@ -72,6 +75,8 @@ void RadioSettingsPanel::stageTxPower(int dbm) {
   if (dbm < -9) dbm = -9; else if (dbm > hi) dbm = hi;
   _staged.txPowerDbm = (int8_t)dbm; _dirty = true;
 }
+void RadioSettingsPanel::stageRepeater(bool on) { _staged.repeater = on; _dirty = true; }
+
 void RadioSettingsPanel::stagePreset(int idx) {
   if (idx < 0 || idx >= PRESET_COUNT) return;
   const RadioPreset& p = PRESETS[idx];
@@ -101,26 +106,6 @@ void RadioSettingsPanel::editTxPower() {
   if (_host) _host->push(&keypadApplet());
 }
 
-void RadioSettingsPanel::toggleRepeater() {
-  if (!_app) return;
-  if (_staged.repeater) {                       // disable -> restore remembered freq
-    float s = _app->savedRepeatFreq();
-    if (s > 0.0f) _staged.freqMhz = s;
-    _staged.repeater = false;
-    _dirty = true;
-  } else {                                      // enable -> switch to off-grid freq
-    float og = 0.0f;
-    if (_app->offGridFreqForBand(_staged.freqMhz, og)) {
-      _app->setSavedRepeatFreq(_staged.freqMhz); // remember pre-repeat freq (persisted)
-      _staged.freqMhz = og;
-      _staged.repeater = true;
-      _dirty = true;
-    } else if (_host) {
-      _host->postToast("Repeat needs 433/869/918 MHz");
-    }
-  }
-}
-
 bool RadioSettingsPanel::onInput(InputEvent ev) {
   if (_list.onInput(ev)) return true;
   if (ev != InputEvent::Select) return false;   // Back bubbles -> commit happens in onHide
@@ -143,7 +128,10 @@ bool RadioSettingsPanel::onInput(InputEvent ev) {
       if (_host) _host->push(&radioValuePickerApplet());
       return true;
     case 5: editTxPower(); return true;
-    default: toggleRepeater(); return true;
+    default:
+      repeaterApplet().configure(this);
+      if (_host) _host->push(&repeaterApplet());
+      return true;
   }
 }
 

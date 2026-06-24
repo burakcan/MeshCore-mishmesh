@@ -22,9 +22,9 @@
 #include <mishmesh/core/RetryEngine.h>
 #include <mishmesh/core/ScreenSleep.h>
 #include <mishmesh/core/NameValidation.h>
-#include <mishmesh/core/RepeatFreq.h>
 #include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/sound/Sounds.h>
+#include <mishmesh/core/AirtimeHistory.h>
 // [/mishmesh]
 
 class UITask : public AbstractUITask, public mishmesh::AppServices, public mishmesh::ContactsService {
@@ -122,6 +122,10 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
 
   mishmesh::sound::SoundEngine _sound;
 
+  // Per-minute airtime history for the Airtime applet. Sampled in loop() from the
+  // Dispatcher's cumulative counters so it accrues even while the screen is off.
+  mishmesh::AirtimeHistory _airtime;
+
   // Notification routing is deferred from notify() to the next loop(): notify()
   // fires from a mesh recv callback that runs BEFORE MyMesh appends the message to
   // the store, so the store (unread totals, latest message) is only fresh one step
@@ -160,6 +164,7 @@ public:
   uint16_t batteryMillivolts() const override;
   uint32_t epochSeconds() const override;
   bool systemStats(mishmesh::SystemStats& out) const override;
+  bool airtimeStats(mishmesh::AirtimeStats& out) const override;
   // [mishmesh]
   // BLE capability is a build-time fact: deriving it from runtime state
   // (pin/enable) made the Bluetooth settings entry vanish when BLE was
@@ -230,17 +235,6 @@ public:
   bool repeaterMode() const override {
     return _node_prefs && _node_prefs->client_repeat != 0;
   }
-  bool offGridFreqForBand(float curMhz, float& outMhz) const override {
-    int n = the_mesh.uiRepeatFreqCount();
-    if (n <= 0) return false;
-    if (n > 16) n = 16;
-    uint32_t allowed[16];
-    for (int i = 0; i < n; i++) allowed[i] = the_mesh.uiRepeatFreqKhz(i);
-    uint32_t khz = mishmesh::pickRepeatFreqKhz(curMhz, allowed, n);
-    if (!khz) return false;
-    outMhz = (float)khz / 1000.0f;
-    return true;
-  }
   float savedRepeatFreq() const override {
     return _node_prefs ? _node_prefs->repeat_saved_freq : 0.0f;
   }
@@ -249,6 +243,10 @@ public:
     if (!p) return;
     p->repeat_saved_freq = f;
     the_mesh.savePrefs();
+  }
+  int repeatFreqCount() const override { return the_mesh.uiRepeatFreqCount(); }
+  float repeatFreqMhz(int i) const override {
+    return (float)the_mesh.uiRepeatFreqKhz(i) / 1000.0f;
   }
   int16_t tzOffsetMinutes() const override {
     return _node_prefs ? (int16_t)_node_prefs->tz_quarter_hours * 15 : 0;

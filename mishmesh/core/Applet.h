@@ -11,6 +11,7 @@ class AppletHost;
 struct ContactsService;   // mishmesh/core/ContactsService.h
 // [mishmesh]
 namespace sound { class SoundEngine; }
+class AirtimeHistory;     // mishmesh/core/AirtimeHistory.h
 // [/mishmesh]
 
 // Snapshot of device health for the System stats screen. Plain integers so the
@@ -28,6 +29,25 @@ struct SystemStats {
   uint16_t    batteryMv        = 0;
   const char* firmwareVersion  = nullptr;
 };
+
+// [mishmesh]
+// Radio airtime / duty-cycle usage for the Airtime applet. Totals are lifetime
+// (since boot) in ms; the budget fields describe the duty-cycle token bucket the
+// Dispatcher enforces. `history` (may be null) is the loop-fed per-minute ring
+// the graph reads. 0 fields render as "--".
+struct AirtimeStats {
+  uint32_t txTotalMs    = 0;   // cumulative TX airtime since boot
+  uint32_t rxTotalMs    = 0;   // cumulative RX airtime since boot
+  uint32_t txBudgetMs   = 0;   // remaining TX budget (token bucket)
+  uint32_t txBudgetMax  = 0;   // budget capacity = window * dutyCycle
+  uint32_t windowMs     = 0;   // duty-cycle window (default 1h)
+  uint32_t sentFlood    = 0;
+  uint32_t sentDirect   = 0;
+  uint32_t recvFlood    = 0;
+  uint32_t recvDirect   = 0;
+  const AirtimeHistory* history = nullptr;
+};
+// [/mishmesh]
 
 // LoRa radio configuration surfaced to the on-device UI. Units match NodePrefs:
 // freq in MHz, bw in kHz.
@@ -108,13 +128,17 @@ struct AppServices {
   // Defaults keep the framework companion-agnostic (not settable).
   virtual bool    setNodeName(const char*) { return false; }
   // Off-grid repeat (client_repeat). repeaterMode() drives the home indicator.
-  // offGridFreqForBand returns the firmware-permitted off-grid frequency (MHz)
-  // for curMhz's band (false if none). savedRepeatFreq persists the pre-repeat
-  // frequency so disabling restores it. Defaults keep the framework agnostic.
+  // savedRepeatFreq persists the pre-repeat frequency so disabling restores it.
+  // Defaults keep the framework agnostic.
   virtual bool  repeaterMode() const { return false; }
-  virtual bool  offGridFreqForBand(float curMhz, float& outMhz) const { (void)curMhz; (void)outMhz; return false; }
   virtual float savedRepeatFreq() const { return 0.0f; }
   virtual void  setSavedRepeatFreq(float) {}
+  // Firmware-permitted off-grid repeat frequencies, for manual selection.
+  virtual int   repeatFreqCount() const { return 0; }
+  virtual float repeatFreqMhz(int i) const { (void)i; return 0.0f; }
+  // Radio airtime / duty-cycle usage for the Airtime applet. Returns false if
+  // unavailable. Default keeps the framework companion-agnostic.
+  virtual bool airtimeStats(AirtimeStats& out) const { (void)out; return false; }
   // [/mishmesh]
 };
 

@@ -24,6 +24,7 @@ public:
   void stageCr(uint8_t cr) override;
   void stageTxPower(int dbm) override;
   void stagePreset(int presetIndex) override;
+  void stageRepeater(bool on) override;
 
   // test seams
   int rowCountForTest() const { return _model.count(); }
@@ -37,8 +38,6 @@ private:
     int count() const override { return ROW_COUNT; }
     const char* label(int i) const override;
     const char* value(int i) const override;
-    bool isToggle(int i) const override { return i == Repeater; }
-    bool toggleState(int i) const override { return i == Repeater && cfg && cfg->repeater; }
   } _model;
 
   // keypad onConfirm trampolines (ctx = this)
@@ -46,7 +45,6 @@ private:
   static void onTxDone(void* ctx, const char* text);
   void editFrequency();
   void editTxPower();
-  void toggleRepeater();
 
   RadioConfig  _staged{915.0f, 250.0f, 10, 5, 20, false};
   bool         _dirty = false;

@@ -104,6 +104,27 @@ bool UITask::systemStats(mishmesh::SystemStats& out) const {
   return true;
 }
 
+bool UITask::airtimeStats(mishmesh::AirtimeStats& out) const {
+  out.txTotalMs  = the_mesh.getTotalAirTime();
+  out.rxTotalMs  = the_mesh.getReceiveAirTime();
+  out.txBudgetMs = the_mesh.getRemainingTxBudget();
+  // Budget capacity mirrors Dispatcher's math: window * 1/(1 + airtime_factor).
+  // getDutyCycleWindowMs()/getAirtimeBudgetFactor() aren't public, so recompute
+  // from the same inputs - the window is the Dispatcher default (1h), and the
+  // factor is the persisted NodePrefs value MyMesh feeds back to the Dispatcher.
+  const uint32_t windowMs = 3600000u;
+  float factor = _node_prefs ? _node_prefs->airtime_factor : 1.0f;
+  if (factor < 0.0f) factor = 0.0f;
+  out.windowMs    = windowMs;
+  out.txBudgetMax = (uint32_t)(windowMs / (1.0f + factor));
+  out.sentFlood   = the_mesh.getNumSentFlood();
+  out.sentDirect  = the_mesh.getNumSentDirect();
+  out.recvFlood   = the_mesh.getNumRecvFlood();
+  out.recvDirect  = the_mesh.getNumRecvDirect();
+  out.history     = &_airtime;
+  return true;
+}
+
 uint16_t UITask::batteryMillivolts() const {
   uint32_t now = millis();
   if (_batt_mv == 0 || now - _batt_sampled_at >= 8000) {
@@ -391,6 +412,10 @@ void UITask::loop() {
       _host->requestRender();
     }
     _sound.tick(millis());   // [mishmesh]
+    // [mishmesh] bank per-minute airtime deltas; cheap, advances buckets only on
+    // minute rollover, and runs regardless of the active applet so the graph has
+    // history even when it wasn't on screen.
+    _airtime.tick(millis(), the_mesh.getTotalAirTime(), the_mesh.getReceiveAirTime());
     _host->loop(millis());
   }
 }

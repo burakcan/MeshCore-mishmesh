@@ -19,6 +19,7 @@ public:
   virtual void stageCr(uint8_t cr) = 0;
   virtual void stageTxPower(int dbm) = 0;        // clamps
   virtual void stagePreset(int presetIndex) = 0;
+  virtual void stageRepeater(bool on) = 0;
 };
 
 }  // namespace mishmesh
