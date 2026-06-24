@@ -463,35 +463,61 @@ int MessageStore::messageCount(const ConvoKey& key) const {
   return ci < 0 ? 0 : (int)_index.rawCount(ci);
 }
 
+void MessageStore::decodeRecord(const uint8_t* r, const ConvoKey& key, MsgRecord& out) const {
+  out.key  = key; out.kind = codec::recKind(r);
+  out.senderTime = codec::rd32(r + 8); out.localTime = codec::rd32(r + 12);
+  out.textLen = codec::recTextLen(r); out.text = (const char*)(r + codec::REC_HDR);
+  out.snrx4 = 0; out.hops = 0; out.path = nullptr; out.pathLen = 0;
+  out.status = ST_PENDING; out.tripTimeMs = 0; out.heardCount = 0;
+  const uint8_t* t = r + codec::REC_HDR + out.textLen;
+  if (out.kind == KIND_INBOUND) {
+    out.snrx4 = (int8_t)t[0]; out.pathLen = t[1]; out.hops = t[1];
+    out.path = t + 2;
+  } else if (out.kind == KIND_OUT_DM) {
+    out.status = t[0]; memcpy(&out.tripTimeMs, t + 1, 2);
+  } else {
+    out.status = t[0]; out.heardCount = t[1];
+    // heardCount is maintained in flash by addRepeat - no _tracked overlay needed
+  }
+}
+
+void MessageStore::forEachMessage(const ConvoKey& key,
+                                  void (*cb)(void*, int, const MsgRecord&), void* ctx) const {
+  if (!_backend || !cb) return;
+  char name[15]; codec::keyToName(key, name);
+  uint32_t fileSize = _backend->size(name);
+  uint32_t pos = 0;
+  int idx = 0;
+  MsgRecord out;
+  while (pos < fileSize) {
+    uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+    if (got < (uint32_t)codec::REC_HDR) break;
+    uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+    if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+    if (pos + sz > fileSize) break;                 // torn tail
+    if (!codec::recDead(_recBuf)) {
+      ConvoKey k; codec::rdKey(_recBuf, k);
+      if (k.equals(key)) {
+        decodeRecord(_recBuf, key, out);            // out.text points into _recBuf
+        cb(ctx, idx, out);                          // cb must consume before we read again
+        idx++;
+      }
+    }
+    pos += sz;
+  }
+}
+
 bool MessageStore::getMessage(const ConvoKey& key, int index, MsgRecord& out) const {
   if (!_backend) return false;
 
   // Ensure window is loaded for this key
   if (!_windowValid || !_windowKey.equals(key)) loadWindow(key);
 
-  auto decodeRecord = [&](const uint8_t* r) {
-    out.key  = key; out.kind = codec::recKind(r);
-    out.senderTime = codec::rd32(r + 8); out.localTime = codec::rd32(r + 12);
-    out.textLen = codec::recTextLen(r); out.text = (const char*)(r + codec::REC_HDR);
-    out.snrx4 = 0; out.hops = 0; out.path = nullptr; out.pathLen = 0;
-    out.status = ST_PENDING; out.tripTimeMs = 0; out.heardCount = 0;
-    const uint8_t* t = r + codec::REC_HDR + out.textLen;
-    if (out.kind == KIND_INBOUND) {
-      out.snrx4 = (int8_t)t[0]; out.pathLen = t[1]; out.hops = t[1];
-      out.path = t + 2;
-    } else if (out.kind == KIND_OUT_DM) {
-      out.status = t[0]; memcpy(&out.tripTimeMs, t + 1, 2);
-    } else {
-      out.status = t[0]; out.heardCount = t[1];
-      // heardCount is maintained in flash by addRepeat - no _tracked overlay needed
-    }
-  };
-
   if (index >= _winFirst) {
     // In window: zero-copy from _arena
     int wi = index - _winFirst;
     if (wi < _winCount) {
-      decodeRecord(_arena + _winOffs[wi]);
+      decodeRecord(_arena + _winOffs[wi], key, out);
       return true;
     }
   }
@@ -511,7 +537,7 @@ bool MessageStore::getMessage(const ConvoKey& key, int index, MsgRecord& out) co
       ConvoKey k; codec::rdKey(_recBuf, k);
       if (k.equals(key)) {
         if (n == index) {
-          decodeRecord(_recBuf);
+          decodeRecord(_recBuf, key, out);
           return true;
         }
         n++;

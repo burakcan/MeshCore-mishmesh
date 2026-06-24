@@ -462,6 +462,39 @@ TEST_F(MSFix, LargeFileTornTailIsPhysicallyHealed) {
   EXPECT_EQ(0, memcmp(r.text, "new-after-heal", 14));
 }
 
+// forEachMessage must yield exactly the same records, in the same order, as
+// getMessage(0..n-1) - including across the window/paging boundary (this is the
+// O(n) sequential path the thread view relies on for full-thread relayout).
+TEST_F(MSFix, ForEachMessageMatchesGetMessage) {
+  char body[80];
+  for (int i = 0; i < 60; i++) {   // enough to exceed the RAM window -> exercises paging
+    snprintf(body, sizeof(body), "seq-%02d-padded-padded-padded-padded", i);
+    s.appendInbound(dm("ALICE!"), body, (uint16_t)strlen(body), 1000 + i, 2000 + i, 0, nullptr, 0);
+  }
+  int n = s.messageCount(dm("ALICE!"));
+  ASSERT_EQ(60, n);
+
+  struct Cap { int idx[128]; char txt[128][40]; int count; } cap{};
+  s.forEachMessage(dm("ALICE!"), [](void* p, int idx, const MsgRecord& r) {
+    Cap* c = (Cap*)p;
+    if (c->count < 128) {
+      c->idx[c->count] = idx;
+      uint16_t t = r.textLen < 39 ? r.textLen : 39;
+      memcpy(c->txt[c->count], r.text, t); c->txt[c->count][t] = 0;
+      c->count++;
+    }
+  }, &cap);
+
+  ASSERT_EQ(60, cap.count);
+  for (int i = 0; i < n; i++) {
+    EXPECT_EQ(i, cap.idx[i]);
+    MsgRecord r; ASSERT_TRUE(s.getMessage(dm("ALICE!"), i, r));
+    char gm[40]; uint16_t t = r.textLen < 39 ? r.textLen : 39;
+    memcpy(gm, r.text, t); gm[t] = 0;
+    EXPECT_STREQ(gm, cap.txt[i]);
+  }
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

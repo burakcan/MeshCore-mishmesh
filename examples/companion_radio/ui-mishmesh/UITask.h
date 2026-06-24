@@ -69,6 +69,9 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     uint16_t totalNotifyUnread() const override;
     int  messageCount(const mishmesh::ConvoKey& k) const override;
     bool getMessage(const mishmesh::ConvoKey& k, int i, mishmesh::MessageView& out) const override;
+    void forEachMessage(const mishmesh::ConvoKey& k, MsgVisitor visit, void* ctx) const override;
+    void buildView(const mishmesh::MsgRecord& r, const mishmesh::ConvoKey& k,
+                   mishmesh::MessageView& out) const;   // MsgRecord -> MessageView (shared)
     void setActiveConvo(const mishmesh::ConvoKey& k) override;
     void clearActiveConvo() override;
     int  repeatCount(const mishmesh::ConvoKey& k, int m) const override;

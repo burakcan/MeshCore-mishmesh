@@ -166,17 +166,47 @@ int MessageThreadApplet::blockHeight(Canvas& body, const MessageView& m) const {
   return cap + bodyH + GAP;                         // caption sender/divider row + body + gap
 }
 
-void MessageThreadApplet::layoutFocus(Canvas& body, int n) {
+// Fill the per-message height cache and _contentH. Only touches flash (getMessage)
+// when the cache is stale: a full remeasure on chat/width change, or a single
+// entry when exactly one message was appended. A pure re-render is a cache hit.
+void MessageThreadApplet::ensureHeights(Canvas& body, int n) {
+  if (n > LAY_MAX) n = LAY_MAX;
+  // _lastMsgTime is this chat's newest-message time, refreshed earlier this frame.
+  const bool sameShape = _layValid && _layKey.equals(_key) && _layW == _contentW;
+  if (sameShape && _layNewest == _lastMsgTime && _layN == n) return;   // this chat unchanged
+  if (sameShape && n == _layN + 1) {                       // one message appended
+    MessageView m;
+    _blkH[n - 1] = (_svc && _svc->getMessage(_key, n - 1, m)) ? (uint16_t)blockHeight(body, m) : 0;
+  } else if (_svc) {                                        // full (re)measure - ONE sequential flash pass
+    for (int i = 0; i < n; i++) _blkH[i] = 0;
+    struct Ctx { MessageThreadApplet* self; Canvas* body; } cx{ this, &body };
+    _svc->forEachMessage(_key, [](void* p, int idx, const MessageView& m) {
+      Ctx* cx = static_cast<Ctx*>(p);
+      if (idx >= 0 && idx < PER_CHAT_CAP) cx->self->_blkH[idx] = (uint16_t)cx->self->blockHeight(*cx->body, m);
+    }, &cx);
+  }
+  int top = 0;
+  for (int i = 0; i < n; i++) top += _blkH[i];
+  _contentH = top + BTN_H;                                 // action bar always trails the messages
+  _layValid = true; _layKey = _key; _layW = _contentW; _layN = n; _layNewest = _lastMsgTime;
+}
+
+// Locate the focused message's top/bottom from cached heights (no flash). Cheap
+// enough to run every frame; _focus changes on nav without touching the message set.
+void MessageThreadApplet::computeFocusSpan(int n) {
+  if (n > LAY_MAX) n = LAY_MAX;
   int top = 0;
   _focusTop = _focusBot = 0;
   for (int i = 0; i < n; i++) {
-    MessageView m; if (!_svc->getMessage(_key, i, m)) continue;
-    int bh = blockHeight(body, m);
-    if (i == _focus && _barRow < 0) { _focusTop = top; _focusBot = top + bh; }
-    top += bh;
+    if (i == _focus && _barRow < 0) { _focusTop = top; _focusBot = top + _blkH[i]; }
+    top += _blkH[i];
   }
   if (_barRow >= 0) { _focusTop = top; _focusBot = top + BTN_H; }  // whole bar visible
-  _contentH = top + BTN_H;   // bar always present below the messages
+}
+
+void MessageThreadApplet::layoutFocus(Canvas& body, int n) {
+  ensureHeights(body, n);
+  computeFocusSpan(n);
 }
 
 // Pulls the committed scroll target just far enough to keep the focused message
@@ -320,12 +350,18 @@ int MessageThreadApplet::onRender(Canvas& c) {
     return 500;
   }
 
-  // Lay out at full width; only if the thread overflows do we reserve a right
-  // gutter for the scrollbar (and re-lay out), matching the list/text views.
-  _contentW = body.width();
+  // Reserve the scrollbar gutter from the STICKY overflow state so _contentW -
+  // and therefore the height cache - stays stable frame-to-frame. Only when the
+  // overflow state actually flips do we re-lay out at the new width (one rebuild),
+  // instead of measuring at full then narrow width on every single frame.
+  _contentW = body.width() - (_hasScrollbar ? SB_GUTTER : 0);
   layoutFocus(body, n);
   bool scrollbar = _contentH > _bodyH;
-  if (scrollbar) { _contentW = body.width() - SB_GUTTER; layoutFocus(body, n); }
+  if (scrollbar != _hasScrollbar) {
+    _hasScrollbar = scrollbar;
+    _contentW = body.width() - (scrollbar ? SB_GUTTER : 0);
+    layoutFocus(body, n);
+  }
 
   if (_pinBottom) {
     _scrollTarget = (_contentH > _bodyH) ? _contentH - _bodyH : 0;
@@ -354,14 +390,22 @@ int MessageThreadApplet::onRender(Canvas& c) {
   }
   bool animating = (_scrollY != _scrollTarget);
 
+  // Draw only the messages intersecting the viewport. Skip fully-above rows using
+  // cached heights (no getMessage/flash), then decode+draw just the visible band -
+  // so per-frame flash reads scale with what's on screen, not with chat length.
+  if (n > LAY_MAX) n = LAY_MAX;
   int top = 0;
-  for (int i = 0; i < n; i++) {
-    MessageView m; if (!_svc->getMessage(_key, i, m)) continue;
-    int bh = blockHeight(body, m);
+  int i = 0;
+  for (; i < n; i++) {                          // skip everything above the viewport
+    if (top + (int)_blkH[i] - _scrollY > 0) break;
+    top += _blkH[i];
+  }
+  for (; i < n; i++) {
     int y = top - _scrollY;
-    if (y + bh > 0 && y < _bodyH) drawMessage(body, m, top, i == _focus);
-    top += bh;
-    if (y >= _bodyH) break;
+    if (y >= _bodyH) break;                     // first row past the bottom -> done
+    MessageView m;
+    if (_svc->getMessage(_key, i, m)) drawMessage(body, m, top, i == _focus);
+    top += _blkH[i];
   }
 
   // Action bar: two stacked bordered buttons as an inline trailing block below

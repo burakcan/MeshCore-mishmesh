@@ -68,6 +68,14 @@ struct MessagesService {
   virtual uint16_t totalNotifyUnread() const { return 0; }
   virtual int  messageCount(const ConvoKey& k) const = 0;
   virtual bool getMessage(const ConvoKey& k, int i, MessageView& out) const = 0;
+  // Visit every message of a chat in order (0 = oldest). The default is a
+  // getMessage() loop; the on-device impl overrides it with a single sequential
+  // flash pass (O(n) instead of O(n^2)) for cheap full-thread relayout.
+  typedef void (*MsgVisitor)(void* ctx, int index, const MessageView& m);
+  virtual void forEachMessage(const ConvoKey& k, MsgVisitor visit, void* ctx) const {
+    int n = messageCount(k);
+    for (int i = 0; i < n; i++) { MessageView m; if (getMessage(k, i, m)) visit(ctx, i, m); }
+  }
   virtual void setActiveConvo(const ConvoKey& k) = 0;
   virtual void clearActiveConvo() = 0;
   virtual int  repeatCount(const ConvoKey& k, int msgIdx) const = 0;

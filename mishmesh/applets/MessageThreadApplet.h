@@ -37,6 +37,8 @@ private:
   bool onConversationInput(InputEvent ev);   // tab 0: message nav / per-message menu
   int  blockHeight(Canvas& body, const MessageView& m) const;
   void layoutFocus(Canvas& body, int n);   // sets _focusTop/_focusBot/_contentH
+  void ensureHeights(Canvas& body, int n); // fill _blkH[]/_contentH from cache or (re)measure
+  void computeFocusSpan(int n);            // _focusTop/_focusBot from cached heights + _focus
   void adjustScroll();                      // clamps _scrollY to keep focus visible
   void drawMessage(Canvas& body, const MessageView& m, int top, bool focused) const;
   void msgStamp(const MessageView& m, char* out, uint16_t cap) const;   // "14:09" / "1 Jul 14:09"
@@ -60,6 +62,22 @@ private:
   int              _focusTop = 0;     // content px of the focused message's top/bottom
   int              _focusBot = 0;
   int              _contentH = 0;
+  bool             _hasScrollbar = false; // sticky overflow state, keeps _contentW stable frame-to-frame
+  // Per-message block-height cache. Without it, layoutFocus + the draw loop
+  // re-measure (and, for flash-resident history, re-page from flash) EVERY
+  // message EVERY frame - O(n^2) flash reads for a long chat, which freezes
+  // scrolling. Rebuild only when the message set or width changes; a lone new
+  // arrival appends a single entry.
+  static const int LAY_MAX = PER_CHAT_CAP;
+  uint16_t         _blkH[LAY_MAX] = {0};   // cached block height per message index
+  int              _layN = -1;             // n at last cache fill (-1 = empty)
+  int              _layW = -1;             // _contentW at last fill
+  uint32_t         _layNewest = 0xFFFFFFFFu; // this chat's newest-message time at last fill
+                                             // (count+newest identify THIS chat's message set,
+                                             //  so other chats' activity and status-only updates
+                                             //  don't trigger a needless remeasure)
+  ConvoKey         _layKey{};              // chat the cache belongs to
+  bool             _layValid = false;
   bool             _pinBottom = false;// on next render, scroll to the newest message
   bool             _unseenBelow = false; // a message arrived below the fold -> show a chevron
   int              _prevCount = 0;    // message count last frame, to detect new arrivals

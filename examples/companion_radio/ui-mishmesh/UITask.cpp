@@ -655,6 +655,26 @@ int  UITask::MsgSvc::messageCount(const mishmesh::ConvoKey& k) const { return st
 bool UITask::MsgSvc::getMessage(const mishmesh::ConvoKey& k, int i, mishmesh::MessageView& out) const {
   mishmesh::MsgRecord r;
   if (!store->getMessage(k, i, r)) return false;
+  buildView(r, k, out);
+  return true;
+}
+
+// Single sequential flash pass over a chat's log, converting each record to a
+// MessageView, O(n) vs n separate getMessage() calls, used for full-thread
+// relayout on chat open. The view (and its static text buffer) is valid only
+// during the visitor call.
+void UITask::MsgSvc::forEachMessage(const mishmesh::ConvoKey& k, MsgVisitor visit, void* ctx) const {
+  struct Ctx { const MsgSvc* self; mishmesh::ConvoKey k; MsgVisitor v; void* c; } cx{ this, k, visit, ctx };
+  store->forEachMessage(k, [](void* p, int idx, const mishmesh::MsgRecord& r) {
+    auto* cx = static_cast<Ctx*>(p);
+    mishmesh::MessageView mv;
+    cx->self->buildView(r, cx->k, mv);
+    cx->v(cx->c, idx, mv);
+  }, &cx);
+}
+
+void UITask::MsgSvc::buildView(const mishmesh::MsgRecord& r, const mishmesh::ConvoKey& k,
+                               mishmesh::MessageView& out) const {
   out.outbound    = r.kind != mishmesh::KIND_INBOUND;
   out.isChannel   = k.type == 1;
   out.kind        = r.kind;
@@ -692,7 +712,6 @@ bool UITask::MsgSvc::getMessage(const mishmesh::ConvoKey& k, int i, mishmesh::Me
       out.text       = sep + 2;
     }
   }
-  return true;
 }
 
 void UITask::MsgSvc::setActiveConvo(const mishmesh::ConvoKey& k) { store->setActiveConvo(k); }

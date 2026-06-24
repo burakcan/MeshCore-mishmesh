@@ -44,6 +44,12 @@ public:
   uint16_t totalNotifyUnread() const;
   int  messageCount(const ConvoKey& key) const;
   bool getMessage(const ConvoKey& key, int index, MsgRecord& out) const;  // index 0 = oldest
+  // Streams this chat's messages in order (0 = oldest) in ONE forward pass over
+  // the flash log - O(n) reads total, vs O(n^2) for n separate getMessage() calls.
+  // The record passed to cb is valid only until cb returns (shared scratch buffer).
+  void forEachMessage(const ConvoKey& key,
+                      void (*cb)(void* ctx, int index, const MsgRecord& rec),
+                      void* ctx) const;
   void setActiveConvo(const ConvoKey& key);
   void clearActiveConvo();
   bool activeConvo(ConvoKey& out) const;
@@ -69,6 +75,9 @@ private:
   MsgLogBackend* _backend;
   ConvoIndex     _index;
   uint32_t       _seq;
+
+  // Decode a packed record at `r` into `out` (out.text/path point into `r`).
+  void decodeRecord(const uint8_t* r, const ConvoKey& key, MsgRecord& out) const;
 
   // Open-chat window: holds the tail records of the active convo that fit WINDOW_BYTES.
   // getMessage() zero-copies from here for recent messages, pages older ones via _recBuf.
