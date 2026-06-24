@@ -24,8 +24,8 @@ AirtimeApplet::AirtimeApplet() : Applet("Airtime") {}
 void AirtimeApplet::onStart(AppletContext& ctx) {
   _app = ctx.app;
   _tabs.clear();
-  _tabs.addTab("Budget", (uint16_t)Icon::Zap);
-  _tabs.addTab("History", (uint16_t)Icon::Radio);
+  _tabs.addTab("Budget", (uint16_t)Icon::Hourglass);   // duty-cycle time budget
+  _tabs.addTab("History", (uint16_t)Icon::Radio);      // RF activity over time
   _tab = 0;
   _tabs.setSelected(0);
 }
@@ -48,50 +48,47 @@ int AirtimeApplet::onRender(Canvas& c) {
 
 int AirtimeApplet::renderBudget(Canvas& c, int y, int h) {
   int w = c.width();
-  const int LW = 56;   // left (gauge) column width
+  const int LW = 62;   // left (gauge) column width
 
-  // --- left: big "free %" + fill bar ---
+  // --- left: big "free %" hero + labelled fill bar ---
   unsigned pct = _st.txBudgetMax ? (unsigned)((uint64_t)_st.txBudgetMs * 100u / _st.txBudgetMax) : 0;
   if (pct > 100) pct = 100;
   char num[8];
   snprintf(num, sizeof(num), "%u", pct);
   int nh = c.fontHeight(fontNum());
-  c.drawText(fontNum(), 2, y + 1, num, DisplayDriver::LIGHT);
+  c.drawText(fontNum(), 3, y + 1, num, DisplayDriver::LIGHT);
   int nw = c.textWidth(fontNum(), num);
-  c.drawText(fontBody(), 2 + nw + 1, y + 1 + nh - c.fontHeight(fontBody()), "%",
+  c.drawText(fontBody(), 3 + nw + 1, y + 1 + nh - c.fontHeight(fontBody()), "%",
              DisplayDriver::LIGHT);
-  c.drawText(fontCaption(), 2, y + 1 + nh, "TX free", DisplayDriver::LIGHT);
+  c.drawText(fontBody(), 3, y + 2 + nh, "TX free", DisplayDriver::LIGHT);
 
-  int barW = LW - 4;
-  int barY = y + h - 6;
-  c.drawRect(2, barY, barW, 5, DisplayDriver::LIGHT);
+  int barW = LW - 6;
+  int barY = y + h - 7;
+  c.drawRect(3, barY, barW, 6, DisplayDriver::LIGHT);
   int fillW = _st.txBudgetMax ? (barW - 2) * (int)pct / 100 : 0;
-  if (fillW > 0) c.fillRect(3, barY + 1, fillW, 3, DisplayDriver::LIGHT);
+  if (fillW > 0) c.fillRect(4, barY + 1, fillW, 4, DisplayDriver::LIGHT);
 
   // --- right: lifetime + last-hour stats, label left / value right ---
-  int capH = c.lineHeight(fontCaption());
+  int rowH = c.lineHeight(fontBody());
   int x0 = LW + 2;
-  int ly = y;
-  char v[12];
+  int ly = y + 1;
+  char v[14];
   fmtDur(v, sizeof(v), _st.txTotalMs);
-  c.drawText(fontCaption(), x0, ly, "TX", DisplayDriver::LIGHT);
-  c.drawText(fontCaption(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
-  ly += capH;
+  c.drawText(fontBody(), x0, ly, "TX", DisplayDriver::LIGHT);
+  c.drawText(fontBody(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
+  ly += rowH;
   fmtDur(v, sizeof(v), _st.rxTotalMs);
-  c.drawText(fontCaption(), x0, ly, "RX", DisplayDriver::LIGHT);
-  c.drawText(fontCaption(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
-  ly += capH;
+  c.drawText(fontBody(), x0, ly, "RX", DisplayDriver::LIGHT);
+  c.drawText(fontBody(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
+  ly += rowH;
   fmtDur(v, sizeof(v), _st.history ? _st.history->txWindowMs() : 0);
-  c.drawText(fontCaption(), x0, ly, "TX 1h", DisplayDriver::LIGHT);
-  c.drawText(fontCaption(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
-  ly += capH;
-  snprintf(v, sizeof(v), "%u", (unsigned)(_st.sentFlood + _st.sentDirect));
-  c.drawText(fontCaption(), x0, ly, "Sent", DisplayDriver::LIGHT);
-  c.drawText(fontCaption(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
-  ly += capH;
-  snprintf(v, sizeof(v), "%u", (unsigned)(_st.recvFlood + _st.recvDirect));
-  c.drawText(fontCaption(), x0, ly, "Recv", DisplayDriver::LIGHT);
-  c.drawText(fontCaption(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
+  c.drawText(fontBody(), x0, ly, "1h", DisplayDriver::LIGHT);
+  c.drawText(fontBody(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
+  ly += rowH;
+  snprintf(v, sizeof(v), "%u/%u", (unsigned)(_st.sentFlood + _st.sentDirect),
+           (unsigned)(_st.recvFlood + _st.recvDirect));
+  c.drawText(fontBody(), x0, ly, "Pkt", DisplayDriver::LIGHT);
+  c.drawText(fontBody(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
 
   return 1000;   // budget refills continuously; keep the % live
 }
@@ -164,6 +161,6 @@ AirtimeApplet& airtimeApplet() {
 }
 
 MISHMESH_REGISTER_APPLET_ICON(&airtimeApplet(), Placement::AppMenu, "Airtime", 6,
-                              (uint16_t)Icon::Radio);
+                              (uint16_t)Icon::Reload);   // cycle arrows = duty cycle
 
 }  // namespace mishmesh
