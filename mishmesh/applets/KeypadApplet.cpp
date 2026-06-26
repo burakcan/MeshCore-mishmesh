@@ -289,6 +289,20 @@ void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
   int baseY = (h - fh) / 2;
   if (baseY < 0) baseY = 0;
 
+  // Empty buffer: show the configured title as a recessive placeholder (smaller
+  // font) so the screen says what it wants - e.g. "Room password" vs "Message".
+  // It clears on the first keypress. Without this the title is invisible and
+  // every keypad looks the same.
+  if (_len == 0 && _title && _title[0]) {
+    const mf_font_s* hf = fontCaption();
+    int hfh = line.fontHeight(hf);
+    int hy = (h - hfh) / 2;
+    if (hy < 0) hy = 0;
+    line.fillRect(0, baseY, 1, fh, DisplayDriver::LIGHT);   // cursor at the start
+    line.drawText(hf, 4, hy, _title, DisplayDriver::LIGHT);
+    return;
+  }
+
   // Window the text so the cursor stays visible: advance start until the prefix
   // up to the cursor fits in w.
   char prefix[KP_MAX + 1];

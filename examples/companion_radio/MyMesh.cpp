@@ -485,9 +485,31 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       pathPtr = pkt->path;
     }
     mishmesh::ConvoKey k = mishmesh::directKey(from.id.pub_key);
-    _mm_store->appendInbound(k, text, (uint16_t)strlen(text), sender_timestamp,
-                              getRTCClock()->getCurrentTime(),
-                              pkt ? pkt->_snr : 0, pathPtr, hops);
+    if (txt_type == TXT_TYPE_SIGNED_PLAIN && extra && extra_len >= 4) {
+      // Room-server post: `extra` is the 4-byte author prefix. Resolve it to a
+      // contact name (or hex fallback) and store as "Name: body" so the thread
+      // shows a per-post sender, byte-identical to how channel messages carry it.
+      static char roombuf[mishmesh::MAX_TEXT + 1];
+      char namebuf[16];
+      ContactInfo* author = lookupContactByPubKey((uint8_t*)extra, 4);
+      if (author && author->name[0]) {
+        strncpy(namebuf, author->name, sizeof(namebuf) - 1);
+        namebuf[sizeof(namebuf) - 1] = 0;
+      } else {
+        snprintf(namebuf, sizeof(namebuf), "%02X%02X%02X%02X",
+                 extra[0], extra[1], extra[2], extra[3]);
+      }
+      int m = snprintf(roombuf, sizeof(roombuf), "%s: %s", namebuf, text);
+      if (m < 0) m = 0;
+      if (m > (int)mishmesh::MAX_TEXT) m = mishmesh::MAX_TEXT;
+      _mm_store->appendInbound(k, roombuf, (uint16_t)m, sender_timestamp,
+                                getRTCClock()->getCurrentTime(),
+                                pkt ? pkt->_snr : 0, pathPtr, hops);
+    } else {
+      _mm_store->appendInbound(k, text, (uint16_t)strlen(text), sender_timestamp,
+                                getRTCClock()->getCurrentTime(),
+                                pkt ? pkt->_snr : 0, pathPtr, hops);
+    }
   }
   // [/mishmesh]
 }
@@ -706,6 +728,12 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
   if (pending_login && memcmp(&pending_login, contact.id.pub_key, 4) == 0) { // check for login response
     // yes, is response to pending sendLogin()
     pending_login = 0;
+    // [mishmesh] was this login started on-device? if so, route the result to _ui too.
+    bool mm_login = mishmesh_login_pending;
+    mishmesh_login_pending = false;
+    bool mm_ok = false, mm_admin = false;
+    uint8_t mm_perms = 0;
+    // [/mishmesh]
 
     int i = 0;
     if (memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
@@ -713,6 +741,7 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       out_frame[i++] = 0; // legacy: is_admin = false
       memcpy(&out_frame[i], contact.id.pub_key, 6);
       i += 6;                                     // pub_key_prefix
+      mm_ok = true; // [mishmesh]
     } else if (data[4] == RESP_SERVER_LOGIN_OK) { // new login response
       uint16_t keep_alive_secs = ((uint16_t)data[5]) * 16;
       if (keep_alive_secs > 0) {
@@ -726,6 +755,7 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       i += 4; // NEW: include server timestamp
       out_frame[i++] = data[7]; // NEW (v7): ACL permissions
       out_frame[i++] = data[12]; // FIRMWARE_VER_LEVEL
+      mm_ok = true; mm_admin = (data[6] != 0); mm_perms = data[7]; // [mishmesh]
     } else {
       out_frame[i++] = PUSH_CODE_LOGIN_FAIL;
       out_frame[i++] = 0; // reserved
@@ -733,6 +763,9 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       i += 6; // pub_key_prefix
     }
     _serial->writeFrame(out_frame, i);
+    // [mishmesh]
+    if (mm_login && _ui) _ui->onRoomLogin(contact.id.pub_key, mm_ok, mm_admin, mm_perms);
+    // [/mishmesh]
   } else if (len > 4 && // check for status response
              pending_status &&
              memcmp(&pending_status, contact.id.pub_key, 4) == 0 // legacy matching scheme
@@ -1039,6 +1072,24 @@ bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, con
   send_scope = prev_scope;
   send_unscoped = prev_unscoped;
   return ok;
+}
+
+bool MyMesh::mishmeshLogin(const uint8_t* pubkey, const char* password) {
+  ContactInfo* recipient = lookupContactByPubKey((uint8_t*)pubkey, PUB_KEY_SIZE);
+  if (!recipient) return false;
+  uint32_t est_timeout;
+  int result = sendLogin(*recipient, password ? password : "", est_timeout);
+  if (result == MSG_SEND_FAILED) return false;
+  clearPendingReqs();
+  memcpy(&pending_login, recipient->id.pub_key, 4);   // match this in onContactResponse()
+  mishmesh_login_pending = true;
+  return true;
+}
+
+bool MyMesh::mishmeshIsRoomConvo(const mishmesh::ConvoKey& k) {
+  if (k.type != 0) return false;
+  ContactInfo* c = lookupContactByPubKey((uint8_t*)k.id, 6);
+  return c && c->type == ADV_TYPE_ROOM;
 }
 
 bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text) {

@@ -1,6 +1,7 @@
 #include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/applets/ContactPermissionsApplet.h>
 #include <mishmesh/applets/MessageThreadApplet.h>
+#include <mishmesh/applets/RoomLoginApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/ContactsService.h>
 #include <mishmesh/core/ContactFormat.h>
@@ -82,7 +83,9 @@ void ContactDetailApplet::setTarget(const uint8_t* pubKey) {
 
 void ContactDetailApplet::buildActions() {
   _actionCount = 0;
-  if (_type == (uint8_t)ContactKind::Chat) _actions[_actionCount++] = Message;   // primary for users
+  // Rooms get Message too (routed through login); primary for users and rooms.
+  if (_type == (uint8_t)ContactKind::Chat || _type == (uint8_t)ContactKind::Room)
+    _actions[_actionCount++] = Message;
   _actions[_actionCount++] = View;
   _actions[_actionCount++] = Rename;     // local display label, all contact types
   _actions[_actionCount++] = Favourite;
@@ -344,6 +347,13 @@ bool ContactDetailApplet::onInput(InputEvent ev) {
     int action = _actions[_list.selected()];
     switch (action) {
       case Message:
+        // Rooms require a server login before posting; go through RoomLoginApplet
+        // unless we already logged in this power cycle (then straight to the thread).
+        if (_type == (uint8_t)ContactKind::Room && !_svc->isLoggedIn(_pubkey)) {
+          roomLoginApplet().setTarget(_pubkey, _name);
+          if (_host) _host->push(&roomLoginApplet());
+          return true;
+        }
         messageThreadApplet().setTarget(directKey(_pubkey), _name);
         messageThreadApplet().composeOnOpen();   // intent is to write -> focus the Write button
         if (_host) _host->push(&messageThreadApplet());

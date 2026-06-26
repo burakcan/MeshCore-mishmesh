@@ -256,8 +256,9 @@ void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int to
     return;
   }
 
-  // Inbound: no box. A caption-size sender label (channel) or a short divider marks the start.
-  if (m.isChannel && m.senderName && m.senderName[0]) {
+  // Inbound: no box. A caption-size sender label (channel/room post) or a short
+  // divider marks the start. Room posts set senderName with isChannel=false.
+  if (m.senderName && m.senderName[0]) {
     blk.drawText(fontCaption(), GUTTER, 0, m.senderName, DisplayDriver::LIGHT);
     int nw = blk.textWidth(fontCaption(), m.senderName);
     blk.fillRect(GUTTER, cap - 1, nw, 1, DisplayDriver::LIGHT);   // underline = it's a label

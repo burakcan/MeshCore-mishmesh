@@ -533,6 +533,44 @@ bool UITask::latestPing(const uint8_t* pk, mishmesh::PingView& out) const {
   return true;
 }
 
+// [mishmesh] Room-server login. The result arrives asynchronously via
+// onRoomLogin() (from MyMesh::onContactResponse), which bumps _loginSeq.
+bool UITask::login(const uint8_t* pk, const char* password) {
+  return the_mesh.mishmeshLogin(pk, password);
+}
+
+void UITask::onRoomLogin(const uint8_t* pubkey, bool success, bool is_admin, uint8_t perms) {
+  memcpy(_loginPub, pubkey, 6);
+  _loginOk = success;
+  _loginAdmin = is_admin;
+  _loginPerms = perms;
+  _loginSeq++;
+  if (success) {
+    // Remember for this power cycle so re-opening the room skips the prompt.
+    for (int i = 0; i < _loggedInCount; i++)
+      if (memcmp(_loggedIn[i], pubkey, 6) == 0) return;
+    if (_loggedInCount < MM_MAX_LOGINS) {
+      memcpy(_loggedIn[_loggedInCount++], pubkey, 6);
+    } else {
+      memcpy(_loggedIn[0], pubkey, 6);   // ring-evict oldest
+      for (int i = 0; i + 1 < MM_MAX_LOGINS; i++) memcpy(_loggedIn[i], _loggedIn[i + 1], 6);
+      memcpy(_loggedIn[MM_MAX_LOGINS - 1], pubkey, 6);
+    }
+  }
+}
+
+bool UITask::loginResult(const uint8_t* pk, bool& ok, bool& isAdmin, uint8_t& perms) const {
+  if (memcmp(_loginPub, pk, 6) != 0) return false;
+  ok = _loginOk; isAdmin = _loginAdmin; perms = _loginPerms;
+  return true;
+}
+
+bool UITask::isLoggedIn(const uint8_t* pk) const {
+  for (int i = 0; i < _loggedInCount; i++)
+    if (memcmp(_loggedIn[i], pk, 6) == 0) return true;
+  return false;
+}
+
 mishmesh::AutoAddConfig UITask::getAutoAdd() const {
   NodePrefs* p = the_mesh.getNodePrefs();
   mishmesh::AutoAddConfig c;
@@ -703,7 +741,13 @@ void UITask::MsgSvc::buildView(const mishmesh::MsgRecord& r, const mishmesh::Con
   textBuf[n] = '\0';
   out.senderName = "";
   out.text       = textBuf;
-  if (k.type == 1 && r.kind == mishmesh::KIND_INBOUND) {
+  // Channels and room-server posts both carry the sender inline as "Name: body"
+  // (rooms are stored that way in MyMesh::queueMessage). Split so the thread can
+  // caption each inbound post. isChannel stays false for rooms so their outbound
+  // posts keep DM-style ACK/retry status.
+  bool splitSender = r.kind == mishmesh::KIND_INBOUND &&
+                     (k.type == 1 || the_mesh.mishmeshIsRoomConvo(k));
+  if (splitSender) {
     char* sep = strstr(textBuf, ": ");
     if (sep) {
       *sep = '\0';

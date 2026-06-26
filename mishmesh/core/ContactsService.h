@@ -128,6 +128,19 @@ struct ContactsService {
   virtual uint32_t pingSeq() const = 0;                      // bumps on each reply
   virtual bool     latestPing(const uint8_t* pubKey, PingView& out) const = 0;
 
+  // [mishmesh] Room-server login. login() sends `password` to a Room contact; the
+  // result arrives asynchronously (server round-trip) and bumps loginSeq().
+  // loginResult() reports the most recent outcome. isLoggedIn() tracks contacts
+  // logged in during this power cycle so a re-open can skip the prompt. Non-pure
+  // so other implementers / host fakes keep compiling.
+  virtual bool     login(const uint8_t* pubKey, const char* password) { (void)pubKey; (void)password; return false; }
+  virtual uint32_t loginSeq() const { return 0; }
+  virtual bool     loginResult(const uint8_t* pubKey, bool& ok, bool& isAdmin, uint8_t& perms) const {
+    (void)pubKey; (void)ok; (void)isAdmin; (void)perms; return false;
+  }
+  virtual bool     isLoggedIn(const uint8_t* pubKey) const { (void)pubKey; return false; }
+  // [/mishmesh]
+
   virtual AutoAddConfig getAutoAdd() const = 0;
   virtual void          setAutoAdd(const AutoAddConfig& cfg) = 0;
 

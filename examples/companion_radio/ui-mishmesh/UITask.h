@@ -356,6 +356,12 @@ public:
   bool ping(const uint8_t* pubKey) override;
   uint32_t pingSeq() const override;
   bool latestPing(const uint8_t* pubKey, mishmesh::PingView& out) const override;
+  // [mishmesh] room-server login (delegates to the_mesh; result via onRoomLogin)
+  bool login(const uint8_t* pubKey, const char* password) override;
+  uint32_t loginSeq() const override { return _loginSeq; }
+  bool loginResult(const uint8_t* pubKey, bool& ok, bool& isAdmin, uint8_t& perms) const override;
+  bool isLoggedIn(const uint8_t* pubKey) const override;
+  // [/mishmesh]
   mishmesh::AutoAddConfig getAutoAdd() const override;
   void setAutoAdd(const mishmesh::AutoAddConfig& cfg) override;
   int removeNonChat() override;
@@ -366,5 +372,18 @@ public:
   void msgRead(int msgcount) override;
   void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) override;
   void notify(UIEventType t = UIEventType::none) override;
+  void onRoomLogin(const uint8_t* pubkey, bool success, bool is_admin, uint8_t perms) override;   // [mishmesh]
   void loop() override;
+
+private:
+  // [mishmesh] Latest room-login outcome + this-power-cycle logged-in set.
+  static const int MM_MAX_LOGINS = 8;
+  uint32_t _loginSeq = 0;
+  uint8_t  _loginPub[6] = {0};
+  bool     _loginOk = false;
+  bool     _loginAdmin = false;
+  uint8_t  _loginPerms = 0;
+  uint8_t  _loggedIn[MM_MAX_LOGINS][6] = {{0}};
+  int      _loggedInCount = 0;
+  // [/mishmesh]
 };

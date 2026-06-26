@@ -17,3 +17,7 @@ compile_commands.json
 .venv/
 venv/
 platformio.local.ini
+
+# Local-only, licensed emoji asset (EmojiMania, © Idan Rooze) — NEVER commit.
+# Contains the generated glyph atlas + generator + source sheet.
+mishmesh/text/emoji-local/

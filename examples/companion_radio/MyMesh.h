@@ -174,6 +174,14 @@ public:
   // its original senderTime). attempt bumps the ACK hash; resetPath floods.
   bool mishmeshRetransmit(const mishmesh::ConvoKey& k, uint32_t senderTime,
                           uint8_t attempt, bool resetPath);
+  // On-device room/repeater login mirroring CMD_SEND_LOGIN. Looks up the contact
+  // by full pub key, sends the password, and arms the login response to route to
+  // AbstractUITask::onRoomLogin() (see onContactResponse). Returns false if the
+  // contact is unknown or the packet could not be sent.
+  bool mishmeshLogin(const uint8_t* pubkey, const char* password);
+  // True if the DM convo (k.type==0) points at a Room-server contact. Lets the UI
+  // reuse the channel "Name: body" sender-caption display for room posts.
+  bool mishmeshIsRoomConvo(const mishmesh::ConvoKey& k);
   // [/mishmesh]
 
 protected:
@@ -291,6 +299,7 @@ private:
   DataStore* _store;
   NodePrefs _prefs;
   uint32_t pending_login;
+  bool mishmesh_login_pending = false;   // [mishmesh] login initiated on-device -> route result to _ui
   uint32_t pending_status;
   uint32_t pending_telemetry, pending_discovery;   // pending _TELEMETRY_REQ
   uint32_t pending_req;   // pending _BINARY_REQ
