@@ -54,5 +54,6 @@ struct NodePrefs {  // persisted to file
   uint8_t date_format;      // mishmesh::DateFormat: 0=DMY, 1=MDY, 2=YMD
   uint8_t screen_sleep;     // mishmesh screen auto-off; 0=unset(=30s), else option index+1 (see ScreenSleep.h)
   float   repeat_saved_freq; // pre-repeat frequency (MHz) to restore when off-grid repeat is disabled; 0 = none
+  uint8_t ble_enabled;      // serial/BLE link enabled across reboots; 0 = off, else on (default on)
   // [/mishmesh]
 };

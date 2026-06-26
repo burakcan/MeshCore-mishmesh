@@ -140,6 +140,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _node_prefs = node_prefs;
   // [mishmesh] apply the persisted auto/manual time-sync state to the GPS provider
   applyTimeSyncGate(_node_prefs ? _node_prefs->manual_time_set == 0 : true);
+  // Re-apply the persisted BLE/serial toggle: startInterface() unconditionally
+  // enable()s the link on every boot, so honor a stored "off" here.
+  if (_node_prefs && _node_prefs->ble_enabled == 0) disableSerial();
   // [/mishmesh]
 
   if (_display == nullptr) return;   // headless build

@@ -183,7 +183,12 @@ public:
   // and even on BLE a stale connection flag must not outlive a disable.
   bool bleConnected() const override { return isSerialEnabled() && hasConnection(); }
   uint32_t blePin()   const override { return the_mesh.getBLEPin(); }
-  void setBleEnabled(bool on) override { if (on) enableSerial(); else disableSerial(); }
+  void setBleEnabled(bool on) override {
+    if (on) enableSerial(); else disableSerial();
+    // Persist so the choice survives reboot; startInterface() re-enables the
+    // link on every boot, so UITask::begin() re-applies this on startup.
+    if (_node_prefs) { _node_prefs->ble_enabled = on ? 1 : 0; the_mesh.savePrefs(); }
+  }
   bool sendAdvert(bool flood) override { return the_mesh.sendSelfAdvert(flood); }
   bool shareLocationInAdvert() const override {
     NodePrefs* p = the_mesh.getNodePrefs();
