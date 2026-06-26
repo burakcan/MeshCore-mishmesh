@@ -29,7 +29,7 @@ const char* KeypadApplet::groupAt(int i) const {
   if (i < 0 || i > 8) return "";
   if (_symPage) return SYM[i];
   if (_mode == Mode::Num) return NUM[i];
-  if (_mode == Mode::Upper) return UPPER[i];
+  if (_mode == Mode::Upper || _mode == Mode::Shift) return UPPER[i];  // Shift shows caps for the one-shot
   return LOWER[i];
 }
 
@@ -40,7 +40,9 @@ const char* KeypadApplet::cellLabel(int r, int c) const {
     if (r == 1) return _numericOnly ? "-" : "SPC";
     if (r == 2) {  // shift cell: mode toggle, or '.' in numeric mode
       if (_numericOnly) return ".";
-      return _mode == Mode::Upper ? "AB" : _mode == Mode::Num ? "12" : "ab";
+      return _mode == Mode::Upper ? "AB"
+           : _mode == Mode::Shift ? "Ab"
+           : _mode == Mode::Num ? "12" : "ab";
     }
   }
   // r == 3
@@ -64,6 +66,9 @@ uint16_t KeypadApplet::cellIcon(int r, int c) const {
 }
 
 void KeypadApplet::commitPending() {
+  // "Abc" one-shot: revert to lower once the shifted letter is finalized. Only on
+  // a real pending letter - bare navigation in Shift mode must keep the shift armed.
+  if (_pending && _mode == Mode::Shift) _mode = Mode::Lower;
   _pending = false;
   _tapGroupCell = -1;
 }
@@ -72,7 +77,8 @@ void KeypadApplet::cycleMode() {
   if (_numericOnly) return;
   commitPending();
   _symPage = false;
-  _mode = _mode == Mode::Lower ? Mode::Upper
+  _mode = _mode == Mode::Lower ? Mode::Shift    // abc -> Abc -> ABC -> 123 -> abc
+        : _mode == Mode::Shift ? Mode::Upper
         : _mode == Mode::Upper ? Mode::Num : Mode::Lower;
 }
 
@@ -99,16 +105,19 @@ void KeypadApplet::deleteCharAt(uint16_t pos) {
 }
 
 void KeypadApplet::handleCharCell(int idx) {
-  const char* g = groupAt(idx);
-  size_t glen = strlen(g);
-  if (glen == 0) return;
   if (_pending && _tapGroupCell == idx) {           // cycle within same group
+    const char* g = groupAt(idx);                   // mode still armed here (Shift stays caps)
+    size_t glen = strlen(g);
+    if (glen == 0) return;
     _tapIndex = (uint8_t)((_tapIndex + 1) % glen);
     _buf[_pendingPos] = g[_tapIndex];
     _tapStampPending = true;          // restart the timer on the next render (fresh clock)
     return;
   }
-  commitPending();
+  commitPending();                                   // Abc one-shot may drop mode to lower here
+  const char* g = groupAt(idx);                      // recompute after commit: 2nd letter is lower
+  size_t glen = strlen(g);
+  if (glen == 0) return;
   if (_len >= _cap) return;                          // buffer full
   insertCharAt(_cursor, g[0]);
   _pendingPos = _cursor;
@@ -142,6 +151,25 @@ void KeypadApplet::handleSelect() {
   if (c == 1) { commitPending(); if (_cursor > 0)    _cursor--; return; }   // cursor left
   if (c == 2) { commitPending(); if (_cursor < _len) _cursor++; return; }   // cursor right
   confirmAndExit();                                  // c == 3, OK
+}
+
+void KeypadApplet::handleSelectLong() {
+  int r = _grid.focusedRow(), c = _grid.focusedCol();
+  // The 3x3 letter grid maps cell idx 0..8 -> digits '1'..'9'; the '0'/sym cell
+  // (r==3,c==0) types '0'. Everything else falls back to the plain press.
+  if (r < 3 && c < 3) {
+    commitPending();
+    insertCharAt(_cursor, (char)('1' + (r * 3 + c)));
+    _cursor++;
+    return;
+  }
+  if (r == 3 && c == 0 && !_numericOnly) {
+    commitPending();
+    insertCharAt(_cursor, '0');
+    _cursor++;
+    return;
+  }
+  handleSelect();
 }
 
 void KeypadApplet::onStart(AppletContext& ctx) {
@@ -179,6 +207,7 @@ int KeypadApplet::onRender(Canvas& c) {
   drawBuffer(c, 0, 0, c.width() - tagW, topH);
 
   const char* tag = _symPage ? "sym"
+                  : _mode == Mode::Shift ? "Abc"
                   : _mode == Mode::Upper ? "ABC"
                   : _mode == Mode::Num ? "123" : "abc";
   c.drawText(fontCaption(), c.width(), 3, tag, DisplayDriver::LIGHT, TextAlign::Right);
@@ -213,6 +242,9 @@ bool KeypadApplet::onInput(InputEvent ev) {
       return _grid.onInput(ev);
     case InputEvent::Select:
       handleSelect();
+      return true;
+    case InputEvent::SelectLong:            // long-press a letter cell = type its digit
+      handleSelectLong();
       return true;
     case InputEvent::Back:                  // Back = exit, like every other screen;
     case InputEvent::BackLong:              // backspace lives on the DEL cell now

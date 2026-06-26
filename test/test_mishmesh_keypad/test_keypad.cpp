@@ -25,16 +25,20 @@ TEST(Keypad, LowerModeLabels) {
 TEST(Keypad, CycleModeChangesLabels) {
   KeypadApplet k;
   EXPECT_EQ(KeypadApplet::Mode::Lower, k.mode());
-  k.cycleMode();
+  k.cycleMode();                             // abc -> Abc (one-shot capitalize)
+  EXPECT_EQ(KeypadApplet::Mode::Shift, k.mode());
+  EXPECT_STREQ("ABC", k.cellLabel(0, 1));    // Shift shows caps for the pending letter
+  EXPECT_STREQ("Ab",  k.cellLabel(2, 3));
+  k.cycleMode();                             // Abc -> ABC
   EXPECT_EQ(KeypadApplet::Mode::Upper, k.mode());
   EXPECT_STREQ("ABC", k.cellLabel(0, 1));
   EXPECT_STREQ("AB",  k.cellLabel(2, 3));
-  k.cycleMode();
+  k.cycleMode();                             // ABC -> 123
   EXPECT_EQ(KeypadApplet::Mode::Num, k.mode());
   EXPECT_STREQ("2", k.cellLabel(0, 1));      // abc cell -> digit 2
   EXPECT_STREQ("0", k.cellLabel(3, 0));      // sym cell -> digit 0 in Num mode
   EXPECT_STREQ("12", k.cellLabel(2, 3));
-  k.cycleMode();
+  k.cycleMode();                             // 123 -> abc
   EXPECT_EQ(KeypadApplet::Mode::Lower, k.mode());
 }
 
@@ -156,10 +160,53 @@ TEST(Keypad, SpaceCellAndCursorMove) {
 
 TEST(Keypad, NumModeTapsInsertDigits) {
   KeypadApplet k; Harness h(&k);
-  k.cycleMode(); k.cycleMode();                   // -> Num (focus stays on (0,1) = "2")
+  k.cycleMode(); k.cycleMode(); k.cycleMode();    // Lower->Shift->Upper->Num (focus stays on (0,1) = "2")
   k.onInput(InputEvent::Select);
   k.onInput(InputEvent::Select);                  // single-char group: two '2's
   EXPECT_STREQ("22", k.text());
+}
+
+TEST(Keypad, AbcModeCapitalizesFirstLetterThenReverts) {
+  KeypadApplet k; Harness h(&k);             // opens focused on "abc"
+  k.cycleMode();                             // -> Abc
+  EXPECT_EQ(KeypadApplet::Mode::Shift, k.mode());
+  k.onInput(InputEvent::Select);             // first letter -> capital 'A', still armed (pending)
+  EXPECT_STREQ("A", k.text());
+  EXPECT_EQ(KeypadApplet::Mode::Shift, k.mode());
+  k.onInput(InputEvent::NavRight);           // commit the pending letter -> reverts to Lower
+  EXPECT_EQ(KeypadApplet::Mode::Lower, k.mode());
+  k.onInput(InputEvent::Select);             // next letter (def cell) is lowercase
+  EXPECT_STREQ("Ad", k.text());
+}
+
+TEST(Keypad, AbcModeMultiTapStaysCapitalWithinGroup) {
+  KeypadApplet k; Harness h(&k);             // opens focused on "abc"
+  k.cycleMode();                             // -> Abc
+  k.onInput(InputEvent::Select);             // 'A'
+  k.onInput(InputEvent::Select);             // cycle same group, still shift -> 'B'
+  EXPECT_STREQ("B", k.text());
+  EXPECT_EQ(KeypadApplet::Mode::Shift, k.mode());
+}
+
+TEST(Keypad, AbcModeNavWithoutTypingKeepsShiftArmed) {
+  KeypadApplet k; Harness h(&k);             // opens focused on "abc"
+  k.cycleMode();                             // -> Abc
+  k.onInput(InputEvent::NavRight);           // just moving focus, no letter entered
+  EXPECT_EQ(KeypadApplet::Mode::Shift, k.mode());
+  k.onInput(InputEvent::Select);             // def cell -> capital 'D'
+  EXPECT_STREQ("D", k.text());
+}
+
+TEST(Keypad, LongPressTypesDigitFromLetterCell) {
+  KeypadApplet k; Harness h(&k);             // opens focused on "abc" = cell idx 1 -> '2'
+  k.onInput(InputEvent::SelectLong);
+  EXPECT_STREQ("2", k.text());
+  k.setFocusForTest(2, 2);                    // cell idx 8 -> '9'
+  k.onInput(InputEvent::SelectLong);
+  EXPECT_STREQ("29", k.text());
+  k.setFocusForTest(3, 0);                    // sym/'0' cell -> '0'
+  k.onInput(InputEvent::SelectLong);
+  EXPECT_STREQ("290", k.text());
 }
 
 TEST(Keypad, RenderDrawsCursorFill) {

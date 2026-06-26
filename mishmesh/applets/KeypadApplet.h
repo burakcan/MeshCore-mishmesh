@@ -19,7 +19,9 @@ public:
   static const uint16_t KP_MAX = 160;          // matches message char limit
   static const uint32_t TAP_TIMEOUT_MS = 800;  // multi-tap commit timeout
 
-  enum class Mode : uint8_t { Lower, Upper, Num };
+  // Shift = "Abc": one-shot capitalize - the next letter is upper, then it
+  // reverts to Lower automatically once that letter is committed.
+  enum class Mode : uint8_t { Lower, Shift, Upper, Num };
 
   KeypadApplet();
 
@@ -92,6 +94,7 @@ private:
   void deleteCharAt(uint16_t pos);
   void commitPending();
   void handleSelect();
+  void handleSelectLong();   // long-press: type the focused cell's digit (1..9, or 0)
   void handleCharCell(int charIndex);
   void confirmAndExit();
   void drawBuffer(Canvas& c, int x, int y, int w, int h);
