@@ -4,6 +4,21 @@
 
 namespace mishmesh {
 
+// [mishmesh] glyph-overlay hook state (set via Canvas::setEmojiRenderer). Null
+// until an overlay registers, so unregistered rendering/measuring is unchanged.
+static const mf_font_s* s_emojiFont = nullptr;
+static Canvas::EmojiLookupFn s_emojiLookup = nullptr;
+static Canvas::EmojiZeroWidthFn s_emojiZeroWidth = nullptr;
+// Side bearing (px) added on each side of an overlay glyph so emoji don't butt
+// against neighbouring glyphs. Applied identically in mm_char and textWidth.
+static constexpr int kEmojiPadPx = 1;
+
+void Canvas::setEmojiRenderer(const mf_font_s* font, EmojiLookupFn lookup,
+                              EmojiZeroWidthFn zeroWidth) {
+  s_emojiFont = font; s_emojiLookup = lookup; s_emojiZeroWidth = zeroWidth;
+}
+// [/mishmesh]
+
 DisplayDriver::Color themedColor(DisplayDriver::Color c) {
   if (uiPrefs().darkMode()) return c;
   return c == DisplayDriver::LIGHT ? DisplayDriver::DARK : DisplayDriver::LIGHT;
@@ -113,6 +128,21 @@ void mm_pixel(int16_t x, int16_t y, uint8_t count, uint8_t alpha, void* state) {
 
 uint8_t mm_char(int16_t x, int16_t y, mf_char ch, void* state) {
   TextState* s = (TextState*)state;
+  // [mishmesh] Glyph overlay: zero-width modifiers (VS16/ZWJ/skin tones) draw
+  // nothing; mapped codepoints come from the registered overlay atlas, drawn
+  // centered on the body line and advancing by the atlas glyph's width (mcufont
+  // advances by our return - mf_justify.c). Unregistered -> unchanged path below.
+  if (s_emojiZeroWidth && s_emojiZeroWidth((uint16_t)ch)) return 0;
+  if (s_emojiFont && s_emojiLookup) {
+    uint16_t glyph;
+    if (s_emojiLookup((uint16_t)ch, glyph)) {
+      int16_t dy = (int16_t)((s->font->height - s_emojiFont->height) / 2);
+      mf_render_character(s_emojiFont, (int16_t)(x + kEmojiPadPx), (int16_t)(y + dy),
+                          glyph, mm_pixel, state);
+      return (uint8_t)(s_emojiFont->character_width(s_emojiFont, glyph) + 2 * kEmojiPadPx);
+    }
+  }
+  // [/mishmesh]
   // Glyphs the font can't render (emoji, other non-BMP/out-of-range codepoints)
   // would otherwise be drawn as mcufont's '?' fallback. Show a solid block
   // instead, advancing by the fallback width so layout/wrapping is unchanged.
@@ -146,6 +176,22 @@ bool mm_measure_line(mf_str line, uint16_t count, void* state) {
 
 int Canvas::textWidth(const mf_font_s* font, const char* str) const {
   if (!font || !str) return 0;
+  // [mishmesh] With an overlay registered, mirror mm_char so measure == render:
+  // mapped codepoints measure at the overlay glyph's advance, zero-width modifiers
+  // measure 0, everything else keeps stock width (incl. the fallback width for
+  // unknown glyphs). No overlay -> exactly mf_get_string_width(..., false).
+  if (s_emojiFont) {
+    mf_str p = str; int w = 0; mf_char ch; uint16_t glyph;
+    while ((ch = mf_getchar(&p)) != 0) {
+      if (s_emojiZeroWidth && s_emojiZeroWidth((uint16_t)ch)) continue;
+      if (s_emojiLookup && s_emojiLookup((uint16_t)ch, glyph))
+        w += s_emojiFont->character_width(s_emojiFont, glyph) + 2 * kEmojiPadPx;
+      else
+        w += mf_character_width(font, ch);
+    }
+    return w;
+  }
+  // [/mishmesh]
   return mf_get_string_width(font, str, 0, false);
 }
 

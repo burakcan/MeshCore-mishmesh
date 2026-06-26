@@ -19,5 +19,7 @@ venv/
 platformio.local.ini
 
 # Local-only, licensed emoji asset (EmojiMania, © Idan Rooze) — NEVER commit.
-# Contains the generated glyph atlas + generator + source sheet.
-mishmesh/text/emoji-local/
+# The atlas/generator/sheet live here; only .gitkeep is tracked so the optional
+# build-glob (variants/*/platformio.ini) has a valid dir on fresh clones.
+mishmesh/text/emoji-local/*
+!mishmesh/text/emoji-local/.gitkeep

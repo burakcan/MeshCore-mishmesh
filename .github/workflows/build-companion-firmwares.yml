@@ -13,6 +13,12 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    env:
+      # [mishmesh] Licensed emoji overlay (EmojiMania), injected only when the
+      # repo secret is set — i.e. official builds. Forks and fork PRs never
+      # receive the secret, so it resolves empty and the overlay is skipped,
+      # producing an emoji-free build identical to a plain clone.
+      EMOJI_OVERLAY_B64: ${{ secrets.EMOJI_OVERLAY_B64 }}
     steps:
 
       - name: Clone Repo
@@ -20,6 +26,13 @@ jobs:
 
       - name: Setup Build Environment
         uses: ./.github/actions/setup-build-environment
+
+      - name: Inject licensed emoji overlay (official builds only)
+        if: ${{ env.EMOJI_OVERLAY_B64 != '' }}
+        run: |
+          mkdir -p mishmesh/text/emoji-local
+          printf '%s' "$EMOJI_OVERLAY_B64" | base64 --decode | tar xz -C mishmesh/text/emoji-local
+          echo "Emoji overlay injected:"; ls mishmesh/text/emoji-local
 
       - name: Build Firmwares
         env:

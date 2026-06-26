@@ -95,6 +95,18 @@ public:
   // Blit a full-screen column-major 1bpp buffer to the panel (device coords). See
   // DisplayDriver::blitColumnMajor1bpp. Intended for full-frame sources (e.g. a game).
   void blit1bpp(const uint8_t* buf, int w, int h);
+
+  // [mishmesh] Optional inline glyph-overlay hook: a secondary bitmap font whose
+  // glyphs replace mapped codepoints in body text (used for a small emoji atlas).
+  // Registered once at startup; when unset, all text rendering/measuring is
+  // byte-identical to upstream. Static because the mcufont callbacks are shared.
+  // `lookup(key, glyph)` maps a 16-bit codepoint to an overlay glyph; `zeroWidth`
+  // marks combining/modifier codepoints that render nothing (advance 0).
+  typedef bool (*EmojiLookupFn)(uint16_t key, uint16_t& glyphOut);
+  typedef bool (*EmojiZeroWidthFn)(uint16_t key);
+  static void setEmojiRenderer(const mf_font_s* font, EmojiLookupFn lookup,
+                               EmojiZeroWidthFn zeroWidth);
+  // [/mishmesh]
 };
 
 }  // namespace mishmesh
