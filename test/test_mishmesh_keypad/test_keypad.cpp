@@ -4,6 +4,7 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/EmojiCatalog.h>
 #include <mishmesh/text/Fonts.h>
 #include "FakeDisplayDriver.h"
 using namespace mishmesh;
@@ -456,6 +457,98 @@ TEST(KeypadNumeric, LocksModeAndTypesDotAndMinus) {
   EXPECT_STREQ(k.text(), "9.1");
 
   k.onStop();
+}
+
+TEST(KeypadUtf8, EncodesAllLengths) {
+  char b[5];
+  EXPECT_EQ(1, KeypadApplet::utf8Encode(0x41, b));     EXPECT_STREQ("A", b);
+  EXPECT_EQ(2, KeypadApplet::utf8Encode(0xE9, b));     // é U+00E9
+  EXPECT_EQ((char)0xC3, b[0]); EXPECT_EQ((char)0xA9, b[1]); EXPECT_EQ(0, b[2]);
+  EXPECT_EQ(3, KeypadApplet::utf8Encode(0x2764, b));   // ❤ U+2764
+  EXPECT_EQ((char)0xE2, b[0]); EXPECT_EQ((char)0x9D, b[1]); EXPECT_EQ((char)0xA4, b[2]);
+  EXPECT_EQ(4, KeypadApplet::utf8Encode(0x1F600, b));  // 😀 U+1F600
+  EXPECT_EQ((char)0xF0, b[0]); EXPECT_EQ((char)0x9F, b[1]);
+  EXPECT_EQ((char)0x98, b[2]); EXPECT_EQ((char)0x80, b[3]); EXPECT_EQ(0, b[4]);
+}
+
+TEST(KeypadUtf8, EncodeRoundTripLengths) {
+  char b[5];
+  EXPECT_EQ(4, KeypadApplet::utf8Encode(0x1F44D, b)); // 👍
+  EXPECT_EQ(4, (int)strlen(b));
+}
+
+// A 13-entry stand-in catalog forces 2 pages (12/page).
+static const uint32_t kPickCat[] = {
+  0x1F600,0x1F604,0x1F602,0x1F642,0x1F60A,0x1F609,0x1F60D,0x1F618,0x1F61C,0x1F61B,
+  0x1F60E,0x1F914,   // 12 on page 0
+  0x2764             // 1 on page 1
+};
+
+struct KeypadEmoji : ::testing::Test {
+  void TearDown() override { setEmojiCatalog(nullptr, 0); }
+};
+
+TEST_F(KeypadEmoji, DormantWithoutCatalog) {
+  setEmojiCatalog(nullptr, 0);
+  KeypadApplet k;
+  k.cycleBottomLeft();                       // letters -> sym
+  EXPECT_TRUE(k.symPage());
+  EXPECT_FALSE(k.emojiPage());
+  k.cycleBottomLeft();                       // sym -> letters (emoji skipped)
+  EXPECT_FALSE(k.symPage());
+  EXPECT_FALSE(k.emojiPage());
+}
+
+TEST_F(KeypadEmoji, CycleReachesEmojiAndBack) {
+  setEmojiCatalog(kPickCat, 13);
+  KeypadApplet k;
+  k.cycleBottomLeft(); EXPECT_TRUE(k.symPage());
+  k.cycleBottomLeft(); EXPECT_TRUE(k.emojiPage()); EXPECT_FALSE(k.symPage());
+  EXPECT_EQ(2, k.emojiPageCount());
+  k.cycleBottomLeft(); EXPECT_FALSE(k.emojiPage());   // back to letters
+}
+
+TEST_F(KeypadEmoji, PageLabelsAndWrap) {
+  setEmojiCatalog(kPickCat, 13);
+  KeypadApplet k;
+  k.cycleBottomLeft(); k.cycleBottomLeft();  // into emoji, page 0
+  EXPECT_STREQ("\xF0\x9F\x98\x80", k.cellLabel(0, 0));   // cell0 = 😀
+  k.nextEmojiPage();                          // page 1
+  EXPECT_EQ(1, k.emojiPageIndex());
+  EXPECT_STREQ("\xE2\x9D\xA4", k.cellLabel(0, 0));       // cell0 = ❤
+  EXPECT_STREQ("", k.cellLabel(0, 1));                   // past the end -> blank
+  k.nextEmojiPage(); EXPECT_EQ(0, k.emojiPageIndex());   // wraps to page 0
+  k.prevEmojiPage(); EXPECT_EQ(1, k.emojiPageIndex());   // wraps back
+}
+
+TEST_F(KeypadEmoji, SelectInsertsUtf8) {
+  setEmojiCatalog(kPickCat, 13);
+  KeypadApplet k;
+  k.cycleBottomLeft(); k.cycleBottomLeft();  // emoji, page 0
+  k.insertEmojiCell(0);                       // insert 😀
+  EXPECT_STREQ("\xF0\x9F\x98\x80", k.text());
+  EXPECT_EQ(4, (int)k.length());
+  k.insertEmojiCell(11);                      // insert 🤔 (0x1F914)
+  EXPECT_EQ(8, (int)k.length());
+  EXPECT_TRUE(k.emojiPage());                 // stays in emoji mode
+}
+
+// The bottom-left label shows the NEXT state so emoji mode is discoverable.
+TEST_F(KeypadEmoji, BottomLeftLabelShowsNextState) {
+  setEmojiCatalog(kPickCat, 13);
+  KeypadApplet k;
+  EXPECT_STREQ("sym", k.cellLabel(3, 0));   // letters -> next is sym
+  k.cycleBottomLeft();
+  EXPECT_STREQ("emo", k.cellLabel(3, 0));   // sym -> next is emoji (catalog present)
+  k.cycleBottomLeft();
+  EXPECT_STREQ("abc", k.cellLabel(3, 0));   // emoji -> next is letters
+}
+
+TEST_F(KeypadEmoji, SymLabelStaysAbcWithoutCatalog) {
+  setEmojiCatalog(nullptr, 0);
+  KeypadApplet k;
+  k.cycleBottomLeft();                      // letters -> sym
+  EXPECT_STREQ("abc", k.cellLabel(3, 0));   // no catalog -> next is letters
 }
 
 int main(int argc, char** argv) {

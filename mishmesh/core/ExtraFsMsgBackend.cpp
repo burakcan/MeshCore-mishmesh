@@ -26,11 +26,69 @@
 
 #include <mishmesh/core/ExtraFsMsgBackend.h>
 
+// Adafruit_LittleFS (nRF52/STM32) exposes File::open()/isOpen(), so one File can
+// be kept open and reused across reads. Other backends (RP2040/ESP32 fs::File)
+// don't, so they stay on the open-per-call path below.
+#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  #define MSG_FS_READ_CACHE 1
+  #include <new>   // placement new for the statically-stored handle
+#endif
+
 namespace mishmesh {
 
 // ---- helpers ----
 
 static const int CHUNK = 256;   // stack buffer size for copy-and-swap
+
+namespace {
+
+// Opening a per-chat log costs ~tens of ms on LittleFS (directory + metadata
+// walk). A single chat open issues ~250 same-file read()/size() calls (window
+// load + full-thread height remeasure), so reopening per call dominated the
+// 6-7 s freeze. We keep ONE read handle open and reuse it while the caller keeps
+// hitting the same file; any write (or a different file) closes it first, so a
+// read handle is never live while the same file is mutated; LittleFS single-
+// writer safety is preserved. ExtraFsMsgBackend is a singleton on device, so
+// file-scope state is safe and avoids leaking the platform File type into the
+// header.
+uint32_t rawSize(FILESYSTEM* fs, const char* dir, const char* name) {
+  if (!fs) return 0;
+  char path[32]; snprintf(path, sizeof(path), "%s/%s", dir, name);
+  File f = fs->open(path, FILE_O_READ);
+  if (!f) return 0;
+  uint32_t sz = f.size();
+  f.close();
+  return sz;
+}
+
+#ifdef MSG_FS_READ_CACHE
+alignas(File) uint8_t s_rfStore[sizeof(File)];
+File* s_rf = nullptr;        // lazily placement-constructed, bound to the fs
+char  s_rfName[15] = {0};    // log the handle is open on ("" = none)
+
+void closeReadCache() {
+  if (s_rf && s_rf->isOpen()) s_rf->close();
+  s_rfName[0] = '\0';
+}
+
+// Open (or reuse) the cached read handle on <dir>/<name>. nullptr if absent.
+File* acquireRead(FILESYSTEM* fs, const char* dir, const char* name) {
+  if (!fs) return nullptr;
+  if (!s_rf) s_rf = new (s_rfStore) File(*fs);
+  if (s_rfName[0] && strcmp(s_rfName, name) != 0) closeReadCache();
+  if (!s_rf->isOpen()) {
+    char path[32]; snprintf(path, sizeof(path), "%s/%s", dir, name);
+    if (!s_rf->open(path, FILE_O_READ)) { s_rfName[0] = '\0'; return nullptr; }
+    strncpy(s_rfName, name, sizeof(s_rfName) - 1);
+    s_rfName[sizeof(s_rfName) - 1] = '\0';
+  }
+  return s_rf;
+}
+#else
+inline void closeReadCache() {}
+#endif
+
+}  // namespace
 
 void ExtraFsMsgBackend::begin(FILESYSTEM& fs, const char* dir) {
   _fs = &fs;
@@ -80,6 +138,7 @@ bool ExtraFsMsgBackend::copyRange(const char* srcPath, uint32_t srcOff, uint32_t
 
 bool ExtraFsMsgBackend::append(const char* name, const uint8_t* rec, uint32_t len) {
   if (!_fs) return false;
+  closeReadCache();   // no read handle may be open while we write this log
   char path[32]; makePath(path, sizeof(path), name);
   File f = _fs->open(path, FILE_O_WRITE);   // RDWR|CREAT, seeks to end
   if (!f) return false;
@@ -90,17 +149,24 @@ bool ExtraFsMsgBackend::append(const char* name, const uint8_t* rec, uint32_t le
 
 uint32_t ExtraFsMsgBackend::size(const char* name) const {
   if (!_fs) return 0;
-  char path[32]; makePath(path, sizeof(path), name);
-  File f = _fs->open(path, FILE_O_READ);
-  if (!f) return 0;
-  uint32_t sz = f.size();
-  f.close();
-  return sz;
+#ifdef MSG_FS_READ_CACHE
+  File* f = acquireRead(_fs, _dir, name);
+  return f ? f->size() : 0;
+#else
+  return rawSize(_fs, _dir, name);
+#endif
 }
 
 uint32_t ExtraFsMsgBackend::read(const char* name, uint32_t off,
                                   uint8_t* dst, uint32_t cap) const {
   if (!_fs) return 0;
+#ifdef MSG_FS_READ_CACHE
+  File* f = acquireRead(_fs, _dir, name);
+  if (!f) return 0;
+  if (!f->seek(off)) return 0;   // handle stays open for the next read
+  int n = f->read(dst, (uint16_t)(cap > 65535u ? 65535u : cap));
+  return n > 0 ? (uint32_t)n : 0;
+#else
   char path[32]; makePath(path, sizeof(path), name);
   File f = _fs->open(path, FILE_O_READ);
   if (!f) return 0;
@@ -108,10 +174,12 @@ uint32_t ExtraFsMsgBackend::read(const char* name, uint32_t off,
   int n = f.read(dst, (uint16_t)(cap > 65535u ? 65535u : cap));
   f.close();
   return n > 0 ? (uint32_t)n : 0;
+#endif
 }
 
 bool ExtraFsMsgBackend::rewrite(const char* name, const uint8_t* data, uint32_t len) {
   if (!_fs) return false;
+  closeReadCache();
   char path[32]; makePath(path, sizeof(path), name);
   _fs->remove(path);
   // Fix 3: always create the file (even for len==0) so the file is PRESENT but
@@ -129,6 +197,7 @@ bool ExtraFsMsgBackend::rewrite(const char* name, const uint8_t* data, uint32_t 
 
 bool ExtraFsMsgBackend::remove(const char* name) {
   if (!_fs) return false;
+  closeReadCache();
   char path[32]; makePath(path, sizeof(path), name);
   _fs->remove(path);
   return true;
@@ -139,6 +208,7 @@ bool ExtraFsMsgBackend::remove(const char* name) {
 bool ExtraFsMsgBackend::patch(const char* name, uint32_t off,
                                const uint8_t* src, uint32_t len) {
   if (!_fs) return false;
+  closeReadCache();
   char path[32]; makePath(path, sizeof(path), name);
   // FILE_O_WRITE = LFS_O_RDWR|LFS_O_CREAT; seeks to end. Seek back to off.
   File f = _fs->open(path, FILE_O_WRITE);
@@ -151,10 +221,11 @@ bool ExtraFsMsgBackend::patch(const char* name, uint32_t off,
 
 bool ExtraFsMsgBackend::dropFront(const char* name, uint32_t bytes) {
   if (!_fs) return false;
+  closeReadCache();
   char path[32];    makePath(path, sizeof(path), name);
   char tmp[36];     makeTmpPath(tmp, sizeof(tmp), name);
 
-  uint32_t sz = size(name);
+  uint32_t sz = rawSize(_fs, _dir, name);
   if (bytes == 0) return true;
   if (bytes >= sz) {
     // Fix 3: leave a PRESENT 0-byte file (match FakeMsgLogBackend: f.clear() keeps key).
@@ -176,10 +247,11 @@ bool ExtraFsMsgBackend::dropFront(const char* name, uint32_t bytes) {
 
 bool ExtraFsMsgBackend::removeRange(const char* name, uint32_t off, uint32_t len) {
   if (!_fs) return false;
+  closeReadCache();
   char path[32];    makePath(path, sizeof(path), name);
   char tmp[36];     makeTmpPath(tmp, sizeof(tmp), name);
 
-  uint32_t sz = size(name);
+  uint32_t sz = rawSize(_fs, _dir, name);
   if (off >= sz || len == 0) return true;
   uint32_t end = off + len;
   if (end > sz) end = sz;
@@ -231,8 +303,9 @@ bool ExtraFsMsgBackend::removeRange(const char* name, uint32_t off, uint32_t len
 
 bool ExtraFsMsgBackend::truncate(const char* name, uint32_t len) {
   if (!_fs) return false;
+  closeReadCache();
   char path[32]; makePath(path, sizeof(path), name);
-  uint32_t curSize = size(name);
+  uint32_t curSize = rawSize(_fs, _dir, name);
   if (curSize <= len) return true;   // already short enough
   File f = _fs->open(path, FILE_O_WRITE);   // RDWR|CREAT, seeks to end
   if (!f) return false;
@@ -245,6 +318,7 @@ bool ExtraFsMsgBackend::truncate(const char* name, uint32_t len) {
 
 int ExtraFsMsgBackend::list(MsgLogInfo* out, int cap) const {
   if (!_fs) return 0;
+  closeReadCache();   // don't hold a log handle open across a directory traversal
   File dir = _fs->open(_dir, FILE_O_READ);
   if (!dir || !dir.isDirectory()) {
     if (dir) dir.close();
@@ -272,6 +346,7 @@ int ExtraFsMsgBackend::list(MsgLogInfo* out, int cap) const {
 
 bool ExtraFsMsgBackend::saveIndex(const uint8_t* data, uint32_t len) {
   if (!_fs) return false;
+  closeReadCache();
   char path[32]; makeIndexPath(path, sizeof(path));
   _fs->remove(path);
   if (len == 0) return true;
@@ -309,6 +384,7 @@ static int _countBlock(void* p, lfs_block_t /*block*/) {
 
 uint32_t ExtraFsMsgBackend::freeBytes() const {
   if (!_fs) return 0;
+  closeReadCache();   // lfs_traverse walks all blocks; don't leave a file open
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   lfs_t* lfs = _fs->_getFS();
   if (!lfs || !lfs->cfg) return 0;

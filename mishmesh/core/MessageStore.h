@@ -60,6 +60,11 @@ public:
 
   int  pendingDMCount() const;
   bool getPendingDM(int index, ConvoKey& outKey, uint32_t& outSenderTime) const;
+  // Single-pass collection of up to `cap` still-pending outbound DMs (key +
+  // senderTime), returning the count written. One walk over all logs - unlike
+  // pendingDMCount()+getPendingDM() which re-walk every file per index (O(n^2)
+  // flash opens). Used by the auto-retry scan, which runs every few seconds.
+  int  collectPendingDMs(ConvoKey* outKeys, uint32_t* outTimes, int cap) const;
   int  getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const;
 
   void deleteMessage(const ConvoKey& key, int index);

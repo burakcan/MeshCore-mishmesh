@@ -3,6 +3,7 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/text/Fonts.h>
+#include <stdio.h>
 #include <string.h>
 
 namespace mishmesh {
@@ -34,6 +35,11 @@ const char* KeypadApplet::groupAt(int i) const {
 }
 
 const char* KeypadApplet::cellLabel(int r, int c) const {
+  if (_emojiPage) {
+    if (r < 3) return _emojiCells[r * 4 + c];   // UTF-8 glyph (or "")
+    if (c == 0) return "abc";
+    return (c == 3) ? "OK" : "";                // c1/c2 use icons
+  }
   if (r < 3 && c < 3) return groupAt(r * 3 + c);
   if (c == 3) {
     if (r == 0) return "DEL";
@@ -47,7 +53,9 @@ const char* KeypadApplet::cellLabel(int r, int c) const {
   }
   // r == 3
   if (c == 0) {
-    if (_symPage) return "abc";
+    // Label shows the NEXT state the button cycles to (see cycleBottomLeft):
+    // letters -> sym -> emoji (when a catalog is registered) -> letters.
+    if (_symPage) return emojiCatalogCount() > 0 ? "emo" : "abc";
     if (_mode == Mode::Num) return "0";
     return "sym";
   }
@@ -57,6 +65,13 @@ const char* KeypadApplet::cellLabel(int r, int c) const {
 }
 
 uint16_t KeypadApplet::cellIcon(int r, int c) const {
+  if (_emojiPage) {
+    if (r < 3) return 0;                                  // emoji drawn as text label
+    if (c == 1) return (uint16_t)Icon::ArrowLeft;
+    if (c == 2) return (uint16_t)Icon::ArrowRight;
+    if (c == 3) return (uint16_t)Icon::Check;
+    return 0;                                             // c0 = "abc" text
+  }
   if (r < 3 && c < 3) return 0;                              // char groups: text
   if (c == 3 && r == 0) return (uint16_t)Icon::Backspace;   // DEL
   if (r == 3 && c == 1) return (uint16_t)Icon::ArrowLeft;   // cursor left (existing icon)
@@ -89,6 +104,50 @@ void KeypadApplet::toggleSymPage() {
   if (_symPage) _mode = Mode::Lower;   // symbols are case-independent; normalize
 }
 
+int KeypadApplet::emojiPageCount() const {
+  int n = emojiCatalogCount();
+  return n > 0 ? (n + 11) / 12 : 0;
+}
+
+void KeypadApplet::fillEmojiCells() {
+  int cnt = emojiCatalogCount();
+  for (int i = 0; i < 12; i++) {
+    int idx = _emojiPageIdx * 12 + i;
+    if (idx < cnt) utf8Encode(emojiCatalogAt((uint16_t)idx), _emojiCells[i]);
+    else _emojiCells[i][0] = 0;
+  }
+}
+
+void KeypadApplet::cycleBottomLeft() {
+  if (_numericOnly) return;
+  commitPending();
+  if (_emojiPage) { _emojiPage = false; return; }            // emoji -> letters
+  if (_symPage) {                                            // sym -> emoji (or letters)
+    _symPage = false;
+    if (emojiCatalogCount() > 0) { _emojiPage = true; _emojiPageIdx = 0; fillEmojiCells(); }
+    return;
+  }
+  _symPage = true; _mode = Mode::Lower;                      // letters -> sym
+}
+
+void KeypadApplet::nextEmojiPage() {
+  int pc = emojiPageCount(); if (pc <= 1) return;
+  _emojiPageIdx = (uint8_t)((_emojiPageIdx + 1) % pc); fillEmojiCells();
+}
+
+void KeypadApplet::prevEmojiPage() {
+  int pc = emojiPageCount(); if (pc <= 1) return;
+  _emojiPageIdx = (uint8_t)((_emojiPageIdx + pc - 1) % pc); fillEmojiCells();
+}
+
+void KeypadApplet::insertEmojiCell(int cell) {
+  if (cell < 0 || cell >= 12) return;
+  const char* s = _emojiCells[cell];
+  if (!s[0]) return;
+  insertString(_cursor, s);
+  _cursor = (uint16_t)(_cursor + strlen(s));
+}
+
 void KeypadApplet::insertCharAt(uint16_t pos, char ch) {
   if (_len >= _cap) return;
   for (uint16_t i = _len; i > pos; i--) _buf[i] = _buf[i - 1];
@@ -102,6 +161,46 @@ void KeypadApplet::deleteCharAt(uint16_t pos) {
   for (uint16_t i = pos; i + 1 < _len; i++) _buf[i] = _buf[i + 1];
   _len--;
   _buf[_len] = 0;
+}
+
+int KeypadApplet::utf8Encode(uint32_t cp, char out[5]) {
+  int n;
+  if (cp < 0x80)        { out[0] = (char)cp; n = 1; }
+  else if (cp < 0x800)  { out[0] = (char)(0xC0 | (cp >> 6));
+                          out[1] = (char)(0x80 | (cp & 0x3F)); n = 2; }
+  else if (cp < 0x10000){ out[0] = (char)(0xE0 | (cp >> 12));
+                          out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                          out[2] = (char)(0x80 | (cp & 0x3F)); n = 3; }
+  else                  { out[0] = (char)(0xF0 | (cp >> 18));
+                          out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+                          out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                          out[3] = (char)(0x80 | (cp & 0x3F)); n = 4; }
+  out[n] = 0;
+  return n;
+}
+
+void KeypadApplet::insertString(uint16_t pos, const char* s) {
+  uint16_t sl = (uint16_t)strlen(s);
+  if (sl == 0 || (uint32_t)_len + sl > _cap) return;
+  memmove(_buf + pos + sl, _buf + pos, (size_t)(_len - pos + 1));  // move NUL too
+  memcpy(_buf + pos, s, sl);
+  _len = (uint16_t)(_len + sl);
+}
+
+uint16_t KeypadApplet::prevCodepoint(uint16_t pos) const {
+  if (pos == 0) return 0;
+  uint16_t i = (uint16_t)(pos - 1);
+  while (i > 0 && ((unsigned char)_buf[i] & 0xC0) == 0x80) i--;    // skip continuation bytes
+  return i;
+}
+
+uint16_t KeypadApplet::nextCodepoint(uint16_t pos) const {
+  if (pos >= _len) return _len;
+  unsigned char b = (unsigned char)_buf[pos];
+  uint16_t adv = (b < 0x80) ? 1 : ((b >> 5) == 0x6) ? 2
+               : ((b >> 4) == 0xE) ? 3 : ((b >> 3) == 0x1E) ? 4 : 1;
+  uint16_t n = (uint16_t)(pos + adv);
+  return n > _len ? _len : n;
 }
 
 void KeypadApplet::handleCharCell(int idx) {
@@ -131,10 +230,25 @@ void KeypadApplet::handleCharCell(int idx) {
 }
 
 void KeypadApplet::handleSelect() {
+  if (_emojiPage) {
+    int er = _grid.focusedRow(), ec = _grid.focusedCol();
+    if (er < 3) { insertEmojiCell(er * 4 + ec); return; }    // 12 emoji cells
+    if (ec == 0) { cycleBottomLeft(); return; }              // "abc" -> letters
+    if (ec == 1) { prevEmojiPage(); return; }
+    if (ec == 2) { nextEmojiPage(); return; }
+    confirmAndExit(); return;                                // OK
+  }
   int r = _grid.focusedRow(), c = _grid.focusedCol();
   if (r < 3 && c < 3) { handleCharCell(r * 3 + c); return; }
   if (c == 3) {
-    if (r == 0) { commitPending(); if (_cursor > 0) { deleteCharAt(_cursor - 1); _cursor--; } return; }
+    if (r == 0) {   // DEL - remove the whole codepoint before the cursor
+      commitPending();
+      if (_cursor > 0) {
+        uint16_t p = prevCodepoint(_cursor);
+        while (_cursor > p) { deleteCharAt(_cursor - 1); _cursor--; }
+      }
+      return;
+    }
     if (r == 1) { commitPending(); insertCharAt(_cursor, _numericOnly ? '-' : ' '); _cursor++; return; }
     if (r == 2) {                                   // shift / mode cycle, or '.' in numeric
       if (_numericOnly) { commitPending(); insertCharAt(_cursor, '.'); _cursor++; }
@@ -144,12 +258,11 @@ void KeypadApplet::handleSelect() {
   }
   // r == 3
   if (c == 0) {
-    if (_symPage)            { toggleSymPage(); return; }
-    if (_mode == Mode::Num)  { commitPending(); insertCharAt(_cursor, '0'); _cursor++; return; }
-    toggleSymPage(); return;
+    if (_mode == Mode::Num) { commitPending(); insertCharAt(_cursor, '0'); _cursor++; return; }
+    cycleBottomLeft(); return;   // letters -> sym -> emoji(if any) -> letters
   }
-  if (c == 1) { commitPending(); if (_cursor > 0)    _cursor--; return; }   // cursor left
-  if (c == 2) { commitPending(); if (_cursor < _len) _cursor++; return; }   // cursor right
+  if (c == 1) { commitPending(); _cursor = prevCodepoint(_cursor); return; }   // cursor left
+  if (c == 2) { commitPending(); _cursor = nextCodepoint(_cursor); return; }   // cursor right
   confirmAndExit();                                  // c == 3, OK
 }
 
@@ -206,10 +319,17 @@ int KeypadApplet::onRender(Canvas& c) {
   const int topH = 13;
   drawBuffer(c, 0, 0, c.width() - tagW, topH);
 
-  const char* tag = _symPage ? "sym"
-                  : _mode == Mode::Shift ? "Abc"
-                  : _mode == Mode::Upper ? "ABC"
-                  : _mode == Mode::Num ? "123" : "abc";
+  char tagbuf[8];
+  const char* tag;
+  if (_emojiPage) {
+    snprintf(tagbuf, sizeof(tagbuf), "%d/%d", _emojiPageIdx + 1, emojiPageCount());
+    tag = tagbuf;
+  } else {
+    tag = _symPage ? "sym"
+        : _mode == Mode::Shift ? "Abc"
+        : _mode == Mode::Upper ? "ABC"
+        : _mode == Mode::Num ? "123" : "abc";
+  }
   c.drawText(fontCaption(), c.width(), 3, tag, DisplayDriver::LIGHT, TextAlign::Right);
 
   _grid.draw(c, 0, topH, c.width(), c.height() - topH);
@@ -234,10 +354,17 @@ bool KeypadApplet::onInput(InputEvent ev) {
     return true;                           // swallow everything while the dialog is up
   }
   switch (ev) {
-    case InputEvent::NavUp:
-    case InputEvent::NavDown:
     case InputEvent::NavLeft:
     case InputEvent::NavRight:
+      if (_emojiPage) {
+        int nr = _grid.focusedRow(), nc = _grid.focusedCol();
+        if (nr < 3 && ev == InputEvent::NavRight && nc == 3) { nextEmojiPage(); return true; }
+        if (nr < 3 && ev == InputEvent::NavLeft  && nc == 0) { prevEmojiPage(); return true; }
+      }
+      commitPending();
+      return _grid.onInput(ev);
+    case InputEvent::NavUp:
+    case InputEvent::NavDown:
       commitPending();
       return _grid.onInput(ev);
     case InputEvent::Select:

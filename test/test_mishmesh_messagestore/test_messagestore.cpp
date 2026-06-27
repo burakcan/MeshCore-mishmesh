@@ -201,6 +201,28 @@ TEST_F(MSFix, PendingDMEnumerationSkipsNonPending) {
   EXPECT_FALSE(s.getPendingDM(1, k, st));                            // only one left
 }
 
+TEST_F(MSFix, CollectPendingDMsSinglePass) {
+  s.appendOutboundDM(dm("ALICE!"), "a", 1, 100, 100, 0x1111, 0);
+  s.appendOutboundDM(dm("ALICE!"), "b", 1, 101, 101, 0x1112, 0);
+  s.appendOutboundDM(dm("BOBBBB"), "c", 1, 200, 200, 0x2222, 0);
+  s.appendInbound(dm("CAROL!"), "in", 2, 300, 300, 0, nullptr, 0);   // inbound: skipped
+  s.appendOutboundChannel(channelKey(4), "d", 1, 400, 400);          // channel: skipped
+  ConvoKey keys[8]; uint32_t times[8];
+  EXPECT_EQ(3, s.collectPendingDMs(keys, times, 8));
+  s.markDelivered(0x1111, 0);                                        // one drops out
+  int n = s.collectPendingDMs(keys, times, 8);
+  EXPECT_EQ(2, n);
+  for (int i = 0; i < n; i++) EXPECT_NE(100u, times[i]);             // the delivered one is gone
+}
+
+TEST_F(MSFix, CollectPendingDMsRespectsCap) {
+  for (int i = 0; i < 5; i++)
+    s.appendOutboundDM(dm("ALICE!"), "x", 1, 500 + i, 500 + i, 0x3000 + i, 0);
+  ConvoKey keys[3]; uint32_t times[3];
+  EXPECT_EQ(3, s.collectPendingDMs(keys, times, 3));                 // stops at cap
+  EXPECT_EQ(0, s.collectPendingDMs(keys, times, 0));                 // degenerate cap
+}
+
 TEST_F(MSFix, GetDMTextReturnsBody) {
   s.appendOutboundDM(dm("ALICE!"), "hello world", 11, 500, 500, 0xABCD, 0);
   char buf[32];

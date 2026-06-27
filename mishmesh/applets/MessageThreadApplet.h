@@ -40,7 +40,10 @@ private:
   void ensureHeights(Canvas& body, int n); // fill _blkH[]/_contentH from cache or (re)measure
   void computeFocusSpan(int n);            // _focusTop/_focusBot from cached heights + _focus
   void adjustScroll();                      // clamps _scrollY to keep focus visible
-  void drawMessage(Canvas& body, const MessageView& m, int top, bool focused) const;
+  // blockH is the message's cached height (_blkH[i]); drawMessage reuses it for
+  // the clip region and to derive the outbound bubble height instead of
+  // re-measuring (ensureHeights already ran the measure pass).
+  void drawMessage(Canvas& body, const MessageView& m, int top, int blockH, bool focused) const;
   void msgStamp(const MessageView& m, char* out, uint16_t cap) const;   // "14:09" / "1 Jul 14:09"
   void drawActionBar(Canvas& bar);   // two stacked Write/Quick buttons, focus per _barRow
   void startCompose(const char* seed = nullptr);

@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <mishmesh/core/Applet.h>
+#include <mishmesh/core/EmojiCatalog.h>
 #include <mishmesh/widgets/GridView.h>
 #include <mishmesh/widgets/ConfirmDialog.h>
 
@@ -55,8 +56,18 @@ public:
   uint16_t cursor() const { return _cursor; }
   Mode mode() const { return _mode; }
   bool symPage() const { return _symPage; }
+  bool emojiPage() const { return _emojiPage; }
+  int  emojiPageCount() const;              // ceil(count/12); 0 when no catalog
+  uint8_t emojiPageIndex() const { return _emojiPageIdx; }
+  void cycleBottomLeft();                   // letters -> sym -> emoji(if any) -> letters
+  void nextEmojiPage();                     // wraps
+  void prevEmojiPage();                     // wraps
+  void insertEmojiCell(int cell);           // cell 0..11 of the current page (no-op if blank)
   void cycleMode();      // Lower -> Upper -> Num -> Lower; exits sym page
   void toggleSymPage();  // letters <-> symbols
+
+  // UTF-8 codepoint -> bytes (1..4), NUL-terminated. Public for tests.
+  static int utf8Encode(uint32_t cp, char out[5]);
 
 private:
   AppletContext* _ctx;
@@ -71,6 +82,9 @@ private:
   uint16_t _cursor;      // insertion index, 0.._len
   Mode _mode;
   bool _symPage;
+  bool _emojiPage = false;
+  uint8_t _emojiPageIdx = 0;
+  char _emojiCells[12][5];                   // UTF-8 of the current page's cells ("" = empty)
   bool _numericOnly = false;   // configureNumeric(): digits + . - only, no mode switch
   GridView _grid;
 
@@ -88,10 +102,14 @@ private:
   ConfirmDialog _confirm;
   bool _confirming;
 
+  void fillEmojiCells();
   bool isDirty() const;
   const char* groupAt(int charIndex) const;   // group string for char cell 0..8
   void insertCharAt(uint16_t pos, char ch);
   void deleteCharAt(uint16_t pos);
+  void insertString(uint16_t pos, const char* s);      // multi-byte insert at pos
+  uint16_t prevCodepoint(uint16_t pos) const;          // codepoint boundary before pos
+  uint16_t nextCodepoint(uint16_t pos) const;          // codepoint boundary at/after pos
   void commitPending();
   void handleSelect();
   void handleSelectLong();   // long-press: type the focused cell's digit (1..9, or 0)

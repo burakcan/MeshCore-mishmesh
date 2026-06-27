@@ -102,6 +102,12 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
   _scrollY = _scrollTarget = 0;
   _animReady = false;   // snap (no slide-in) on the opening frame
   _pinBottom = true;    // first render scrolls to the newest message
+  // Guess "has scrollbar" for the first layout. Any chat tall enough to be slow
+  // to open overflows, so reserving the gutter up front makes that first measure
+  // final - without this the stale state from the previous chat can force a
+  // second full remeasure at the flipped width. A short chat that turns out to
+  // fit just does one cheap re-layout at full width (few messages).
+  _hasScrollbar = true;
   _lastSeq = _svc ? _svc->seq() : 0;
   _prevCount = n;
   _lastMsgTime = 0;        // seed from the newest message so the open frame isn't seen as an arrival
@@ -232,10 +238,10 @@ void MessageThreadApplet::msgStamp(const MessageView& m, char* out, uint16_t cap
               _app ? _app->timeFormat12h() : false);
 }
 
-void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int top, bool focused) const {
+void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int top, int blockH, bool focused) const {
   int adv = body.lineHeight(fontBody());    if (adv <= 0) adv = 8;
   int cap = body.lineHeight(fontCaption()); if (cap <= 0) cap = 6;
-  int bh = blockHeight(body, m);
+  int bh = blockH;   // cached height; no re-measure here
   // Clip the whole block to its own region (negative offset keeps mapping).
   Canvas blk = body.region(0, top - _scrollY, body.width(), bh);
   int cw = _contentW;
@@ -243,9 +249,11 @@ void MessageThreadApplet::drawMessage(Canvas& body, const MessageView& m, int to
   if (m.outbound) {
     int bubbleW = (cw * 3) / 4;
     int bx = cw - bubbleW;
-    int bodyH = wrapText(blk, 0, 0, bubbleW - 2 * PAD, m.text, DisplayDriver::DARK, false);
-    if (bodyH < adv) bodyH = adv;
-    int bubbleH = bodyH + 2 * PAD;
+    // blockHeight() defines an outbound block as (bodyH+2*PAD) + cap + GAP, so
+    // the bubble height is the cached height minus the caption row and gap - no
+    // need to re-wrap the text just to size the bubble.
+    int bubbleH = bh - cap - GAP;
+    if (bubbleH < adv + 2 * PAD) bubbleH = adv + 2 * PAD;
     blk.fillRect(bx, 0, bubbleW, bubbleH, DisplayDriver::LIGHT);
     wrapText(blk, bx + PAD, PAD, bubbleW - 2 * PAD, m.text, DisplayDriver::DARK, true);
     char st[28]; statusLabel(m, st, sizeof(st));
@@ -405,7 +413,7 @@ int MessageThreadApplet::onRender(Canvas& c) {
     int y = top - _scrollY;
     if (y >= _bodyH) break;                     // first row past the bottom -> done
     MessageView m;
-    if (_svc->getMessage(_key, i, m)) drawMessage(body, m, top, i == _focus);
+    if (_svc->getMessage(_key, i, m)) drawMessage(body, m, top, _blkH[i], i == _focus);
     top += _blkH[i];
   }
 

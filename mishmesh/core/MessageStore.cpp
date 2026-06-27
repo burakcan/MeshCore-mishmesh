@@ -647,6 +647,35 @@ bool MessageStore::getPendingDM(int index, ConvoKey& outKey, uint32_t& outSender
   return false;
 }
 
+int MessageStore::collectPendingDMs(ConvoKey* outKeys, uint32_t* outTimes, int cap) const {
+  if (!_backend || cap <= 0) return 0;
+  int out = 0, count = _index.count();
+  for (int ci = 0; ci < count && out < cap; ci++) {
+    ConvoSummary cs; if (!_index.get(ci, cs)) continue;
+    if (cs.key.type != 0) continue;   // only DM logs hold KIND_OUT_DM; skip channels
+    char name[15]; codec::keyToName(cs.key, name);
+    uint32_t fileSize = _backend->size(name);
+    uint32_t pos = 0;
+    while (pos < fileSize && out < cap) {
+      uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+      if (got < (uint32_t)codec::REC_HDR) break;
+      uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+      if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+      if (pos + sz > fileSize) break;
+      if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
+        const uint8_t* trailer = _recBuf + codec::REC_HDR + codec::recTextLen(_recBuf);
+        if (trailer[0] == ST_PENDING) {
+          codec::rdKey(_recBuf, outKeys[out]);
+          outTimes[out] = codec::rd32(_recBuf + 8);
+          out++;
+        }
+      }
+      pos += sz;
+    }
+  }
+  return out;
+}
+
 int MessageStore::getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const {
   if (!buf || cap <= 0 || !_backend) return 0;
   buf[0] = 0;
