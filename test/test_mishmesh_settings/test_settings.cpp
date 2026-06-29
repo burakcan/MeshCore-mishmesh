@@ -193,6 +193,7 @@ TEST(ContactsSettingsPanel, MasterToggleWritesService) {
 
 TEST(ContactsSettingsPanel, MaxHopsStepperWritesValue) {
   FakeContactsService svc;            // autoAddAll=true -> rows: AutoAddAll(0),Overwrite(1),MaxHops(2)
+  svc.cfg.overwriteOldest = true;     // hide "Notify when full" so MaxHops stays at index 2
   mishmesh::AppletContext ctx; ctx.contacts = &svc;
   mishmesh::ContactsSettingsPanel panel;
   panel.begin(ctx);
@@ -209,6 +210,7 @@ TEST(ContactsSettingsPanel, MaxHopsStepperWritesValue) {
 
 TEST(ContactsSettingsPanel, RemoveAllConfirmCallsService) {
   FakeContactsService svc;
+  svc.cfg.overwriteOldest = true;     // hide "Notify when full" to keep nav indices stable
   mishmesh::AppletContext ctx; ctx.contacts = &svc;
   mishmesh::ContactsSettingsPanel panel;
   panel.begin(ctx);

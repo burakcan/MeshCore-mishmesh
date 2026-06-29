@@ -15,7 +15,7 @@ public:
   std::vector<Row> chats, repeaters, rooms, sensors, discovered, recent;
   bool hasSelfLoc=false; int32_t selfLat=0, selfLon=0;
 
-  mishmesh::AutoAddConfig cfg{true,false,false,false,false,false,3};  // autoAddAll, 4 kinds, overwrite, maxHops
+  mishmesh::AutoAddConfig cfg{true,false,false,false,false,false,3,false};  // autoAddAll, 4 kinds, overwrite, maxHops, notifyWhenFull
   uint32_t telemSeq = 0;
   mishmesh::TelemetryView telem{};
 

@@ -15,10 +15,11 @@ class ContactsSettingsModel : public ListModel {
   ContactsService* _svc;
   bool addAll() const;   // current master state (defaults to true when unbound)
 public:
-  enum Row { AutoAddAll, Users, Repeaters, Rooms, Sensors, Overwrite, MaxHops,
+  enum Row { AutoAddAll, Users, Repeaters, Rooms, Sensors, Overwrite, NotifyFull, MaxHops,
              RemoveNonUsers, RemoveNonFavourites, RemoveAll, ROW_COUNT };
   ContactsSettingsModel() : _svc(nullptr) {}
   void bind(ContactsService* svc) { _svc = svc; }
+  int  buildRows(Row* seq) const;   // fills the visible-row sequence; returns count
   Row rowAt(int i) const;
   int count() const override;
   const char* label(int i) const override;

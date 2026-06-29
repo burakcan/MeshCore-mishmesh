@@ -415,6 +415,23 @@ void UITask::loop() {
         _host->push(&mishmesh::clockAlertApplet());
       _host->requestRender();
     }
+    // [mishmesh] one-shot "contacts full" banner. getNumContacts() is an O(1)
+    // counter read, so polling every loop is cheap. Fires on the not-full -> full
+    // transition when auto-add can no longer make room (overwrite off) and the
+    // user hasn't disabled the alert; the latch re-arms when the store drops.
+    {
+      mishmesh::AutoAddConfig aac = getAutoAdd();
+      uint16_t used = (uint16_t)the_mesh.getNumContacts();
+      if (_contactsFullLatch.update(used, (uint16_t)MAX_CONTACTS,
+                                    aac.notifyWhenFull, aac.overwriteOldest)) {
+        mishmesh::contactsFullApplet().raise(used, (uint16_t)MAX_CONTACTS);
+        if (!_host->isDisplayOn()) _host->wakeDisplay();
+        if (_host->foreground() != &mishmesh::contactsFullApplet())
+          _host->push(&mishmesh::contactsFullApplet());
+        _host->requestRender();
+      }
+    }
+    // [/mishmesh]
     _sound.tick(millis());   // [mishmesh]
     // [mishmesh] bank per-minute airtime deltas; cheap, advances buckets only on
     // minute rollover, and runs regardless of the active applet so the graph has
@@ -592,6 +609,7 @@ mishmesh::AutoAddConfig UITask::getAutoAdd() const {
   c.addSensor   = (p->autoadd_config & AUTO_ADD_SENSOR) != 0;
   c.overwriteOldest = (p->autoadd_config & AUTO_ADD_OVERWRITE_OLDEST) != 0;
   c.maxHops = p->autoadd_max_hops;
+  c.notifyWhenFull = p->contacts_full_notify != 0;
   return c;
 }
 void UITask::setAutoAdd(const mishmesh::AutoAddConfig& c) {
@@ -605,6 +623,7 @@ void UITask::setAutoAdd(const mishmesh::AutoAddConfig& c) {
   if (c.overwriteOldest) v |= AUTO_ADD_OVERWRITE_OLDEST;
   p->autoadd_config = v;
   p->autoadd_max_hops = c.maxHops;
+  p->contacts_full_notify = c.notifyWhenFull ? 1 : 0;
   the_mesh.savePrefs();
 }
 

@@ -25,6 +25,8 @@
 #include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/sound/Sounds.h>
 #include <mishmesh/core/AirtimeHistory.h>
+#include <mishmesh/core/ContactsFullLatch.h>
+#include <mishmesh/applets/ContactsFullApplet.h>
 #include <mishmesh/core/ExtraFsMsgBackend.h>
 // [/mishmesh]
 
@@ -127,6 +129,10 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   // Per-minute airtime history for the Airtime applet. Sampled in loop() from the
   // Dispatcher's cumulative counters so it accrues even while the screen is off.
   mishmesh::AirtimeHistory _airtime;
+
+  // One-shot "contacts full" latch; fed live counts in loop(). Fires the banner on
+  // the not-full -> full transition when overwrite is off and the alert is enabled.
+  mishmesh::ContactsFullLatch _contactsFullLatch;
 
   // Notification routing is deferred from notify() to the next loop(): notify()
   // fires from a mesh recv callback that runs BEFORE MyMesh appends the message to

@@ -391,6 +391,7 @@ TEST(ContactsApplet, KeepsListPositionAfterDrillInAndBack) {
 
 TEST(ContactsApplet, RemoveNonFavouritesCleanupKeepsOnlyFavourites) {
   FakeContactsService svc;
+  svc.cfg.overwriteOldest = true;      // hide "Notify when full" to keep nav indices stable
   FakeContactsService::Row a; a.name = "Alice"; memcpy(a.pubkey, "ALICE!", 6); a.favourite = true; svc.chats.push_back(a);
   FakeContactsService::Row b; b.name = "Bob";   memcpy(b.pubkey, "BOBBBB", 6); svc.chats.push_back(b);
   FakeContactsService::Row r; r.name = "Rep1";  memcpy(r.pubkey, "REP001", 6); svc.repeaters.push_back(r);
@@ -664,6 +665,7 @@ TEST(ContactsSettings, AutoAddAllCollapsesKindRows) {
   FakeContactsService svc;
   mishmesh::ContactsSettingsModel m;
   m.bind(&svc);
+  svc.cfg.overwriteOldest = true;   // hide the "Notify when full" row for this layout check
 
   svc.cfg.autoAddAll = true;
   EXPECT_EQ(6, m.count());                                  // master + overwrite + maxhops + 3 actions
@@ -695,6 +697,7 @@ TEST(ContactsApplet, SettingsAutoAddAllTogglesMaster) {
 TEST(ContactsSettings, MaxHopsRowShowsValueNotToggle) {
   FakeContactsService svc;
   svc.cfg.autoAddAll = true;
+  svc.cfg.overwriteOldest = true;     // hide "Notify when full" so MaxHops stays at index 2
   svc.cfg.maxHops = 1;                 // "Direct"
   mishmesh::ContactsSettingsModel m;
   m.bind(&svc);
@@ -711,6 +714,7 @@ TEST(ContactsSettings, MaxHopsRowShowsValueNotToggle) {
 TEST(ContactsSettings, MaxHopsLabelMapping) {
   FakeContactsService svc;
   svc.cfg.autoAddAll = true;
+  svc.cfg.overwriteOldest = true;     // hide "Notify when full" so MaxHops stays at index 2
   mishmesh::ContactsSettingsModel m;
   m.bind(&svc);
   svc.cfg.maxHops = 0;  EXPECT_STREQ("No limit", m.value(2));
@@ -725,6 +729,7 @@ TEST(ContactsSettings, MaxHopsLabelMapping) {
 TEST(ContactsApplet, MaxHopsStepperWritesValue) {
   FakeContactsService svc;
   svc.cfg.autoAddAll = true;
+  svc.cfg.overwriteOldest = true;      // hide "Notify when full" so MaxHops stays at index 2
   svc.cfg.maxHops = 1;                 // "Direct"
   FakeDisplayDriver d;
   mishmesh::AppletContext ctx; ctx.contacts = &svc;
@@ -745,6 +750,7 @@ TEST(ContactsApplet, MaxHopsStepperWritesValue) {
 TEST(ContactsApplet, MaxHopsStepperCancelKeepsValue) {
   FakeContactsService svc;
   svc.cfg.autoAddAll = true;
+  svc.cfg.overwriteOldest = true;      // hide "Notify when full" so MaxHops stays at index 2
   svc.cfg.maxHops = 1;
   FakeDisplayDriver d;
   mishmesh::AppletContext ctx; ctx.contacts = &svc;
@@ -757,6 +763,39 @@ TEST(ContactsApplet, MaxHopsStepperCancelKeepsValue) {
   host.dispatch(mishmesh::InputEvent::NavRight);  // tweak (uncommitted)
   host.dispatch(mishmesh::InputEvent::Back);      // cancel
   EXPECT_EQ(1, svc.cfg.maxHops);
+}
+
+// "Notify when full" sits under "Overwrite oldest" and is hidden while overwrite
+// is on (the alert is moot when a full store still evicts to make room).
+TEST(ContactsSettings, NotifyFullRowHiddenWhenOverwriteOn) {
+  FakeContactsService svc;
+  svc.cfg.autoAddAll = true;
+  mishmesh::ContactsSettingsModel m;
+  m.bind(&svc);
+
+  svc.cfg.overwriteOldest = false;
+  // master(0), overwrite(1), notifyfull(2), maxhops(3), 3 actions = 7
+  EXPECT_EQ(7, m.count());
+  EXPECT_EQ(mishmesh::ContactsSettingsModel::NotifyFull, m.rowAt(2));
+  EXPECT_TRUE(m.isToggle(2));
+  EXPECT_STREQ("Notify when full", m.label(2));
+
+  svc.cfg.overwriteOldest = true;
+  // notifyfull hidden: master(0), overwrite(1), maxhops(2), 3 actions = 6
+  EXPECT_EQ(6, m.count());
+  EXPECT_EQ(mishmesh::ContactsSettingsModel::MaxHops, m.rowAt(2));
+}
+
+TEST(ContactsSettings, NotifyFullToggleReflectsField) {
+  FakeContactsService svc;
+  svc.cfg.autoAddAll = true;
+  svc.cfg.overwriteOldest = false;
+  svc.cfg.notifyWhenFull = true;
+  mishmesh::ContactsSettingsModel m;
+  m.bind(&svc);
+  EXPECT_TRUE(m.toggleState(2));    // NotifyFull at index 2
+  svc.cfg.notifyWhenFull = false;
+  EXPECT_FALSE(m.toggleState(2));
 }
 
 int main(int argc, char** argv) {

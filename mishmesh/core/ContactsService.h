@@ -41,6 +41,7 @@ struct AutoAddConfig {
   bool    addChat, addRepeater, addRoom, addSensor;   // consulted only when !autoAddAll
   bool    overwriteOldest;
   uint8_t maxHops;            // mirrors prefs; not edited in v1 UI
+  bool    notifyWhenFull;     // [mishmesh] on-device "contacts full" alert enable
 };
 
 struct TelemetryField {

@@ -14,32 +14,39 @@ static void maxHopsLabel(int raw, char* out, uint16_t cap) {
 
 static const char* SETTINGS_LABELS[ContactsSettingsModel::ROW_COUNT] = {
   "Auto-add all", "Auto-add Users", "Auto-add Repeaters", "Auto-add Rooms", "Auto-add Sensors",
-  "Overwrite oldest", "Max hops", "Remove non-users", "Remove non-favourites", "Remove all contacts",
+  "Overwrite oldest", "Notify when full", "Max hops", "Remove non-users", "Remove non-favourites", "Remove all contacts",
 };
 
 bool ContactsSettingsModel::addAll() const {
   return _svc ? _svc->getAutoAdd().autoAddAll : true;
 }
 
-ContactsSettingsModel::Row ContactsSettingsModel::rowAt(int i) const {
-  Row seq[ROW_COUNT];
+int ContactsSettingsModel::buildRows(Row* seq) const {
   int n = 0;
   seq[n++] = AutoAddAll;
   if (!addAll()) { seq[n++] = Users; seq[n++] = Repeaters; seq[n++] = Rooms; seq[n++] = Sensors; }
   seq[n++] = Overwrite;
+  if (_svc && !_svc->getAutoAdd().overwriteOldest) seq[n++] = NotifyFull;
   seq[n++] = MaxHops;
   seq[n++] = RemoveNonUsers; seq[n++] = RemoveNonFavourites; seq[n++] = RemoveAll;
+  return n;
+}
+ContactsSettingsModel::Row ContactsSettingsModel::rowAt(int i) const {
+  Row seq[ROW_COUNT];
+  int n = buildRows(seq);
   return (i >= 0 && i < n) ? seq[i] : ROW_COUNT;
 }
 int ContactsSettingsModel::count() const {
-  return addAll() ? 6 : ROW_COUNT;
+  Row seq[ROW_COUNT];
+  return buildRows(seq);
 }
 const char* ContactsSettingsModel::label(int i) const {
   Row r = rowAt(i);
   return (r >= 0 && r < ROW_COUNT) ? SETTINGS_LABELS[r] : "";
 }
 bool ContactsSettingsModel::isToggle(int i) const {
-  return rowAt(i) <= Overwrite;
+  Row r = rowAt(i);
+  return r <= Overwrite || r == NotifyFull;
 }
 bool ContactsSettingsModel::toggleState(int i) const {
   if (!_svc) return false;
@@ -51,6 +58,7 @@ bool ContactsSettingsModel::toggleState(int i) const {
     case Rooms:      return c.addRoom;
     case Sensors:    return c.addSensor;
     case Overwrite:  return c.overwriteOldest;
+    case NotifyFull: return c.notifyWhenFull;
     default:         return false;
   }
 }
@@ -129,6 +137,7 @@ bool ContactsSettingsPanel::onInput(InputEvent ev) {
         case ContactsSettingsModel::Rooms:      cfg.addRoom = !cfg.addRoom; break;
         case ContactsSettingsModel::Sensors:    cfg.addSensor = !cfg.addSensor; break;
         case ContactsSettingsModel::Overwrite:  cfg.overwriteOldest = !cfg.overwriteOldest; break;
+        case ContactsSettingsModel::NotifyFull: cfg.notifyWhenFull = !cfg.notifyWhenFull; break;
         default: break;
       }
       _svc->setAutoAdd(cfg);
