@@ -35,7 +35,7 @@ void GridView::draw(Canvas& c, int x, int y, int w, int h) {
   for (int r = 0; r < rows; r++) {
     for (int col = 0; col < cols; col++) {
       int cx = x + col * cw, cy = y + r * ch;
-      bool sel = (r == _row && col == _col);
+      bool sel = _focusVisible && (r == _row && col == _col);
       DisplayDriver::Color fg = DisplayDriver::LIGHT;
       if (sel) {
         c.fillRect(cx, cy, cw, ch, DisplayDriver::LIGHT);

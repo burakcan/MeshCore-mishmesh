@@ -23,6 +23,8 @@ struct GridModel {
 class GridView : public Widget {
   const GridModel* _model;
   int _row, _col;
+  bool _focusVisible = true;   // when false, draw without the focus highlight
+                               // (another widget owns focus this frame)
 public:
   GridView() : _model(nullptr), _row(0), _col(0) {}
 
@@ -30,6 +32,7 @@ public:
   int  focusedRow() const { return _row; }
   int  focusedCol() const { return _col; }
   void setFocus(int r, int c) { _row = r; _col = c; }
+  void setFocusVisible(bool v) { _focusVisible = v; }
 
   bool onInput(InputEvent ev) override;
   void measure(int& w, int& h) const override;

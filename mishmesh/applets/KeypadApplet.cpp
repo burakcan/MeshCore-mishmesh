@@ -3,6 +3,7 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/text/Fonts.h>
+#include <mishmesh/text/KeyboardLayouts.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -23,15 +24,37 @@ bool KeypadApplet::isDirty() const {
 }
 
 const char* KeypadApplet::groupAt(int i) const {
-  static const char* const LOWER[9] = {".,?!","abc","def","ghi","jkl","mno","pqrs","tuv","wxyz"};
-  static const char* const UPPER[9] = {".,?!","ABC","DEF","GHI","JKL","MNO","PQRS","TUV","WXYZ"};
-  static const char* const NUM[9]   = {"1","2","3","4","5","6","7","8","9"};
-  static const char* const SYM[9]   = {".,?!",":;\"'","()[]","<>{}","+-*/","=_~","@#&","%$|","^`\\"};
+  static const char* const NUM[9] = {"1","2","3","4","5","6","7","8","9"};
+  static const char* const SYM[9] = {".,?!",":;\"'","()[]","<>{}","+-*/","=_~","@#&","%$|","^`\\"};
   if (i < 0 || i > 8) return "";
   if (_symPage) return SYM[i];
   if (_mode == Mode::Num) return NUM[i];
-  if (_mode == Mode::Upper || _mode == Mode::Shift) return UPPER[i];  // Shift shows caps for the one-shot
-  return LOWER[i];
+  const KbdLayout& L = kbdLayoutAt(_langIdx);
+  if (_mode == Mode::Upper || _mode == Mode::Shift) return L.upper[i];  // Shift shows caps for the one-shot
+  return L.lower[i];
+}
+
+// Advance one UTF-8 codepoint; returns byte length of the codepoint at s.
+static int cpLen(const char* s) {
+  unsigned char b = (unsigned char)*s;
+  if (b < 0x80) return 1;
+  if ((b >> 5) == 0x6)  return 2;
+  if ((b >> 4) == 0xE)  return 3;
+  if ((b >> 3) == 0x1E) return 4;
+  return 1;
+}
+
+int KeypadApplet::groupCpCount(const char* g) const {
+  int n = 0;
+  for (const char* p = g; *p; p += cpLen(p)) n++;
+  return n;
+}
+
+const char* KeypadApplet::groupCpAt(const char* g, int i, int* len) const {
+  const char* p = g;
+  for (int k = 0; k < i && *p; k++) p += cpLen(p);
+  if (len) *len = *p ? cpLen(p) : 0;
+  return p;
 }
 
 const char* KeypadApplet::cellLabel(int r, int c) const {
@@ -40,7 +63,17 @@ const char* KeypadApplet::cellLabel(int r, int c) const {
     if (c == 0) return "abc";
     return (c == 3) ? "OK" : "";                // c1/c2 use icons
   }
-  if (r < 3 && c < 3) return groupAt(r * 3 + c);
+  if (r < 3 && c < 3) {
+    int i = r * 3 + c;
+    // Symbols, digits, and the punctuation cell fit and are shown verbatim.
+    // Letter cells show only the base Latin labels (like real Nokia keypads) -
+    // the language's accented variants still cycle when typing, they just don't
+    // fit on the key and aren't drawn.
+    if (_symPage || _mode == Mode::Num || i == 0) return groupAt(i);
+    static const char* const BASE_L[9] = {"", "abc","def","ghi","jkl","mno","pqrs","tuv","wxyz"};
+    static const char* const BASE_U[9] = {"", "ABC","DEF","GHI","JKL","MNO","PQRS","TUV","WXYZ"};
+    return (_mode == Mode::Upper || _mode == Mode::Shift) ? BASE_U[i] : BASE_L[i];
+  }
   if (c == 3) {
     if (r == 0) return "DEL";
     if (r == 1) return _numericOnly ? "-" : "SPC";
@@ -107,6 +140,33 @@ void KeypadApplet::toggleSymPage() {
 int KeypadApplet::emojiPageCount() const {
   int n = emojiCatalogCount();
   return n > 0 ? (n + 11) / 12 : 0;
+}
+
+const char* KeypadApplet::langCode() const { return kbdLayoutAt(_langIdx).code; }
+
+void KeypadApplet::setLanguageByIndex(int i) {
+  int n = kbdLayoutCount();
+  if (i < 0) i = 0;
+  if (i >= n) i = n - 1;
+  _langIdx = (uint8_t)i;
+}
+
+bool KeypadApplet::setLanguageByCode(const char* code) {
+  int i = kbdLayoutIndexByCode(code);
+  if (i < 0) return false;
+  _langIdx = (uint8_t)i;
+  return true;
+}
+
+int KeypadApplet::LangListModel::count() const { return kbdLayoutCount(); }
+const char* KeypadApplet::LangListModel::label(int i) const { return kbdLayoutAt(i).name; }
+
+void KeypadApplet::openLanguagePicker() {
+  _langModel.active = _langIdx;
+  _langMenu.setModel(&_langModel);
+  _langMenu.resetSelection();          // avoid same-ptr no-reset gotcha
+  _langMenu.setSelected(_langIdx);
+  _langPicking = true;
 }
 
 void KeypadApplet::fillEmojiCells() {
@@ -204,28 +264,50 @@ uint16_t KeypadApplet::nextCodepoint(uint16_t pos) const {
 }
 
 void KeypadApplet::handleCharCell(int idx) {
+  const char* g = groupAt(idx);
+  int cpn = groupCpCount(g);
+  if (cpn == 0) return;
+
   if (_pending && _tapGroupCell == idx) {           // cycle within same group
-    const char* g = groupAt(idx);                   // mode still armed here (Shift stays caps)
-    size_t glen = strlen(g);
-    if (glen == 0) return;
-    _tapIndex = (uint8_t)((_tapIndex + 1) % glen);
-    _buf[_pendingPos] = g[_tapIndex];
+    uint8_t ni = (uint8_t)((_tapIndex + 1) % cpn); // candidate next index - don't commit yet
+    int nlen = 0;
+    const char* cp = groupCpAt(g, ni, &nlen);
+    // Replace the pending glyph: delete the codepoint currently at _pendingPos,
+    // then insert the new one there. Widths may differ (1-byte <-> 2-byte).
+    uint16_t oldEnd = nextCodepoint(_pendingPos);
+    uint16_t ow = (uint16_t)(oldEnd - _pendingPos);
+    // Guard: if cycling to a wider codepoint would exceed cap, keep the current
+    // glyph and index unchanged - no visible corruption, no bad cursor.
+    if ((uint32_t)_len - ow + (uint32_t)nlen > _cap) return;
+    _tapIndex = ni;                                  // commit the index advance
+    // each deleteCharAt removes one byte and shifts the buffer left; oldEnd
+    // counts down the remaining bytes of the codepoint being replaced.
+    while (oldEnd > _pendingPos) { deleteCharAt(_pendingPos); oldEnd--; }
+    char one[5];
+    memcpy(one, cp, (size_t)nlen); one[nlen] = 0;
+    insertString(_pendingPos, one);
+    _cursor = (uint16_t)(_pendingPos + nlen);
     _tapStampPending = true;          // restart the timer on the next render (fresh clock)
     return;
   }
+
   commitPending();                                   // Abc one-shot may drop mode to lower here
-  const char* g = groupAt(idx);                      // recompute after commit: 2nd letter is lower
-  size_t glen = strlen(g);
-  if (glen == 0) return;
-  if (_len >= _cap) return;                          // buffer full
-  insertCharAt(_cursor, g[0]);
+  g = groupAt(idx);                                  // recompute after commit (2nd letter is lower)
+  cpn = groupCpCount(g);
+  if (cpn == 0) return;
+  int flen = 0;
+  const char* first = groupCpAt(g, 0, &flen);
+  if ((uint32_t)_len + flen > _cap) return;          // buffer full
+  char one[5];
+  memcpy(one, first, (size_t)flen); one[flen] = 0;
   _pendingPos = _cursor;
-  _cursor++;
-  if (glen > 1) {                                    // single-char groups don't cycle
+  insertString(_cursor, one);
+  _cursor = (uint16_t)(_cursor + flen);
+  if (cpn > 1) {                                     // single-cp groups don't cycle
     _pending = true;
     _tapGroupCell = idx;
     _tapIndex = 0;
-    _tapStampPending = true;          // stamp the timer on the next render (fresh clock)
+    _tapStampPending = true;
   }
 }
 
@@ -287,12 +369,22 @@ void KeypadApplet::handleSelectLong() {
 
 void KeypadApplet::onStart(AppletContext& ctx) {
   _ctx = &ctx;
+  if (!_langLoaded && _ctx && _ctx->storage) {
+    char code[6] = {0};
+    uint8_t n = _ctx->storage->load("kbdl", (uint8_t*)code, sizeof(code) - 1);
+    code[n] = 0;
+    int i = kbdLayoutIndexByCode(code);
+    if (i >= 0) _langIdx = (uint8_t)i;
+    _langLoaded = true;
+  }
   _grid.setModel(this);
   _grid.setFocus(0, 1);            // start on "abc" - the natural first target for typing
   if (!_src) { _own[0] = 0; _len = 0; _cursor = 0; }  // standalone: fresh buffer (configure() already seeded)
   _buf = _own;
   _mode = _numericOnly ? Mode::Num : Mode::Lower;
   _symPage = false;
+  _langFocused = false;
+  _langPicking = false;
   commitPending();
   _confirming = false;
   _confirm.reset();
@@ -324,16 +416,29 @@ int KeypadApplet::onRender(Canvas& c) {
   if (_emojiPage) {
     snprintf(tagbuf, sizeof(tagbuf), "%d/%d", _emojiPageIdx + 1, emojiPageCount());
     tag = tagbuf;
+    c.drawText(fontCaption(), c.width(), 3, tag, DisplayDriver::LIGHT, TextAlign::Right);
   } else {
-    tag = _symPage ? "sym"
-        : _mode == Mode::Shift ? "Abc"
-        : _mode == Mode::Upper ? "ABC"
-        : _mode == Mode::Num ? "123" : "abc";
+    tag = langCode();
+    int tw = c.textWidth(fontCaption(), tag);
+    int tx = c.width() - tw;
+    if (_langFocused) {                    // inverted pill = focused button
+      c.fillRect(tx - 2, 0, tw + 3, topH - 1, DisplayDriver::LIGHT);
+      c.drawText(fontCaption(), c.width() - 1, 3, tag, DisplayDriver::DARK, TextAlign::Right);
+    } else {
+      c.drawText(fontCaption(), c.width(), 3, tag, DisplayDriver::LIGHT, TextAlign::Right);
+    }
   }
-  c.drawText(fontCaption(), c.width(), 3, tag, DisplayDriver::LIGHT, TextAlign::Right);
 
+  _grid.setFocusVisible(!_langFocused);   // button owns focus -> grid shows no highlight
   _grid.draw(c, 0, topH, c.width(), c.height() - topH);
 
+  if (_langPicking) {
+    // ListMenu doesn't paint its own background; clear first so the keypad
+    // underneath doesn't bleed through the list.
+    c.fillRect(0, 0, c.width(), c.height(), DisplayDriver::DARK);
+    _langMenu.draw(c, 0, 0, c.width(), c.height());
+    return _langMenu.needsAnimation() ? ListMenu::TICK_MS : 100;
+  }
   if (_confirming) {                       // discard dialog overlays the keypad
     _confirm.draw(c, 0, 0, c.width(), c.height());
     return 100;
@@ -353,6 +458,33 @@ bool KeypadApplet::onInput(InputEvent ev) {
     }
     return true;                           // swallow everything while the dialog is up
   }
+  if (_langPicking) {                    // language picker is modal
+    if (ev == InputEvent::Back) {        // cancel, keep current language
+      _langPicking = false; _langFocused = false; return true;
+    }
+    if (ev == InputEvent::Select) {      // commit selection
+      setLanguageByIndex(_langMenu.selected());
+      if (_ctx && _ctx->storage) {
+        const char* code = langCode();
+        _ctx->storage->save("kbdl", (const uint8_t*)code, (uint8_t)strlen(code));
+      }
+      _langPicking = false; _langFocused = false;
+      return true;
+    }
+    _langMenu.onInput(ev);               // Nav moves selection
+    return true;
+  }
+  if (_langFocused) {                      // button has focus: modal-ish mini state
+    switch (ev) {
+      case InputEvent::NavDown:
+      case InputEvent::Back:
+        _langFocused = false; return true; // return to the grid (do not exit)
+      case InputEvent::Select:
+        openLanguagePicker(); return true;
+      default:
+        return true;                       // swallow left/right/up while focused
+    }
+  }
   switch (ev) {
     case InputEvent::NavLeft:
     case InputEvent::NavRight:
@@ -364,6 +496,13 @@ bool KeypadApplet::onInput(InputEvent ev) {
       commitPending();
       return _grid.onInput(ev);
     case InputEvent::NavUp:
+      if (!_emojiPage && _grid.focusedRow() == 0) {  // top row -> language button
+        commitPending();
+        _langFocused = true;
+        return true;
+      }
+      commitPending();
+      return _grid.onInput(ev);
     case InputEvent::NavDown:
       commitPending();
       return _grid.onInput(ev);
@@ -453,8 +592,12 @@ void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
     uint16_t un = _pendingPos - start;
     memcpy(prefix, _buf + start, un); prefix[un] = 0;
     int ux = line.textWidth(f, prefix);
-    char one[2] = { _buf[_pendingPos], 0 };
-    line.fillRect(ux, baseY + fh, line.textWidth(f, one), 1, DisplayDriver::LIGHT);
+    uint16_t gend = nextCodepoint(_pendingPos);
+    char glyph[5];
+    uint16_t gl = (uint16_t)(gend - _pendingPos);
+    if (gl > 4) gl = 4;
+    memcpy(glyph, _buf + _pendingPos, gl); glyph[gl] = 0;
+    line.fillRect(ux, baseY + fh, line.textWidth(f, glyph), 1, DisplayDriver::LIGHT);
   }
 }
 

@@ -1,11 +1,15 @@
 #include <gtest/gtest.h>
 #include <string>
+#include <map>
+#include <vector>
+#include <mishmesh/core/AppletStorage.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/EmojiCatalog.h>
 #include <mishmesh/text/Fonts.h>
+#include <mishmesh/text/KeyboardLayouts.h>
 #include "FakeDisplayDriver.h"
 using namespace mishmesh;
 
@@ -66,6 +70,22 @@ TEST(Keypad, CellIconsWiredForActionCells) {
 }
 
 namespace {
+
+struct FakeStorage : AppletStorage {
+  std::map<std::string, std::vector<uint8_t>> kv;
+  uint8_t load(const char* key, uint8_t* dst, uint8_t cap) override {
+    auto it = kv.find(key);
+    if (it == kv.end()) return 0;
+    uint8_t n = (uint8_t)(it->second.size() < cap ? it->second.size() : cap);
+    memcpy(dst, it->second.data(), n);
+    return n;
+  }
+  bool save(const char* key, const uint8_t* src, uint8_t len) override {
+    kv[key] = std::vector<uint8_t>(src, src + len);
+    return true;
+  }
+};
+
 // Start an applet (runs onStart) and return the host so tests can drive input.
 struct Harness {
   FakeDisplayDriver d;
@@ -549,6 +569,181 @@ TEST_F(KeypadEmoji, SymLabelStaysAbcWithoutCatalog) {
   KeypadApplet k;
   k.cycleBottomLeft();                      // letters -> sym
   EXPECT_STREQ("abc", k.cellLabel(3, 0));   // no catalog -> next is letters
+}
+
+TEST(KbdLayouts, EnglishIsIndexZeroAndBaseline) {
+  EXPECT_GE(kbdLayoutCount(), 12);
+  EXPECT_STREQ("EN", kbdLayoutAt(0).code);
+  EXPECT_STREQ("abc", kbdLayoutAt(0).lower[1]);   // idx0 = ".,?!", idx1 = "abc"
+  EXPECT_STREQ("wxyz", kbdLayoutAt(0).lower[8]);
+  EXPECT_STREQ(".,?!", kbdLayoutAt(0).lower[0]);
+}
+
+TEST(KbdLayouts, LookupByCode) {
+  int tr = kbdLayoutIndexByCode("TR");
+  ASSERT_GE(tr, 0);
+  EXPECT_STREQ("TR", kbdLayoutAt(tr).code);
+  EXPECT_STREQ("abcç", kbdLayoutAt(tr).lower[1]);
+  EXPECT_EQ(-1, kbdLayoutIndexByCode("ZZ"));
+  EXPECT_EQ(-1, kbdLayoutIndexByCode(nullptr));
+}
+
+TEST(KbdLayouts, TurkishUppercaseHasDottedI) {
+  int tr = kbdLayoutIndexByCode("TR");
+  ASSERT_GE(tr, 0);
+  // lower ghıiğ -> upper GHIİĞ (i->İ, ı->I): the dotted capital İ must be present.
+  EXPECT_STREQ("GHIİĞ", kbdLayoutAt(tr).upper[3]);
+}
+
+TEST(Keypad, LanguageSwitchKeepsBaseLabelsButChangesLayout) {
+  KeypadApplet k;
+  EXPECT_EQ(0, k.langIndex());
+  EXPECT_STREQ("EN", k.langCode());
+  EXPECT_STREQ("abc", k.cellLabel(0, 1));          // EN baseline label
+
+  ASSERT_TRUE(k.setLanguageByCode("DE"));
+  EXPECT_STREQ("DE", k.langCode());
+  // Labels stay the base Latin letters (accents don't fit on the key, like a
+  // real Nokia keypad) - they must NOT show the accented group.
+  EXPECT_STREQ("abc", k.cellLabel(0, 1));
+  EXPECT_STREQ("pqrs", k.cellLabel(2, 0));
+  // ...but the active layout does carry the accents (they cycle when typing;
+  // see MultiTapCyclesAccentedCodepoint).
+  EXPECT_STREQ("abcä", kbdLayoutAt(k.langIndex()).lower[1]);
+  EXPECT_STREQ("pqrsß", kbdLayoutAt(k.langIndex()).lower[6]);
+
+  EXPECT_FALSE(k.setLanguageByCode("ZZ"));          // unknown -> unchanged
+  EXPECT_STREQ("DE", k.langCode());
+}
+
+TEST(Keypad, MultiTapCyclesAccentedCodepoint) {
+  KeypadApplet k;
+  ASSERT_TRUE(k.setLanguageByCode("DE"));      // key2 lower = "abcä"
+  k.setFocusForTest(0, 1);                      // focus the "abcä" cell
+  k.onInput(InputEvent::Select);                // a
+  EXPECT_STREQ("a", k.text());
+  k.onInput(InputEvent::Select);                // b
+  k.onInput(InputEvent::Select);                // c
+  k.onInput(InputEvent::Select);                // ä  (2-byte, replaces pending)
+  EXPECT_STREQ("ä", k.text());
+  EXPECT_EQ(2u, k.length());                    // ä is 2 UTF-8 bytes
+  EXPECT_EQ(2, k.cursor());                      // cursor sits after the glyph
+  k.onInput(InputEvent::Select);                // wraps ä -> a
+  EXPECT_STREQ("a", k.text());
+  EXPECT_EQ(1u, k.length());
+  EXPECT_EQ(1, k.cursor());
+}
+
+TEST(Keypad, AccentedCommitThenNextChar) {
+  KeypadApplet k;
+  ASSERT_TRUE(k.setLanguageByCode("DE"));
+  k.setFocusForTest(0, 1);
+  k.onInput(InputEvent::Select); k.onInput(InputEvent::Select);
+  k.onInput(InputEvent::Select); k.onInput(InputEvent::Select);  // ä pending
+  k.onInput(InputEvent::NavRight);              // commit ä, move focus
+  k.setFocusForTest(0, 2);                       // "def"
+  k.onInput(InputEvent::Select);                // d
+  EXPECT_STREQ("äd", k.text());
+  EXPECT_EQ(3, k.cursor());                      // 2 bytes (ä) + 1 (d)
+}
+
+TEST(Keypad, NavUpFromTopRowFocusesLanguageButton) {
+  KeypadApplet k;
+  k.setFocusForTest(0, 1);                       // top row of the grid
+  EXPECT_FALSE(k.langFocused());
+  EXPECT_TRUE(k.onInput(InputEvent::NavUp));     // consumed -> focus the button
+  EXPECT_TRUE(k.langFocused());
+  EXPECT_TRUE(k.onInput(InputEvent::NavDown));   // back to the grid
+  EXPECT_FALSE(k.langFocused());
+}
+
+TEST(Keypad, BackFromLanguageButtonReturnsToGrid) {
+  KeypadApplet k;
+  k.setFocusForTest(0, 1);
+  k.onInput(InputEvent::NavUp);
+  ASSERT_TRUE(k.langFocused());
+  EXPECT_TRUE(k.onInput(InputEvent::Back));      // Back returns to grid, does not exit
+  EXPECT_FALSE(k.langFocused());
+}
+
+TEST(Keypad, PickerOpensSelectsAndPersistsChoice) {
+  KeypadApplet k;
+  k.setFocusForTest(0, 1);
+  k.onInput(InputEvent::NavUp);                  // focus button
+  ASSERT_TRUE(k.langFocused());
+  k.onInput(InputEvent::Select);                 // open picker
+  EXPECT_TRUE(k.langPicking());
+  EXPECT_EQ(0, k.langIndex());                    // starts on EN
+  k.onInput(InputEvent::NavDown);                // move to index 1 (DE)
+  k.onInput(InputEvent::Select);                 // choose
+  EXPECT_FALSE(k.langPicking());
+  EXPECT_FALSE(k.langFocused());
+  EXPECT_EQ(1, k.langIndex());
+  EXPECT_STREQ("DE", k.langCode());
+}
+
+TEST(Keypad, PickerBackCancels) {
+  KeypadApplet k;
+  k.setFocusForTest(0, 1);
+  k.onInput(InputEvent::NavUp);
+  k.onInput(InputEvent::Select);                 // open
+  ASSERT_TRUE(k.langPicking());
+  k.onInput(InputEvent::NavDown);                // move selection
+  k.onInput(InputEvent::Back);                   // cancel
+  EXPECT_FALSE(k.langPicking());
+  EXPECT_EQ(0, k.langIndex());                    // unchanged
+}
+
+TEST(Keypad, LanguagePersistsAcrossOnStart) {
+  FakeStorage st;
+  // First session: pick DE via the picker, which should save "kbdl".
+  {
+    KeypadApplet k;
+    FakeDisplayDriver d; AppletContext ctx; ctx.storage = &st;
+    AppletHost host(&d, ctx); host.setRoot(&k);
+    k.setFocusForTest(0, 1);
+    k.onInput(InputEvent::NavUp);       // focus button
+    k.onInput(InputEvent::Select);      // open picker
+    k.onInput(InputEvent::NavDown);     // -> DE (index 1)
+    k.onInput(InputEvent::Select);      // choose + persist
+    EXPECT_STREQ("DE", k.langCode());
+    ASSERT_TRUE(st.kv.count("kbdl"));
+  }
+  // Second session: fresh applet, same storage -> loads DE on onStart.
+  {
+    KeypadApplet k2;
+    FakeDisplayDriver d; AppletContext ctx; ctx.storage = &st;
+    AppletHost host(&d, ctx); host.setRoot(&k2);
+    EXPECT_STREQ("DE", k2.langCode());
+  }
+}
+
+TEST(Keypad, NullStorageDefaultsToEnglish) {
+  KeypadApplet k;
+  FakeDisplayDriver d; AppletContext ctx;   // no storage
+  AppletHost host(&d, ctx); host.setRoot(&k);
+  EXPECT_STREQ("EN", k.langCode());          // no crash, defaults to EN
+}
+
+TEST(Keypad, CycleToWiderGlyphAtBufferCapIsSafe) {
+  const int kmax = KeypadApplet::KP_MAX;   // local to avoid ODR-use of the static const
+  KeypadApplet k;
+  ASSERT_TRUE(k.setLanguageByCode("DE"));   // key2 lower = "abcä"; ä is 2 bytes
+  k.setFocusForTest(0, 1);                   // focus "abcä"
+  // Fill the buffer to exactly KP_MAX bytes, ending on a fresh pending 'a'
+  // from the accented group. Use SPC to fill (single-byte), then one key2 tap.
+  k.setFocusForTest(1, 3);                   // SPC cell
+  for (int i = 0; i < kmax - 1; i++) k.onInput(InputEvent::Select);
+  EXPECT_EQ(kmax - 1, (int)k.length());
+  k.setFocusForTest(0, 1);                   // back to "abcä"
+  k.onInput(InputEvent::Select);             // pending 'a' -> _len == KP_MAX, _cursor == KP_MAX
+  EXPECT_EQ(kmax, (int)k.length());
+  k.onInput(InputEvent::Select);             // cycle a->b (same width) : fine
+  k.onInput(InputEvent::Select);             // b->c (same width) : fine
+  k.onInput(InputEvent::Select);             // c->ä would need +1 byte over cap -> must be refused safely
+  // Invariants must hold regardless of whether the widen was applied:
+  EXPECT_LE((int)k.cursor(), (int)k.length());
+  EXPECT_LE((int)k.length(), kmax);
 }
 
 int main(int argc, char** argv) {

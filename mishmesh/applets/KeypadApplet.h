@@ -5,6 +5,7 @@
 #include <mishmesh/core/EmojiCatalog.h>
 #include <mishmesh/widgets/GridView.h>
 #include <mishmesh/widgets/ConfirmDialog.h>
+#include <mishmesh/widgets/ListMenu.h>
 
 namespace mishmesh {
 
@@ -58,6 +59,12 @@ public:
   bool symPage() const { return _symPage; }
   bool emojiPage() const { return _emojiPage; }
   int  emojiPageCount() const;              // ceil(count/12); 0 when no catalog
+  int  langIndex() const { return _langIdx; }
+  bool langFocused() const { return _langFocused; }
+  bool langPicking() const { return _langPicking; }
+  const char* langCode() const;                 // active layout's code
+  void setLanguageByIndex(int i);               // clamps to [0, count)
+  bool setLanguageByCode(const char* code);     // false if unknown (no change)
   uint8_t emojiPageIndex() const { return _emojiPageIdx; }
   void cycleBottomLeft();                   // letters -> sym -> emoji(if any) -> letters
   void nextEmojiPage();                     // wraps
@@ -86,6 +93,22 @@ private:
   uint8_t _emojiPageIdx = 0;
   char _emojiCells[12][5];                   // UTF-8 of the current page's cells ("" = empty)
   bool _numericOnly = false;   // configureNumeric(): digits + . - only, no mode switch
+  uint8_t _langIdx = 0;        // index into the KbdLayout table (0 = EN)
+  bool _langLoaded = false;    // one-shot: language read from storage once
+  bool _langFocused = false;   // top-right language button has focus
+
+  // Read-only ListModel over the KbdLayout table, for the picker overlay.
+  struct LangListModel : public ListModel {
+    int count() const override;
+    const char* label(int i) const override;
+    bool isRadio(int i) const override { return true; }
+    bool radioOn(int i) const override { return i == active; }
+    int active = 0;
+  };
+  LangListModel _langModel;
+  ListMenu _langMenu;
+  bool _langPicking = false;
+
   GridView _grid;
 
   // pending multi-tap state
@@ -102,9 +125,12 @@ private:
   ConfirmDialog _confirm;
   bool _confirming;
 
+  void openLanguagePicker();
   void fillEmojiCells();
   bool isDirty() const;
   const char* groupAt(int charIndex) const;   // group string for char cell 0..8
+  int  groupCpCount(const char* g) const;                       // codepoints in a group
+  const char* groupCpAt(const char* g, int i, int* len) const;  // ptr to cp i; *len = its bytes
   void insertCharAt(uint16_t pos, char ch);
   void deleteCharAt(uint16_t pos);
   void insertString(uint16_t pos, const char* s);      // multi-byte insert at pos
