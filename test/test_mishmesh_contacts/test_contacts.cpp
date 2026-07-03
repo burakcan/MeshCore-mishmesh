@@ -540,7 +540,8 @@ TEST(FavouritesModel, UsersOnlyFiltersNonChat) {
   FakeContactsService::Row rp; rp.name = "Rpt"; memcpy(rp.pubkey, "RPTXXX", 6); rp.type = 2; rp.favourite = true;
   svc.chats.push_back(a); svc.repeaters.push_back(rp);
 
-  mishmesh::FavouritesListModel m; m.bind(&svc);
+  mishmesh::ContactFilterCache cache; cache.bind(&svc);
+  mishmesh::FavouritesListModel m; m.bind(&cache);
   EXPECT_EQ(2, m.count());                       // unfiltered: both favourites
   m.setUsersOnly(true);
   EXPECT_EQ(1, m.count());                        // only the Chat favourite
@@ -623,7 +624,8 @@ TEST(FavouritesModel, RawIndexMapsCorrectlyUsersOnly) {
   FakeContactsService::Row b; b.name = "Bob";   memcpy(b.pubkey, "BOBXXX", 6); b.type = 2; b.favourite = true;
   svc.chats.push_back(a); svc.repeaters.push_back(b);
 
-  mishmesh::FavouritesListModel m; m.bind(&svc);
+  mishmesh::ContactFilterCache cache; cache.bind(&svc);
+  mishmesh::FavouritesListModel m; m.bind(&cache);
   m.setUsersOnly(true);
   EXPECT_EQ(1, m.count());            // only Alice visible
   EXPECT_EQ(0, m.rawIndex(0));        // filtered 0 -> raw 0 (Alice)

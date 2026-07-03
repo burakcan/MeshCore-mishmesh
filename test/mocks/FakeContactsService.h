@@ -126,6 +126,35 @@ public:
         }
     return false;
   }
+  // Raw table = chats ++ repeaters ++ rooms ++ sensors, matching the order
+  // getByKind/getFavourite enumerate, so the list cache sees the same ordering.
+  int contactCount() const override {
+    return (int)(chats.size() + repeaters.size() + rooms.size() + sensors.size());
+  }
+  bool contactAt(int idx, mishmesh::ContactView& out) const override {
+    const mishmesh::ContactKind kinds[4] = {mishmesh::ContactKind::Chat, mishmesh::ContactKind::Repeater,
+                                            mishmesh::ContactKind::Room, mishmesh::ContactKind::Sensor};
+    for (mishmesh::ContactKind k : kinds) {
+      int sz = (int)list(k).size();
+      if (idx < sz) return getByKind(k, idx, out);
+      idx -= sz;
+    }
+    return false;
+  }
+  uint32_t contactsSeq() const override {   // mirrors the adapter's fingerprint
+    uint32_t h = 2166136261u;
+    const mishmesh::ContactKind kinds[4] = {mishmesh::ContactKind::Chat, mishmesh::ContactKind::Repeater,
+                                            mishmesh::ContactKind::Room, mishmesh::ContactKind::Sensor};
+    h = (h ^ (uint32_t)contactCount()) * 16777619u;
+    for (mishmesh::ContactKind k : kinds)
+      for (const Row& r : list(k)) {
+        for (char ch : r.name) h = (h ^ (uint8_t)ch) * 16777619u;
+        h = (h ^ (uint8_t)k) * 16777619u;
+        h = (h ^ (r.favourite ? 1u : 0u)) * 16777619u;
+        h = (h ^ r.pubkey[0]) * 16777619u;
+      }
+    return h;
+  }
   int countDiscovered() const override { return (int)discovered.size(); }
   bool getDiscovered(int index, mishmesh::ContactView& out) const override {
     if (index < 0 || index >= (int)discovered.size()) return false;

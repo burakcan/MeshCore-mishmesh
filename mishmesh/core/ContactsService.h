@@ -75,6 +75,17 @@ struct ContactsService {
   virtual int  countByKind(ContactKind k) const = 0;
   virtual bool getByKind(ContactKind k, int index, ContactView& out) const = 0;
 
+  // [mishmesh] Cheap raw random access + a change token, so the list UI can build
+  // a filtered index once and stop re-scanning the whole table per row per frame.
+  // contactAt() is O(1) with no full-record copy; contactsSeq() changes whenever
+  // any rendered/ordering field mutates, from any source (advert, phone app,
+  // favourite toggle, delete...). Non-pure so other implementers / host fakes keep
+  // compiling - a 0 seq + empty count simply disables the cache.
+  virtual int      contactCount() const { return 0; }
+  virtual bool     contactAt(int rawIndex, ContactView& out) const { (void)rawIndex; (void)out; return false; }
+  virtual uint32_t contactsSeq() const { return 0; }
+  // [/mishmesh]
+
   // Favourites span all kinds (flags bit0). The tab is shown only when count > 0.
   virtual int  countFavourites() const = 0;
   virtual bool getFavourite(int index, ContactView& out) const = 0;

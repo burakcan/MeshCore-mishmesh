@@ -168,6 +168,13 @@ public:
   bool  addContact(const ContactInfo& contact);
   int getNumContacts() const { return num_contacts; }
   bool getContactByIdx(uint32_t idx, ContactInfo& contact);
+  // [mishmesh] O(1) const access to a contact record without getContactByIdx's full
+  // ~190 B struct copy; lets the on-device UI resolve list rows and fingerprint the
+  // table each frame cheaply. Pointer valid until the contact table next mutates.
+  const ContactInfo* getContactPtrByIdx(int idx) const {
+    return (idx >= 0 && idx < num_contacts) ? &contacts[idx] : nullptr;
+  }
+  // [/mishmesh]
   ContactsIterator startContactsIterator();
   ChannelDetails* addChannel(const char* name, const char* psk_base64);
   bool getChannel(int idx, ChannelDetails& dest);

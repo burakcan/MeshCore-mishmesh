@@ -19,44 +19,49 @@ static uint16_t tabIcon(ContactKind k) {
   return k == ContactKind::Chat ? (uint16_t)Icon::Users : kindIcon(k);
 }
 
+// Rebuild the display-row -> raw-contact-index map from the service, but only when
+// the contact table actually changed (contactsSeq). One O(contacts) pass here
+// replaces an O(contacts) scan on every row of every frame.
+void ContactFilterCache::ensure() const {
+  if (!_svc) { _count = 0; return; }
+  uint32_t seq = _svc->contactsSeq();
+  if (_valid && seq == _builtSeq) return;
+  _builtSeq = seq;
+  _count = 0;
+  int n = _svc->contactCount();
+  ContactView v;
+  for (int i = 0; i < n && _count < MISHMESH_CONTACT_CACHE_MAX; i++) {
+    if (!_svc->contactAt(i, v)) continue;
+    bool match;
+    switch (_filter) {
+      case Favourites:     match = v.isFavourite; break;
+      case FavouriteUsers: match = v.isFavourite && v.type == (uint8_t)ContactKind::Chat; break;
+      default:             match = v.type == (uint8_t)_kind; break;
+    }
+    if (match) _idx[_count++] = (uint16_t)i;
+  }
+  _valid = true;
+}
+
 const char* ContactListModel::label(int i) const {
   static ContactView v;
   static char buf[44];
-  if (!_svc || !_svc->getByKind(_kind, i, v)) return "";
+  sync();
+  if (!_cache || !_cache->at(i, v)) return "";
   return contactLabel(v, buf, sizeof(buf));
 }
 
-int FavouritesListModel::count() const {
-  if (!_svc) return 0;
-  if (!_usersOnly) return _svc->countFavourites();
-  int n = 0; ContactView v;
-  for (int i = 0; i < _svc->countFavourites(); i++)
-    if (_svc->getFavourite(i, v) && v.type == (uint8_t)ContactKind::Chat) n++;
-  return n;
-}
-int FavouritesListModel::underlying(int filtered) const {
-  if (!_svc) return -1;
-  if (!_usersOnly) return filtered;
-  int seen = 0; ContactView v;
-  for (int i = 0; i < _svc->countFavourites(); i++) {
-    if (_svc->getFavourite(i, v) && v.type == (uint8_t)ContactKind::Chat) {
-      if (seen == filtered) return i;
-      seen++;
-    }
-  }
-  return -1;
-}
 const char* FavouritesListModel::label(int i) const {
   static ContactView v;
   static char buf[44];
-  int u = underlying(i);
-  if (u < 0 || !_svc || !_svc->getFavourite(u, v)) return "";
+  sync();
+  if (!_cache || !_cache->at(i, v)) return "";
   return contactLabel(v, buf, sizeof(buf));
 }
 uint16_t FavouritesListModel::icon(int i) const {
   static ContactView v;
-  int u = underlying(i);
-  if (u < 0 || !_svc || !_svc->getFavourite(u, v)) return 0;
+  sync();
+  if (!_cache || !_cache->at(i, v)) return 0;
   return kindIcon((ContactKind)v.type);
 }
 
@@ -140,11 +145,12 @@ void ContactsApplet::onStart(AppletContext& ctx) {
   _svc = ctx.contacts;
   _app = ctx.app;
   _pickMode = _pickRequested; _pickRequested = false;
-  _models[0].bind(_svc, ContactKind::Chat, kindIcon(ContactKind::Chat));
-  _models[1].bind(_svc, ContactKind::Repeater, kindIcon(ContactKind::Repeater));
-  _models[2].bind(_svc, ContactKind::Room, kindIcon(ContactKind::Room));
-  _models[3].bind(_svc, ContactKind::Sensor, kindIcon(ContactKind::Sensor));
-  _favs.bind(_svc);
+  _cache.bind(_svc);
+  _models[0].bind(&_cache, ContactKind::Chat, kindIcon(ContactKind::Chat));
+  _models[1].bind(&_cache, ContactKind::Repeater, kindIcon(ContactKind::Repeater));
+  _models[2].bind(&_cache, ContactKind::Room, kindIcon(ContactKind::Room));
+  _models[3].bind(&_cache, ContactKind::Sensor, kindIcon(ContactKind::Sensor));
+  _favs.bind(&_cache);
   _favs.setUsersOnly(_pickMode);
   _discover.bind(_svc);
   contactsSettings().begin(ctx);
@@ -197,12 +203,12 @@ bool ContactsApplet::onInput(InputEvent ev) {
         return true;
       }
       // Favourites or a kind tab: drill into detail (or open thread in pick mode).
-      // For Favourites, resolve filtered index -> raw service index via rawIndex() so that
-      // users-only filtering (pick mode) doesn't silently fetch the wrong entry.
+      // For Favourites, resolve the display row -> raw contact index via rawIndex()
+      // so users-only filtering (pick mode) doesn't silently fetch the wrong entry.
       bool ok;
       if (s.kind == TabKind::Favourites) {
         int raw = _favs.rawIndex(_list.selected());
-        ok = (raw >= 0) && _svc->getFavourite(raw, v);
+        ok = (raw >= 0) && _svc->contactAt(raw, v);
       } else {
         ok = _svc->getByKind(s.contactKind, _list.selected(), v);
       }

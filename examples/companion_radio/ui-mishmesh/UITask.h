@@ -343,6 +343,10 @@ public:
   bool getByKind(mishmesh::ContactKind k, int index, mishmesh::ContactView& out) const override;
   int  countFavourites() const override;
   bool getFavourite(int index, mishmesh::ContactView& out) const override;
+  // [mishmesh] O(1) raw access + change token backing the contacts list row cache.
+  int      contactCount() const override;
+  bool     contactAt(int rawIndex, mishmesh::ContactView& out) const override;
+  uint32_t contactsSeq() const override;
   bool setFavourite(const uint8_t* pubKey, bool fav) override;
   bool renameContact(const uint8_t* pubKey, const char* name) override;
   uint8_t getTelemetryPerms(const uint8_t* pubKey) const override;

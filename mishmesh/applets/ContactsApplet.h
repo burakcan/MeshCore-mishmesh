@@ -8,31 +8,76 @@
 
 namespace mishmesh {
 
-// ListModel over one contact kind, read from the service on demand.
-class ContactListModel : public ListModel {
-  ContactsService* _svc;
-  ContactKind      _kind;
-  uint16_t         _icon;
+// Upper bound on contacts the list cache indexes; matches the largest board's
+// MAX_CONTACTS (Wio Tracker L1 = 350). Contacts beyond this simply aren't shown
+// by a cached tab - a soft ceiling, not a crash.
+#ifndef MISHMESH_CONTACT_CACHE_MAX
+#define MISHMESH_CONTACT_CACHE_MAX 350
+#endif
+
+// Caches "display row -> raw contact index" for one filter (a contact kind, or the
+// favourites set), rebuilt only when ContactsService::contactsSeq() changes. This
+// turns list navigation from an O(contacts) table scan per row per frame into an
+// O(1) index lookup. Only one tab renders at a time, so a single instance,
+// reconfigured on tab switch via configure(), serves every list model.
+class ContactFilterCache {
 public:
-  ContactListModel() : _svc(nullptr), _kind(ContactKind::Chat), _icon(0) {}
-  void bind(ContactsService* svc, ContactKind k, uint16_t icon) { _svc = svc; _kind = k; _icon = icon; }
+  enum Filter : uint8_t { Kind, Favourites, FavouriteUsers };
+  void bind(ContactsService* svc) { _svc = svc; _valid = false; }
+  // Point the cache at a filter. Cheap and idempotent: only invalidates on change.
+  void configure(Filter f, ContactKind kind) {
+    if (f != _filter || kind != _kind) { _filter = f; _kind = kind; _valid = false; }
+  }
+  int  count() const { ensure(); return _count; }
+  bool at(int display, ContactView& out) const {
+    ensure();
+    if (!_svc || display < 0 || display >= _count) return false;
+    return _svc->contactAt(_idx[display], out);
+  }
+  // Raw contact index behind a display row (-1 if none); used to open a detail.
+  int  rawIndex(int display) const { ensure(); return (display >= 0 && display < _count) ? _idx[display] : -1; }
+
+private:
+  void ensure() const;   // rebuild _idx from the service when contactsSeq() moved
+
+  ContactsService* _svc = nullptr;
+  Filter           _filter = Kind;
+  ContactKind      _kind = ContactKind::Chat;
+  mutable uint16_t _idx[MISHMESH_CONTACT_CACHE_MAX];
+  mutable int      _count = 0;
+  mutable uint32_t _builtSeq = 0;
+  mutable bool     _valid = false;
+};
+
+// ListModel over one contact kind, resolved through the shared filter cache.
+class ContactListModel : public ListModel {
+  ContactFilterCache* _cache;
+  ContactKind         _kind;
+  uint16_t            _icon;
+  void sync() const { if (_cache) _cache->configure(ContactFilterCache::Kind, _kind); }
+public:
+  ContactListModel() : _cache(nullptr), _kind(ContactKind::Chat), _icon(0) {}
+  void bind(ContactFilterCache* cache, ContactKind k, uint16_t icon) { _cache = cache; _kind = k; _icon = icon; }
   ContactKind kind() const { return _kind; }
-  int count() const override { return _svc ? _svc->countByKind(_kind) : 0; }
+  int count() const override { sync(); return _cache ? _cache->count() : 0; }
   const char* label(int i) const override;
   uint16_t icon(int) const override { return _icon; }
 };
 
 // Favourites span all kinds; each row carries its own contact-type icon.
 class FavouritesListModel : public ListModel {
-  ContactsService* _svc;
-  bool             _usersOnly;
-  int  underlying(int filtered) const;   // map filtered idx -> raw favourite idx (-1 if none)
+  ContactFilterCache* _cache;
+  bool                _usersOnly;
+  void sync() const {
+    if (_cache) _cache->configure(_usersOnly ? ContactFilterCache::FavouriteUsers
+                                             : ContactFilterCache::Favourites, ContactKind::Chat);
+  }
 public:
-  FavouritesListModel() : _svc(nullptr), _usersOnly(false) {}
-  void bind(ContactsService* svc) { _svc = svc; }
+  FavouritesListModel() : _cache(nullptr), _usersOnly(false) {}
+  void bind(ContactFilterCache* cache) { _cache = cache; }
   void setUsersOnly(bool u) { _usersOnly = u; }
-  int rawIndex(int filtered) const { return underlying(filtered); }
-  int count() const override;
+  int rawIndex(int filtered) const { sync(); return _cache ? _cache->rawIndex(filtered) : -1; }
+  int count() const override { sync(); return _cache ? _cache->count() : 0; }
   const char* label(int i) const override;
   uint16_t icon(int i) const override;
 };
@@ -60,6 +105,7 @@ class ContactsApplet : public Applet {
   char                  _battBuf[8] = {0};
   TabBar                _tabs;
   ListMenu              _list;
+  ContactFilterCache    _cache;         // shared row-index cache for the active tab
   ContactListModel      _models[4];     // Chat/Repeater/Room/Sensor
   FavouritesListModel   _favs;
   DiscoverListModel     _discover;

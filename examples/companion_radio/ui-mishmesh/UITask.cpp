@@ -499,6 +499,37 @@ bool UITask::getFavourite(int index, mishmesh::ContactView& out) const {
   return false;
 }
 
+// [mishmesh] Raw random access + change token backing the contacts list row cache.
+int UITask::contactCount() const { return the_mesh.getNumContacts(); }
+
+bool UITask::contactAt(int idx, mishmesh::ContactView& out) const {
+  const ContactInfo* c = the_mesh.getContactPtrByIdx(idx);
+  if (!c) return false;
+  fillView(*c, out);   // ContactView points into the live record; no full-record copy
+  return true;
+}
+
+// Cheap fingerprint of the contact table. Changes whenever a contact is added or
+// removed, or a field that affects a rendered row / list ordering mutates (name,
+// type, flags/favourite, path length) - regardless of which subsystem changed it,
+// so the list cache invalidates without hooking every mutation site. One light
+// pass reading a few bytes per contact; no ~190 B record copies.
+uint32_t UITask::contactsSeq() const {
+  uint32_t h = 2166136261u;   // FNV-1a
+  int n = the_mesh.getNumContacts();
+  h = (h ^ (uint32_t)n) * 16777619u;
+  for (int i = 0; i < n; i++) {
+    const ContactInfo* c = the_mesh.getContactPtrByIdx(i);
+    if (!c) continue;
+    for (const char* p = c->name; *p; p++) h = (h ^ (uint8_t)*p) * 16777619u;
+    h = (h ^ c->type) * 16777619u;
+    h = (h ^ c->flags) * 16777619u;                  // favourite bit lives here
+    h = (h ^ c->out_path_len) * 16777619u;           // hop-count display
+    h = (h ^ c->id.pub_key[0]) * 16777619u;          // catches reorder/replace
+  }
+  return h;
+}
+
 bool UITask::setFavourite(const uint8_t* pk, bool fav) { return the_mesh.uiSetFavourite(pk, fav); }
 bool UITask::renameContact(const uint8_t* pk, const char* name) { return the_mesh.uiRenameContact(pk, name); }
 // mishmesh TelemetryPerm bits == firmware TELEM_PERM_* values, so pass straight through.
