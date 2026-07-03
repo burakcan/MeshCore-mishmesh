@@ -1075,7 +1075,7 @@ bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, con
 }
 
 bool MyMesh::mishmeshLogin(const uint8_t* pubkey, const char* password) {
-  ContactInfo* recipient = lookupContactByPubKey((uint8_t*)pubkey, PUB_KEY_SIZE);
+  ContactInfo* recipient = lookupContactByPubKey((uint8_t*)pubkey, 6);  // UI handle is a 6-byte prefix
   if (!recipient) return false;
   uint32_t est_timeout;
   int result = sendLogin(*recipient, password ? password : "", est_timeout);

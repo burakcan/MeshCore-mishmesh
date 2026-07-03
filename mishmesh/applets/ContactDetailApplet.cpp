@@ -1,7 +1,7 @@
 #include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/applets/ContactPermissionsApplet.h>
 #include <mishmesh/applets/MessageThreadApplet.h>
-#include <mishmesh/applets/RoomLoginApplet.h>
+#include <mishmesh/applets/ServerLoginApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/ContactsService.h>
 #include <mishmesh/core/ContactFormat.h>
@@ -19,7 +19,7 @@ static const uint32_t TELEM_TIMEOUT_MS = 12000;
 // Favourite's label is dynamic (see label()); this slot is a placeholder.
 static const char* ACTION_LABELS[ContactDetailApplet::ACTION_KINDS] = {
   "View details", "", "Telemetry", "Ping (0 hop)", "Reset path", "Clear conversation", "Delete contact",
-  "Send message", "Rename", "Permissions", "Set path",
+  "Send message", "Rename", "Permissions", "Set path", "Manage",
 };
 
 static const char* typeName(uint8_t t) { return contactTypeName(t); }
@@ -83,6 +83,8 @@ void ContactDetailApplet::setTarget(const uint8_t* pubKey) {
 
 void ContactDetailApplet::buildActions() {
   _actionCount = 0;
+  // Repeaters get Manage first (primary), like Message is primary for users/rooms.
+  if (_type == (uint8_t)ContactKind::Repeater) _actions[_actionCount++] = Manage;
   // Rooms get Message too (routed through login); primary for users and rooms.
   if (_type == (uint8_t)ContactKind::Chat || _type == (uint8_t)ContactKind::Room)
     _actions[_actionCount++] = Message;
@@ -346,12 +348,16 @@ bool ContactDetailApplet::onInput(InputEvent ev) {
   if (ev == InputEvent::Select && _svc) {
     int action = _actions[_list.selected()];
     switch (action) {
+      case Manage:
+        serverLoginApplet().setTarget(_pubkey, _name, ServerLoginApplet::Mode::Repeater);
+        if (_host) _host->push(&serverLoginApplet());
+        return true;
       case Message:
-        // Rooms require a server login before posting; go through RoomLoginApplet
+        // Rooms require a server login before posting; go through ServerLoginApplet
         // unless we already logged in this power cycle (then straight to the thread).
         if (_type == (uint8_t)ContactKind::Room && !_svc->isLoggedIn(_pubkey)) {
-          roomLoginApplet().setTarget(_pubkey, _name);
-          if (_host) _host->push(&roomLoginApplet());
+          serverLoginApplet().setTarget(_pubkey, _name, ServerLoginApplet::Mode::Room);
+          if (_host) _host->push(&serverLoginApplet());
           return true;
         }
         messageThreadApplet().setTarget(directKey(_pubkey), _name);

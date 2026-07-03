@@ -19,6 +19,14 @@ public:
   uint32_t telemSeq = 0;
   mishmesh::TelemetryView telem{};
 
+  // login simulation
+  bool     loggedIn = false;       // isLoggedIn() short-circuit
+  bool     loginOk = false;        // loginResult() outcome
+  bool     loginAdmin = false;
+  uint8_t  loginPerms = 0;
+  uint32_t loginSeqVal = 0;
+  std::string lastLogin;
+
   // Action log
   std::vector<std::string> calls;
   std::string lastDeleted, lastTelemetryReq, lastResetPath, lastCleared, lastPing;
@@ -153,6 +161,14 @@ public:
   bool ping(const uint8_t* pk) override { calls.push_back("ping"); lastPing = keyStr(pk); return true; }
   uint32_t pingSeq() const override { return pingSeqVal; }
   bool latestPing(const uint8_t*, mishmesh::PingView& out) const override { out = pingResult; return true; }
+  bool login(const uint8_t* pk, const char* pw) override {
+    calls.push_back("login"); lastLogin = keyStr(pk); (void)pw; return true;
+  }
+  uint32_t loginSeq() const override { return loginSeqVal; }
+  bool loginResult(const uint8_t* pk, bool& ok, bool& isAdmin, uint8_t& perms) const override {
+    (void)pk; ok = loginOk; isAdmin = loginAdmin; perms = loginPerms; return true;
+  }
+  bool isLoggedIn(const uint8_t* pk) const override { (void)pk; return loggedIn; }
   mishmesh::AutoAddConfig getAutoAdd() const override { return cfg; }
   void setAutoAdd(const mishmesh::AutoAddConfig& c) override { cfg = c; calls.push_back("setautoadd"); }
   int removeNonChat() override { calls.push_back("removenonchat"); int n=(int)(repeaters.size()+rooms.size()+sensors.size()); repeaters.clear();rooms.clear();sensors.clear(); return n; }

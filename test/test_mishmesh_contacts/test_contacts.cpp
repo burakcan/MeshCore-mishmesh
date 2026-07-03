@@ -9,6 +9,8 @@
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/widgets/TelemetryDialog.h>
 #include <mishmesh/core/AppletHost.h>
+#include <mishmesh/applets/RepeaterManageApplet.h>
+#include <mishmesh/applets/ServerLoginApplet.h>
 #include <cstring>
 
 TEST(ContactsServiceFake, EnumeratesByKind) {
@@ -110,11 +112,42 @@ TEST(ContactDetail, RepeaterHasPingNotClearConversation) {
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::NavRight);  // -> repeaters tab
   host.dispatch(mishmesh::InputEvent::Select);    // open Rep1
-  // View, Rename, Favourite, Telemetry, Permissions, Ping, Set path, Reset path, Delete (no Clear conversation)
-  EXPECT_EQ(9, mishmesh::contactDetailApplet().count());
+  // Manage, View, Rename, Favourite, Telemetry, Permissions, Ping, Set path, Reset path, Delete (no Clear conversation)
+  EXPECT_EQ(10, mishmesh::contactDetailApplet().count());
   EXPECT_FALSE(detailHasAction("Clear conversation"));
   EXPECT_TRUE(detailHasAction("Ping (0 hop)"));
   EXPECT_TRUE(detailHasAction("Delete contact"));
+}
+
+TEST(ContactDetail, RepeaterHasManageAsPrimaryAction) {
+  FakeContactsService svc;
+  FakeContactsService::Row r; r.name = "Rep1"; memcpy(r.pubkey, "REP001", 6); r.type = 2;
+  svc.repeaters.push_back(r);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  host.dispatch(mishmesh::InputEvent::NavRight);   // -> repeaters tab
+  host.dispatch(mishmesh::InputEvent::Select);     // open Rep1 detail
+  EXPECT_STREQ("Manage", mishmesh::contactDetailApplet().label(0));
+  EXPECT_TRUE(detailHasAction("Manage"));
+}
+
+TEST(ContactDetail, ManageRoutesToRepeaterManageWhenLoggedIn) {
+  FakeContactsService svc;
+  FakeContactsService::Row r; r.name = "Rep1"; memcpy(r.pubkey, "REP001", 6); r.type = 2;
+  svc.repeaters.push_back(r);
+  svc.loggedIn = true;                             // short-circuit: skip the keypad
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  host.dispatch(mishmesh::InputEvent::NavRight);   // -> repeaters tab
+  host.dispatch(mishmesh::InputEvent::Select);     // open Rep1 detail (depth 2)
+  host.dispatch(mishmesh::InputEvent::Select);     // action 0 = Manage -> push ServerLoginApplet (depth 3)
+  host.loop(1);                                    // Start phase: isLoggedIn -> onSuccess -> replace with RepeaterManageApplet
+  EXPECT_EQ(3, host.depth());
+  EXPECT_EQ(0, memcmp(mishmesh::repeaterManageApplet().targetForTest(), "REP001", 6));
 }
 
 // ---- Task 12: Telemetry modal ---------------------------------------------
@@ -140,7 +173,8 @@ TEST(ContactDetail, TelemetryOpensModalAndShowsResult) {
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> repeaters tab
   host.dispatch(mishmesh::InputEvent::Select);     // open Rep1 detail
-  // Telemetry is action index 3 (View, Rename, Favourite, Telemetry, ...): move down 3x.
+  // Telemetry is action index 4 (Manage, View, Rename, Favourite, Telemetry, ...): move down 4x.
+  host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
@@ -167,7 +201,8 @@ TEST(ContactDetail, PingOpensModalAndFires) {
   host.setRoot(&mishmesh::contactsApplet());
   host.dispatch(mishmesh::InputEvent::NavRight);   // -> repeaters tab
   host.dispatch(mishmesh::InputEvent::Select);     // open Rep1 detail
-  // Move to "Ping (0 hop)" (index 5: View, Rename, Favourite, Telemetry, Permissions, Ping) and select it.
+  // Move to "Ping (0 hop)" (index 6: Manage, View, Rename, Favourite, Telemetry, Permissions, Ping) and select it.
+  host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::NavDown);
@@ -178,6 +213,20 @@ TEST(ContactDetail, PingOpensModalAndFires) {
   svc.pingSeqVal = 1;                              // simulate reply
   host.loop(10);                                   // modal picks up the result, stays open (depth 2)
   EXPECT_EQ(2, host.depth());
+}
+
+// ---- Task 1: RepeaterManageApplet -----------------------------------------
+
+TEST(RepeaterManage, StoresTargetAndRenders) {
+  mishmesh::repeaterManageApplet().setTarget((const uint8_t*)"REP001", "Rep1");
+  EXPECT_EQ(0, memcmp(mishmesh::repeaterManageApplet().targetForTest(), "REP001", 6));
+
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::repeaterManageApplet());
+  host.loop(1);                       // renders without crashing
+  EXPECT_EQ(1, host.depth());
 }
 
 // ---- Favourites -----------------------------------------------------------
@@ -655,8 +704,8 @@ TEST(ContactDetail, RenameOfferedForRepeater) {
   host.setRoot(&mishmesh::contactsApplet());
   mishmesh::contactDetailApplet().setTarget((const uint8_t*)"RPTXXX");
   host.push(&mishmesh::contactDetailApplet());
-  // Repeater (no Send message): [View details, Rename, ...]
-  EXPECT_STREQ("Rename", mishmesh::contactDetailApplet().label(1));
+  // Repeater (Manage primary): [Manage, View details, Rename, ...]
+  EXPECT_STREQ("Rename", mishmesh::contactDetailApplet().label(2));
 }
 
 // "Auto-add all" collapses the per-kind toggles; turning it off reveals them
