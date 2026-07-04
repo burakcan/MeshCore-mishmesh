@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <gtest/gtest.h>
 #include <mishmesh/applets/FormApplet.h>
+#include <mishmesh/widgets/FormView.h>
 #include <mishmesh/core/AppletHost.h>
 #include "FakeDisplayDriver.h"
 
@@ -149,6 +150,84 @@ TEST(FormApplet, StepperFieldOpensModalAndWritesValue) {
   host.dispatch(InputEvent::Select);
   EXPECT_EQ(1, g_submitCalls);
   EXPECT_EQ(1, host.depth());            // popped back to stub
+}
+
+// ---- FormView unit tests ----
+
+TEST(FormView, DrawDoesNotCrash) {
+  FakeDisplayDriver d;
+  Canvas c(&d);
+  FormRow rows[2] = { { "Name", "Alice" }, { "Key", "abc" } };
+  FormView v;
+  // draw with button
+  v.draw(c, 0, 10, 128, 50, rows, 2, "Submit");
+  // draw without button (submitLabel == nullptr)
+  v.draw(c, 0, 10, 128, 50, rows, 2, nullptr);
+}
+
+TEST(FormView, FocusAndSetFocus) {
+  FormView v;
+  EXPECT_EQ(0, v.focus());
+  v.setFocus(2);
+  EXPECT_EQ(2, v.focus());
+}
+
+TEST(FormView, ResetClearsFocus) {
+  FormView v;
+  v.setFocus(3);
+  v.reset();
+  EXPECT_EQ(0, v.focus());
+}
+
+TEST(FormView, NavDownAdvancesToButton) {
+  FormView v;  // focus starts at 0
+  // 2 fields (n=2) + button (hasButton=true) => max focus = 2
+  bool r0 = v.onInput(InputEvent::NavDown, 2, true);  // 0 -> 1
+  EXPECT_TRUE(r0);
+  EXPECT_EQ(1, v.focus());
+  bool r1 = v.onInput(InputEvent::NavDown, 2, true);  // 1 -> 2 (button)
+  EXPECT_TRUE(r1);
+  EXPECT_EQ(2, v.focus());
+  // already at max; stays
+  bool r2 = v.onInput(InputEvent::NavDown, 2, true);
+  EXPECT_TRUE(r2);
+  EXPECT_EQ(2, v.focus());
+}
+
+TEST(FormView, NavDownClampsWithoutButton) {
+  FormView v;
+  // 2 fields, no button => max focus = 1
+  v.onInput(InputEvent::NavDown, 2, false);  // 0 -> 1
+  EXPECT_EQ(1, v.focus());
+  v.onInput(InputEvent::NavDown, 2, false);  // clamped at 1
+  EXPECT_EQ(1, v.focus());
+}
+
+TEST(FormView, NavUpClampsAtZero) {
+  FormView v;
+  bool r = v.onInput(InputEvent::NavUp, 2, true);
+  EXPECT_TRUE(r);
+  EXPECT_EQ(0, v.focus());   // already at 0, no change
+}
+
+TEST(FormView, NavUpDecrements) {
+  FormView v;
+  v.setFocus(2);
+  v.onInput(InputEvent::NavUp, 2, true);
+  EXPECT_EQ(1, v.focus());
+  v.onInput(InputEvent::NavUp, 2, true);
+  EXPECT_EQ(0, v.focus());
+}
+
+TEST(FormView, SelectNotConsumed) {
+  FormView v;
+  EXPECT_FALSE(v.onInput(InputEvent::Select, 2, true));
+}
+
+TEST(FormView, OtherEventsNotConsumed) {
+  FormView v;
+  EXPECT_FALSE(v.onInput(InputEvent::Back, 1, true));
+  EXPECT_FALSE(v.onInput(InputEvent::Cancel, 1, true));
 }
 
 int main(int argc, char** argv) {

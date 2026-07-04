@@ -49,4 +49,8 @@ void formatStamp(char* out, uint16_t cap, uint32_t tUtc, uint32_t nowUtc,
 // "UTC", "UTC+05:30", "UTC-08:00".
 void formatOffset(char* out, uint16_t cap, int16_t offsetMinutes);
 
+// Short month names, index 0=Jan .. 11=Dec. Defined once in TimeFormat.cpp so
+// the table isn't emitted per-including-TU.
+extern const char* const MONTHS[12];
+
 }  // namespace mishmesh

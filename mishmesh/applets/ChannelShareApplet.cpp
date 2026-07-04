@@ -1,6 +1,7 @@
 // mishmesh/applets/ChannelShareApplet.cpp
 #include "ChannelShareApplet.h"
 #include <mishmesh/core/AppletHost.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
 #include <string.h>
@@ -9,8 +10,7 @@ namespace mishmesh {
 
 void ChannelShareApplet::setTarget(const ConvoKey& key, const char* name) {
   _key = key;
-  strncpy(_name, name ? name : "", sizeof(_name) - 1);
-  _name[sizeof(_name) - 1] = 0;
+  copyStr(_name, sizeof(_name), name ? name : "");
 }
 
 void ChannelShareApplet::onStart(AppletContext& ctx) {

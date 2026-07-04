@@ -67,6 +67,32 @@ struct PingView {
   float    snrThem;  // SNR the peer received our ping at, dB
 };
 
+// A repeater's RepeaterStats surfaced to the UI as plain integers (no companion
+// types), decoded from the 56-byte binary status response by the adapter.
+struct RepeaterStatusView {
+  bool     valid;
+  uint16_t battMilliVolts;
+  uint16_t txQueueLen;
+  int16_t  noiseFloor;      // dBm
+  int16_t  lastRssi;        // dBm
+  uint32_t packetsRecv, packetsSent;
+  uint32_t airTxSecs, airRxSecs;
+  uint32_t upTimeSecs;
+  uint32_t sentFlood, sentDirect;
+  uint32_t recvFlood, recvDirect;
+  uint16_t directDups, floodDups;
+  uint16_t errEvents;       // the "Debug flags" the user sees
+  int16_t  lastSnrX4;       // SNR * 4; divide by 4.0 for dB
+  uint32_t recvErrors;
+};
+
+// [mishmesh] Repeater ACL (binary REQ_TYPE_GET_ACCESS_LIST). requestAccessList() fires the
+// request; the reply bumps accessListSeq(); latestAccessList() decodes it for pubKey.
+struct AclEntry { uint8_t pubkey[6]; uint8_t perms; };
+static const int MAX_ACL = 20;
+struct AccessListView { bool valid; uint8_t count; AclEntry entries[MAX_ACL]; };
+// [/mishmesh]
+
 // The only seam through which applets reach contacts/mesh state. Implemented by
 // the companion adapter; faked in host tests.
 struct ContactsService {
@@ -168,6 +194,34 @@ struct ContactsService {
   // adapter-owned storage valid until the next reply; consumers copy what they keep.
   virtual bool     cliResult(const uint8_t* pubKey, uint32_t afterSeq, bool& ok, const char*& response) const {
     (void)pubKey; (void)afterSeq; (void)ok; (void)response; return false;
+  }
+  // [/mishmesh]
+
+  // [mishmesh] Repeater status (binary REQ_TYPE_GET_STATUS). requestStatus() fires the
+  // request; the reply arrives asynchronously and bumps statusSeq(). latestStatus()
+  // decodes it for pubKey (false when none is latched for this contact). loginClock()
+  // is the repeater's UNIX-seconds clock captured from the login response (0 = unknown).
+  virtual bool     requestStatus(const uint8_t* pubKey) { (void)pubKey; return false; }
+  virtual uint32_t statusSeq() const { return 0; }
+  virtual bool     latestStatus(const uint8_t* pubKey, RepeaterStatusView& out) const {
+    (void)pubKey; (void)out; return false;
+  }
+  virtual uint32_t loginClock(const uint8_t* pubKey) const { (void)pubKey; return 0; }
+
+  // [mishmesh] Repeater ACL - see AccessListView above.
+  virtual bool     requestAccessList(const uint8_t* pubKey) { (void)pubKey; return false; }
+  virtual uint32_t accessListSeq() const { return 0; }
+  virtual bool     latestAccessList(const uint8_t* pubKey, AccessListView& out) const {
+    (void)pubKey; out.valid = false; return false;
+  }
+  // [/mishmesh]
+
+  // [mishmesh] Key generation: produce a 64-byte Ed25519 private key as 128 hex.
+  // seedHex null/empty => random (device RNG); else seedHex is a 64-hex (32-byte)
+  // seed expanded via ed25519_create_keypair. Returns false on bad seed / no crypto.
+  // out must hold >= 129 bytes.
+  virtual bool makeIdentityHex(const char* seedHex, char* out, int outCap) {
+    (void)seedHex; (void)out; (void)outCap; return false;
   }
   // [/mishmesh]
 

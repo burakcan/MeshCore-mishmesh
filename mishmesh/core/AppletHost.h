@@ -71,6 +71,9 @@ public:
   // Force a repaint on the next loop (e.g. after state changed outside an applet).
   void requestRender() { _dirty = true; }
 
+  // Test/inspection accessor: current toast text (empty if no toast has been posted).
+  const char* toastForTest() const { return _toast_msg; }
+
   // Test/inspection accessor for the live held-button snapshot.
   const InputState& ctxInput() const { return _input_state; }
 

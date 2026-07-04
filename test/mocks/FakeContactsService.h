@@ -37,6 +37,25 @@ public:
     memcpy(cliPub, pk, 6); cliResp = text ? text : ""; cliOk = true; cliSeqVal++;
   }
 
+  // status simulation
+  uint32_t statusSeqVal = 0;
+  mishmesh::RepeaterStatusView statusView{};
+  uint8_t  statusPub[6] = {0};
+  uint32_t loginClockVal = 0;
+  std::string lastStatusReq;
+  void simulateStatus(const uint8_t* pk, const mishmesh::RepeaterStatusView& v) {
+    memcpy(statusPub, pk, 6); statusView = v; statusView.valid = true; statusSeqVal++;
+  }
+
+  // acl simulation
+  uint32_t aclSeqVal = 0;
+  mishmesh::AccessListView aclView{};
+  uint8_t  aclPub[6] = {0};
+  std::string lastAclReq;
+  void simulateAccessList(const uint8_t* pk, const mishmesh::AccessListView& v) {
+    memcpy(aclPub, pk, 6); aclView = v; aclView.valid = true; aclSeqVal++;
+  }
+
   // Action log
   std::vector<std::string> calls;
   std::string lastDeleted, lastTelemetryReq, lastResetPath, lastCleared, lastPing;
@@ -217,6 +236,21 @@ public:
     if (cliSeqVal <= afterSeq) return false;      // not newer than when the request fired
     ok = cliOk; response = cliResp.c_str(); return true;
   }
+  bool requestStatus(const uint8_t* pk) override {
+    calls.push_back("reqstatus"); lastStatusReq = keyStr(pk); return true;
+  }
+  uint32_t statusSeq() const override { return statusSeqVal; }
+  bool latestStatus(const uint8_t* pk, mishmesh::RepeaterStatusView& out) const override {
+    if (memcmp(statusPub, pk, 6) != 0) return false;
+    out = statusView; return out.valid;
+  }
+  uint32_t loginClock(const uint8_t* pk) const override { (void)pk; return loginClockVal; }
+  bool requestAccessList(const uint8_t* pk) override { calls.push_back("acl"); lastAclReq = keyStr(pk); return true; }
+  uint32_t accessListSeq() const override { return aclSeqVal; }
+  bool latestAccessList(const uint8_t* pk, mishmesh::AccessListView& out) const override {
+    if (memcmp(aclPub, pk, 6) != 0) return false;
+    out = aclView; return out.valid;
+  }
   mishmesh::AutoAddConfig getAutoAdd() const override { return cfg; }
   void setAutoAdd(const mishmesh::AutoAddConfig& c) override { cfg = c; calls.push_back("setautoadd"); }
   int removeNonChat() override { calls.push_back("removenonchat"); int n=(int)(repeaters.size()+rooms.size()+sensors.size()); repeaters.clear();rooms.clear();sensors.clear(); return n; }
@@ -242,5 +276,18 @@ public:
     for (auto* l : {&chats, &repeaters, &rooms, &sensors})
       for (const Row& r : *l) if (keyStr(r.pubkey) == keyStr(pk)) return true;
     return false;
+  }
+  std::string lastSeedArg; int makeIdentityCalls = 0;
+  bool makeIdentityHex(const char* seedHex, char* out, int outCap) override {
+    makeIdentityCalls++;
+    lastSeedArg = seedHex ? seedHex : "";
+    if (seedHex && seedHex[0]) {
+      if ((int)strlen(seedHex) != 64) return false;
+    }
+    char fill = (seedHex && seedHex[0]) ? 'b' : 'a';
+    if (outCap < 129) return false;
+    for (int i = 0; i < 128; i++) out[i] = fill;
+    out[128] = 0;
+    return true;
   }
 };

@@ -1,4 +1,5 @@
 #include <mishmesh/applets/RadioValuePickerApplet.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
 #include <math.h>
@@ -19,8 +20,7 @@ RadioValuePickerApplet::RadioValuePickerApplet() : Applet("Radio") {}
 
 void RadioValuePickerApplet::configure(RadioStagingTarget* tgt, RadioField field, const char* title) {
   _tgt = tgt; _field = field;
-  strncpy(_title, title ? title : "Value", sizeof(_title) - 1);
-  _title[sizeof(_title) - 1] = 0;
+  copyStr(_title, sizeof(_title), title ? title : "Value");
 }
 
 const float* RadioValuePickerApplet::options() const {

@@ -8,6 +8,8 @@
 
 namespace mishmesh {
 
+typedef void (*ContactPickFn)(void* ctx, const uint8_t* pubKey);
+
 // Upper bound on contacts the list cache indexes; matches the largest board's
 // MAX_CONTACTS (Wio Tracker L1 = 350). Contacts beyond this simply aren't shown
 // by a cached tab - a soft ceiling, not a crash.
@@ -113,6 +115,8 @@ class ContactsApplet : public Applet {
   int                   _slotCount;
   bool                  _pickMode;        // picker: only Favourites(users) + Contacts(users), select -> thread
   bool                  _pickRequested;   // one-shot, consumed by onStart
+  ContactPickFn         _pickFn = nullptr;
+  void*                 _pickCtx = nullptr;
 
   const TabSlot& currentSlot() const { return _slots[_tabs.selected()]; }
   bool settingsTab() const { return currentSlot().kind == TabKind::Settings; }
@@ -125,7 +129,8 @@ public:
   void onForeground() override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
-  void beginPick() { _pickRequested = true; }
+  void beginPick() { _pickRequested = true; _pickFn = nullptr; _pickCtx = nullptr; }
+  void configurePick(ContactPickFn fn, void* ctx) { _pickFn = fn; _pickCtx = ctx; _pickRequested = true; }
   int  tabCountForTest() const { return _slotCount; }
   bool pickModeForTest() const { return _pickMode; }
 };

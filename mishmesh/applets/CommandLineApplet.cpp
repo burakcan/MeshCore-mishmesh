@@ -1,5 +1,7 @@
 // mishmesh/applets/CommandLineApplet.cpp
 #include <mishmesh/applets/CommandLineApplet.h>
+#include <mishmesh/core/StrUtil.h>
+#include <mishmesh/applets/AppletChrome.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
@@ -9,9 +11,7 @@
 namespace mishmesh {
 
 void CommandLineApplet::setTarget(const uint8_t* pubKey, const char* name) {
-  memcpy(_pub, pubKey, 6);
-  if (name) { strncpy(_name, name, sizeof(_name) - 1); _name[sizeof(_name) - 1] = 0; }
-  else _name[0] = 0;
+  setTargetFields(_pub, _name, sizeof(_name), pubKey, name);
 }
 
 void CommandLineApplet::onStart(AppletContext& ctx) {
@@ -23,6 +23,13 @@ void CommandLineApplet::onStart(AppletContext& ctx) {
   _req.timeoutMs = 20000;   // LoRa round-trip can be slow (multi-hop / duty-cycled); login uses 25s
   _view.setWrap(true);      // CLI replies can be long; wrap them instead of ellipsizing
   syncView();
+}
+
+// Embedded-mode activation: updates context references. The log and pending state
+// are preserved across tab switches (fresh only on hub open, via the hub calling onStart).
+void CommandLineApplet::onShow(AppletContext& ctx) {
+  _host = ctx.host;
+  _svc = ctx.contacts;
 }
 
 void CommandLineApplet::pushLine(const char* s) {
@@ -60,8 +67,7 @@ void CommandLineApplet::syncView() {
 void CommandLineApplet::onCmdDone(void* ctx, const char* text) {
   auto* self = static_cast<CommandLineApplet*>(ctx);
   if (text && text != self->_cmdBuf) {
-    strncpy(self->_cmdBuf, text, sizeof(self->_cmdBuf) - 1);
-    self->_cmdBuf[sizeof(self->_cmdBuf) - 1] = 0;
+    copyStr(self->_cmdBuf, sizeof(self->_cmdBuf), text);
   }
   self->submitCommand(self->_cmdBuf);
 }
@@ -89,11 +95,14 @@ void CommandLineApplet::submitCommand(const char* cmd) {
 }
 
 int CommandLineApplet::onRender(Canvas& c) {
-  const int w = c.width(), h = c.height();
+  return renderBody(c, 0, 0, c.width(), c.height());
+}
+
+// Embedded-mode render: draws the CLI log and hint into a sub-region below the TabBar.
+int CommandLineApplet::renderBody(Canvas& c, int x, int y, int w, int h) {
   const Font* cap = fontCaption();
   int caph = c.lineHeight(cap);
 
-  // Poll for the async reply.
   if (_pending && _svc) {
     PendingRequest::State s = _req.poll(_svc->cliSeq(), c.now());
     if (s == PendingRequest::State::Ready) {
@@ -103,7 +112,7 @@ int CommandLineApplet::onRender(Canvas& c) {
         _pending = false;
         syncView();
       } else {
-        _req.rearm(_svc->cliSeq());          // reply was for a different contact
+        _req.rearm(_svc->cliSeq());
       }
     } else if (s == PendingRequest::State::TimedOut) {
       pushLine("[no response]");
@@ -112,13 +121,10 @@ int CommandLineApplet::onRender(Canvas& c) {
     }
   }
 
-  // Title (name), scroll log, bottom hint.
-  c.drawText(cap, 2, 1, _name[0] ? _name : "Repeater", DisplayDriver::LIGHT, TextAlign::Left);
-  int top = caph + 2;
   const char* hint = _pending ? "Waiting reply..." : "Select: command";
-  int bottom = h - caph - 1;
-  _view.draw(c, 0, top, w, bottom - top);
-  c.drawText(cap, 2, bottom, hint, DisplayDriver::LIGHT, TextAlign::Left);
+  int bottom = y + h - caph - 1;
+  _view.draw(c, x, y, w, bottom - y);
+  c.drawText(cap, x + 2, bottom, hint, DisplayDriver::LIGHT, TextAlign::Left);
 
   if (_pending) return 120;
   if (_view.needsAnimation()) return 33;

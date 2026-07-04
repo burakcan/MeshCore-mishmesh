@@ -3,6 +3,11 @@
 
 namespace mishmesh { namespace sound {
 
+// Single definition for the NoteTable.h extern (see header).
+const uint16_t kOctave4Hz[12] = {
+  262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494
+};
+
 void ScoreSource::set(const uint8_t* score) { _score = score; reset(); }
 
 void ScoreSource::reset() { _p = _score; _curFreq = 0; }

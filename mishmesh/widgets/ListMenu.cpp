@@ -45,6 +45,20 @@ int ListMenu::firstVisibleRow(int box_height) const {
 // per visible row in LIGHT, then again (clipped to the highlight bar) in DARK so
 // text inverts cleanly as the bar slides over it.
 void ListMenu::drawRowContent(Canvas& view, int i, int ry, int cw, DisplayDriver::Color col, uint32_t now) {
+  if (_model->isButton(i)) {
+    // Centered box button: outline rect + centered text in col.
+    // LIGHT pass (idle): LIGHT border + LIGHT text on dark background.
+    // DARK pass (selected, clipped to highlight bar): DARK border + DARK text on LIGHT bar.
+    const char* lbl = _model->label(i);
+    int bh = _rowH - 2;   // 1px margin top and bottom
+    int bw = cw / 2; if (bw < 32) bw = 32; if (bw > cw - 4) bw = cw - 4;
+    int bx = (cw - bw) / 2;
+    int by = ry + 1;
+    view.drawRect(bx, by, bw, bh, col);
+    int ty = by + (bh - view.fontHeight(fontBody())) / 2; if (ty < by) ty = by;
+    view.drawTextEllipsized(fontBody(), bx + bw / 2, ty, bw - 4, lbl, col, TextAlign::Center);
+    return;
+  }
   int tx = 4;
   uint16_t ic = _model->icon(i);
   if (ic) {
@@ -169,19 +183,20 @@ void ListMenu::draw(Canvas& c, int x, int y, int w, int h) {
 
   // Highlight bar, then re-draw the rows it overlaps in DARK clipped to it, so
   // text inverts pixel-by-pixel as the bar glides between rows.
-  int barY = bodyTop + _barY - _scrollPx;
-  view.fillRect(0, barY, cw, _rowH, DisplayDriver::LIGHT);
-  for (int i = 0; i < n; i++) {
-    int ry = bodyTop + i * _rowH - _scrollPx;
-    if (ry + _rowH <= barY || ry >= barY + _rowH) continue;   // no overlap with the bar
-    Canvas bar = view.region(0, barY, cw, _rowH);
-    drawRowContent(bar, i, ry - barY, cw, DisplayDriver::DARK, now);
+  // Skipped when _drawSelection is false (e.g. focus has moved to an external widget).
+  if (_drawSelection) {
+    int barY = bodyTop + _barY - _scrollPx;
+    view.fillRect(0, barY, cw, _rowH, DisplayDriver::LIGHT);
+    for (int i = 0; i < n; i++) {
+      int ry = bodyTop + i * _rowH - _scrollPx;
+      if (ry + _rowH <= barY || ry >= barY + _rowH) continue;   // no overlap with the bar
+      Canvas bar = view.region(0, barY, cw, _rowH);
+      drawRowContent(bar, i, ry - barY, cw, DisplayDriver::DARK, now);
+    }
   }
 
   if (scrollbar) {
-    int thumbH = h * h / contentH; if (thumbH < 3) thumbH = 3;
-    int thumbY = maxScroll > 0 ? (h - thumbH) * _scrollPx / maxScroll : 0;
-    view.fillRect(w - 2, thumbY, 2, thumbH, DisplayDriver::LIGHT);
+    view.drawScrollbarThumb(w - 2, h, contentH, _scrollPx);
   }
 }
 

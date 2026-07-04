@@ -2,6 +2,9 @@
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
+// [mishmesh]
+#include <ed_25519.h>
+// [/mishmesh]
 
 #define CMD_APP_START                 1
 #define CMD_SEND_TXT_MSG              2
@@ -773,6 +776,9 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       memcpy(&out_frame[i], contact.id.pub_key, 6);
       i += 6; // pub_key_prefix
     }
+    // [mishmesh] latch the repeater clock at login (tag = server timestamp) for Status
+    if (mm_ok) { memcpy(_ui_login_pub, contact.id.pub_key, 6); _ui_login_time = tag; }
+    // [/mishmesh]
     _serial->writeFrame(out_frame, i);
     // [mishmesh]
     if (mm_login && _ui) _ui->onRoomLogin(contact.id.pub_key, mm_ok, mm_admin, mm_perms);
@@ -792,6 +798,23 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     memcpy(&out_frame[i], &data[4], len - 4);
     i += (len - 4);
     _serial->writeFrame(out_frame, i);
+    // [mishmesh] latch the status payload for the on-device UI (mirrors the telemetry latch)
+    {
+      uint8_t nb = len - 4; if (nb > sizeof(_ui_status.raw)) nb = sizeof(_ui_status.raw);
+      memcpy(_ui_status.pubkey, contact.id.pub_key, PUB_KEY_SIZE);
+      memcpy(_ui_status.raw, &data[4], nb);
+      _ui_status.len = nb;
+      _ui_status.seq++;
+    }
+    // [/mishmesh]
+  } else if (len > 4 && pending_acl && memcmp(&pending_acl, contact.id.pub_key, 4) == 0) {   // [mishmesh]
+    pending_acl = 0;
+    uint8_t nb = len - 4; if (nb > sizeof(_ui_acl.raw)) nb = sizeof(_ui_acl.raw);
+    memcpy(_ui_acl.pubkey, contact.id.pub_key, PUB_KEY_SIZE);
+    memcpy(_ui_acl.raw, &data[4], nb);
+    _ui_acl.len = nb;
+    _ui_acl.seq++;
+    // [/mishmesh]
   } else if (len > 4 && tag == pending_telemetry) {  // check for matching response tag
     pending_telemetry = 0;
 
@@ -839,6 +862,7 @@ int MyMesh::startContactRequest(ContactInfo& contact, uint8_t req_type, uint32_t
     clearPendingReqs();
     if (req_type == REQ_TYPE_GET_TELEMETRY_DATA) pending_telemetry = tag;       // match in onContactResponse()
     else if (req_type == REQ_TYPE_GET_STATUS)    memcpy(&pending_status, contact.id.pub_key, 4);  // legacy matching scheme
+    else if (req_type == REQ_TYPE_GET_ACCESS_LIST) memcpy(&pending_acl, contact.id.pub_key, 4);   // [mishmesh]
   }
   return result;
 }
@@ -1119,6 +1143,50 @@ bool MyMesh::uiCliReply(const uint8_t* pubkey6, uint32_t afterSeq, const char*& 
   }
   if (best == nullptr) return false;
   resp = best->resp;
+  return true;
+}
+// [/mishmesh]
+
+// [mishmesh]
+bool MyMesh::uiRequestStatus(const uint8_t* pubkey) {
+  ContactInfo* c = lookupContactByPubKey((uint8_t*)pubkey, 6);  // UI handle is a 6-byte prefix
+  if (!c) return false;
+  uint32_t tag = 0, est_timeout = 0;
+  return startContactRequest(*c, REQ_TYPE_GET_STATUS, tag, est_timeout) != MSG_SEND_FAILED;
+}
+
+uint32_t MyMesh::uiLoginClock(const uint8_t* pubkey6) const {
+  return memcmp(_ui_login_pub, pubkey6, 6) == 0 ? _ui_login_time : 0;
+}
+// [/mishmesh]
+
+// [mishmesh]
+bool MyMesh::uiRequestAccessList(const uint8_t* pubkey) {
+  ContactInfo* c = lookupContactByPubKey((uint8_t*)pubkey, 6);
+  if (!c) return false;
+  uint32_t tag = 0, est_timeout = 0;
+  return startContactRequest(*c, REQ_TYPE_GET_ACCESS_LIST, tag, est_timeout) != MSG_SEND_FAILED;
+}
+// [/mishmesh]
+
+// [mishmesh] Ed25519 keygen seam: 128-hex private key (seedHex empty = random device RNG).
+// Reserved pub-key prefix (0x00/0xFF) is retried up to 10 times in the random path.
+bool MyMesh::uiMakeIdentityHex(const char* seedHex, char* out, int outCap) {
+  if (outCap < 129) return false;
+  uint8_t pub[PUB_KEY_SIZE], prv[PRV_KEY_SIZE], seed[SEED_SIZE];
+  if (seedHex && seedHex[0]) {
+    if (!mesh::Utils::fromHex(seed, SEED_SIZE, seedHex)) return false;
+    ed25519_create_keypair(pub, prv, seed);
+    if (pub[0] == 0x00 || pub[0] == 0xFF) return false;
+  } else {
+    int tries = 0;
+    do {
+      getRNG()->random(seed, SEED_SIZE);
+      ed25519_create_keypair(pub, prv, seed);
+      tries++;
+    } while (tries < 10 && (pub[0] == 0x00 || pub[0] == 0xFF));
+  }
+  mesh::Utils::toHex(out, prv, PRV_KEY_SIZE);
   return true;
 }
 // [/mishmesh]

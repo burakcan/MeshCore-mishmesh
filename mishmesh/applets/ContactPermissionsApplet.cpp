@@ -1,4 +1,5 @@
 #include <mishmesh/applets/ContactPermissionsApplet.h>
+#include <mishmesh/applets/AppletChrome.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
@@ -25,9 +26,7 @@ uint8_t ContactPermissionsApplet::bitFor(int row) {
 }
 
 void ContactPermissionsApplet::setTarget(const uint8_t* pubKey, const char* name) {
-  memcpy(_pubkey, pubKey, 6);
-  strncpy(_name, name ? name : "", sizeof(_name) - 1);
-  _name[sizeof(_name) - 1] = 0;
+  setTargetFields(_pubkey, _name, sizeof(_name), pubKey, name);
 }
 
 const char* ContactPermissionsApplet::label(int i) const {

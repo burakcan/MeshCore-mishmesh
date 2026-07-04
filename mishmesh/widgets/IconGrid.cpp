@@ -90,9 +90,7 @@ void IconGrid::draw(Canvas& c, int x, int y, int w, int h) {
   }
 
   if (scrollbar) {
-    int thumbH = h * h / contentH; if (thumbH < 3) thumbH = 3;
-    int thumbY = maxScroll > 0 ? (h - thumbH) * _scrollPx / maxScroll : 0;
-    view.fillRect(w - 2, thumbY, 2, thumbH, DisplayDriver::LIGHT);
+    view.drawScrollbarThumb(w - 2, h, contentH, _scrollPx);
   }
 }
 

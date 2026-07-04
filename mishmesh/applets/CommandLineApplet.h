@@ -21,6 +21,12 @@ public:
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
 
+  // Embedded-view protocol (called by RepeaterManageApplet as tab host).
+  void onShow(AppletContext& ctx);
+  // noinline: onRender() just delegates here; without it the body is also inlined into
+  // the vtable-referenced onRender(), duplicating ~640B of flash (the BLE build is tight).
+  int  renderBody(Canvas& c, int x, int y, int w, int h) __attribute__((noinline));
+
   // Send a command now: echo "> cmd", fire the request, start awaiting the reply.
   // Public because the keypad confirm callback and host tests both drive it.
   void submitCommand(const char* cmd);

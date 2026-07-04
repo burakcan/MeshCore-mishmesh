@@ -253,6 +253,89 @@ TEST(RadioSettingsPanel, RepeaterRowShowsFrequencyWhenEnabled) {
   EXPECT_STREQ("869.495 MHz", panel.rowValueForTest(6));
 }
 
+#include "FakeContactsService.h"
+#include "FakeDisplayDriver.h"
+#include <mishmesh/core/AppletHost.h>
+#include <mishmesh/applets/RepeaterRadioPanel.h>
+
+TEST(RepeaterRadio, FetchesRadioThenTx) {
+  FakeContactsService svc;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  uint8_t pk[6] = {'R','E','P','0','0','1'};
+  mishmesh::repeaterRadioPanel().setTarget(pk, "Rep1");
+  host.setRoot(&mishmesh::repeaterRadioPanel());
+  host.loop(1);                             // fires "get radio"
+  EXPECT_EQ("get radio", svc.lastCli);
+  svc.simulateCliReply(pk, "> 910.5,250,10,5");
+  host.loop(200);                           // parses radio, fires "get tx"
+  EXPECT_EQ("get tx", svc.lastCli);
+  svc.simulateCliReply(pk, "> 22");
+  host.loop(400);                           // parses tx
+  EXPECT_FLOAT_EQ(910.5f, mishmesh::repeaterRadioPanel().freqForTest());
+  EXPECT_EQ(22, mishmesh::repeaterRadioPanel().txForTest());
+}
+
+TEST(RepeaterRadio, StagingSetsDirtyFlags) {
+  mishmesh::RepeaterRadioPanel& p = mishmesh::repeaterRadioPanel();
+  FakeContactsService svc; FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  uint8_t pk[6] = {'R','E','P','0','0','1'};
+  p.setTarget(pk, "Rep1"); host.setRoot(&p); host.loop(1);
+  svc.simulateCliReply(pk, "> 910.5,250,10,5"); host.loop(200);
+  svc.simulateCliReply(pk, "> 22"); host.loop(400);
+
+  p.stageFrequency(868.0f);
+  EXPECT_TRUE(p.radioDirtyForTest());
+  EXPECT_FALSE(p.txDirtyForTest());
+  p.stageTxPower(14);
+  EXPECT_TRUE(p.txDirtyForTest());
+  EXPECT_FLOAT_EQ(868.0f, p.freqForTest());
+  EXPECT_EQ(14, p.txForTest());
+}
+
+TEST(RepeaterRadio, SaveSendsRadioThenTx) {
+  mishmesh::RepeaterRadioPanel& p = mishmesh::repeaterRadioPanel();
+  FakeContactsService svc; FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  uint8_t pk[6] = {'R','E','P','0','0','1'};
+  p.setTarget(pk, "Rep1"); host.setRoot(&p); host.loop(1);
+  svc.simulateCliReply(pk, "> 910.5,250,10,5"); host.loop(200);
+  svc.simulateCliReply(pk, "> 22"); host.loop(400);
+
+  p.stageSf(11);         // radio dirty
+  p.stageTxPower(14);    // tx dirty
+  // FormView: Save button is at focus N=6 (6 field rows at 0..5). NavDown 6 times from focus 0.
+  for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavDown);
+  EXPECT_EQ(6, p.focusForTest());   // confirms focus is on Save button (N)
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(0, strncmp(svc.lastCli.c_str(), "set radio ", 10));   // radio first
+  svc.simulateCliReply(pk, "OK - reboot to apply");
+  host.loop(600);
+  EXPECT_EQ(0, strncmp(svc.lastCli.c_str(), "set tx ", 7));       // then tx
+  svc.simulateCliReply(pk, "OK");
+  host.loop(800);
+  EXPECT_FALSE(p.radioDirtyForTest());
+  EXPECT_FALSE(p.txDirtyForTest());
+}
+
+TEST(RepeaterRadio, LoadingPhaseBeforeFetchComplete) {
+  mishmesh::RepeaterRadioPanel& p = mishmesh::repeaterRadioPanel();
+  FakeContactsService svc; FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  uint8_t pk[6] = {'L','D','T','0','0','1'};
+  p.setTarget(pk, "LoadTest"); host.setRoot(&p); host.loop(1);
+  // Panel has fired "get radio" but no reply yet -- still Loading.
+  // Attempting Select should not trigger a save command.
+  std::string afterStart = svc.lastCli;  // "get radio"
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(afterStart, svc.lastCli);   // no new CLI command sent
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

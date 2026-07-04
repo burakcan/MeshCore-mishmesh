@@ -88,6 +88,16 @@ public:
   void drawTextEllipsized(const mf_font_s* font, int x, int y, int maxWidth,
                           const char* str, DisplayDriver::Color c,
                           TextAlign align = TextAlign::Left);
+  // Horizontally + vertically centered single line within the (x,y,w,h) band.
+  // Collapses the "cy = y + (h - fontHeight)/2; drawText(x + w/2, cy, Center)"
+  // idiom repeated by every Loading/empty-state screen.
+  void drawTextCentered(const mf_font_s* font, int x, int y, int w, int h,
+                        const char* str, DisplayDriver::Color c);
+  // A 2px vertical scrollbar thumb at column x, sized/positioned for a view of
+  // height viewH showing contentH px scrolled by scrollPx. Callers still own the
+  // "reserve a gutter when overflowing" decision; this is just the shared thumb
+  // draw every scrolling widget had copied. Call only when contentH > viewH.
+  void drawScrollbarThumb(int x, int viewH, int contentH, int scrollPx);
   // 50% checkerboard fill (modal scrim / dithered shadow). Per-pixel on mono;
   // use for small regions or a scrim, not large solid fills.
   void fillStipple(int x, int y, int w, int h, DisplayDriver::Color c);

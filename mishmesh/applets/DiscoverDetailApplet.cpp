@@ -1,4 +1,5 @@
 #include <mishmesh/applets/DiscoverDetailApplet.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/ContactFormat.h>
@@ -26,7 +27,7 @@ const char* DiscoverDetailApplet::label(int i) const {
 void DiscoverDetailApplet::setTarget(const ContactView& v) {
   memcpy(_pubkey, v.pubKey, 6);
   memcpy(_fullKey, v.pubKey, PUBKEY_LEN);
-  strncpy(_name, v.name, sizeof(_name) - 1); _name[sizeof(_name) - 1] = 0;
+  copyStr(_name, sizeof(_name), v.name);
   _type = v.type; _hasPath = v.hasPath; _hops = v.hops; _lastAdvert = v.lastAdvert;
   _hasLoc = v.hasLocation; _gpsLat = v.gpsLat; _gpsLon = v.gpsLon;
 }

@@ -255,6 +255,21 @@ void Canvas::drawTextEllipsized(const mf_font_s* font, int x, int y, int maxWidt
   drawText(font, x, y, buf, c, align);
 }
 
+void Canvas::drawTextCentered(const mf_font_s* font, int x, int y, int w, int h,
+                              const char* str, DisplayDriver::Color c) {
+  if (!font || !str) return;
+  int cy = y + (h - fontHeight(font)) / 2;
+  drawText(font, x + w / 2, cy, str, c, TextAlign::Center);
+}
+
+void Canvas::drawScrollbarThumb(int x, int viewH, int contentH, int scrollPx) {
+  if (contentH <= 0) return;
+  int thumbH = viewH * viewH / contentH; if (thumbH < 3) thumbH = 3;
+  int maxScroll = contentH - viewH;
+  int thumbY = maxScroll > 0 ? (viewH - thumbH) * scrollPx / maxScroll : 0;
+  fillRect(x, thumbY, 2, thumbH, DisplayDriver::LIGHT);
+}
+
 void Canvas::fillStipple(int x, int y, int w, int h, DisplayDriver::Color c) {
   // Checkerboard fill (every other pixel). Hot path: a full-screen modal scrim is
   // thousands of pixels, so clip and set the colour ONCE up front and step the inner

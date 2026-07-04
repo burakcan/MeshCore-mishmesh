@@ -78,6 +78,9 @@
 #define REQ_TYPE_GET_STATUS             0x01 // same as _GET_STATS
 #define REQ_TYPE_KEEP_ALIVE             0x02
 #define REQ_TYPE_GET_TELEMETRY_DATA     0x03
+// [mishmesh]
+#define REQ_TYPE_GET_ACCESS_LIST        0x05
+// [/mishmesh]
 
 struct AdvertPath {
   uint8_t pubkey_prefix[7];
@@ -144,6 +147,28 @@ public:
   // Newest ring slot for the 6-byte pubkey with seq > afterSeq; false if none.
   bool uiCliReply(const uint8_t* pubkey6, uint32_t afterSeq, const char*& resp) const;
   bool mishmeshSendCli(const uint8_t* pubkey, const char* cmd);
+  // [/mishmesh]
+  // [mishmesh] Binary status (REQ_TYPE_GET_STATUS) latch for the on-device UI + the
+  // repeater's clock captured from the login response. Mirrors the telemetry latch.
+  static const int MM_STATUS_MAX = 56;   // sizeof(RepeaterStats)
+  struct StatusLatch {
+    uint8_t  pubkey[PUB_KEY_SIZE];
+    uint8_t  raw[MM_STATUS_MAX];
+    uint8_t  len;
+    uint32_t seq;
+  };
+  const StatusLatch& uiLastStatus() const { return _ui_status; }
+  bool uiRequestStatus(const uint8_t* pubkey);
+  uint32_t uiLoginClock(const uint8_t* pubkey6) const;
+  // [/mishmesh]
+  // [mishmesh]
+  static const int MM_ACL_MAX = 147;    // ~20 * (6+1) with slack
+  struct AclLatch { uint8_t pubkey[PUB_KEY_SIZE]; uint8_t raw[MM_ACL_MAX]; uint8_t len; uint32_t seq; };
+  const AclLatch& uiLastAcl() const { return _ui_acl; }
+  bool uiRequestAccessList(const uint8_t* pubkey);
+  // [/mishmesh]
+  // [mishmesh] Ed25519 keygen seam: produce 128-hex private key (seedHex empty = random).
+  bool uiMakeIdentityHex(const char* seedHex, char* out, int outCap);
   // [/mishmesh]
   bool uiRequestTelemetry(const uint8_t* pubkey);
   bool uiPing(const uint8_t* pubkey);          // 0-hop trace ("ping"), round-trip latched
@@ -258,6 +283,7 @@ protected:
 
   void clearPendingReqs() {
     pending_login = pending_status = pending_telemetry = pending_discovery = pending_req = 0;
+    pending_acl = 0;   // [mishmesh]
   }
 
 public:
@@ -316,6 +342,9 @@ private:
   uint32_t pending_login;
   bool mishmesh_login_pending = false;   // [mishmesh] login initiated on-device -> route result to _ui
   uint32_t pending_status;
+  // [mishmesh]
+  uint32_t pending_acl = 0;
+  // [/mishmesh]
   uint32_t pending_telemetry, pending_discovery;   // pending _TELEMETRY_REQ
   uint32_t pending_req;   // pending _BINARY_REQ
   BaseSerialInterface *_serial;
@@ -340,6 +369,10 @@ private:
   CliLatch _ui_cli[MM_CLI_SLOTS] = {};
   uint32_t _ui_cli_seq = 0;   // monotonic; 0 = none yet
   int      _ui_cli_next = 0;  // next ring slot to write
+  StatusLatch _ui_status = {};
+  AclLatch _ui_acl = {};   // [mishmesh]
+  uint8_t  _ui_login_pub[6] = {0};
+  uint32_t _ui_login_time = 0;   // repeater clock (UNIX secs) at last successful login
   ContactInfo _ui_discoveries[UI_MAX_DISCOVERIES];
   int _ui_discovery_count = 0;
   void uiNoteDiscovery(const ContactInfo& ci);   // called from onDiscoveredContact

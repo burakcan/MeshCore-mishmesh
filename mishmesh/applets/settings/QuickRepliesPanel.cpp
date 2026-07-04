@@ -126,6 +126,8 @@ bool QuickRepliesPanel::onInput(InputEvent ev) {
       if (_host) _host->push(&keypadApplet());
     } else {                              // open action menu for this reply
       _itemIdx = i;
+      static const char* const ACTION_LABELS[] = {"Edit", "Move", "Delete"};
+      _actionModel.set(ACTION_LABELS, 3);
       _actions.setModel(&_actionModel);
       _actions.setRowHeight(14);
       _actions.resetSelection();

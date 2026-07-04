@@ -1,4 +1,5 @@
 #include <mishmesh/applets/SoundPickerApplet.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/ClockService.h>
@@ -17,20 +18,17 @@ SoundPickerApplet::SoundPickerApplet() : Applet("Sound") {}
 
 void SoundPickerApplet::setGlobal(bool channel, const char* title) {
   _perChat = false; _clock = false; _channel = channel;
-  strncpy(_title, title ? title : "Sound", sizeof(_title) - 1);
-  _title[sizeof(_title) - 1] = 0;
+  copyStr(_title, sizeof(_title), title ? title : "Sound");
 }
 
 void SoundPickerApplet::setChat(const ConvoKey& key, const char* title) {
   _perChat = true; _clock = false; _key = key; _channel = (key.type == 1);
-  strncpy(_title, title ? title : "Sound", sizeof(_title) - 1);
-  _title[sizeof(_title) - 1] = 0;
+  copyStr(_title, sizeof(_title), title ? title : "Sound");
 }
 
 void SoundPickerApplet::setClock(bool alarm, const char* title) {
   _perChat = false; _clock = true; _channel = alarm;
-  strncpy(_title, title ? title : "Sound", sizeof(_title) - 1);
-  _title[sizeof(_title) - 1] = 0;
+  copyStr(_title, sizeof(_title), title ? title : "Sound");
 }
 
 uint8_t SoundPickerApplet::currentByte() const {

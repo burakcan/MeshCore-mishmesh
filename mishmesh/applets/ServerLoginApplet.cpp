@@ -1,5 +1,6 @@
 // mishmesh/applets/ServerLoginApplet.cpp
 #include <mishmesh/applets/ServerLoginApplet.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletStorage.h>
@@ -14,7 +15,7 @@ namespace mishmesh {
 
 void ServerLoginApplet::setTarget(const uint8_t* pubKey, const char* name, Mode mode) {
   memcpy(_pub, pubKey, 6);
-  if (name) { strncpy(_name, name, sizeof(_name) - 1); _name[sizeof(_name) - 1] = 0; }
+  if (name) { copyStr(_name, sizeof(_name), name); }
   else _name[0] = 0;
   _mode = mode;
 }
@@ -54,8 +55,7 @@ void ServerLoginApplet::promptPassword() {
 void ServerLoginApplet::onPwDone(void* ctx, const char* text) {
   auto* self = static_cast<ServerLoginApplet*>(ctx);
   if (text && text != self->_pwBuf) {
-    strncpy(self->_pwBuf, text, sizeof(self->_pwBuf) - 1);
-    self->_pwBuf[sizeof(self->_pwBuf) - 1] = 0;
+    copyStr(self->_pwBuf, sizeof(self->_pwBuf), text);
   }
   self->_submitted = true;
   self->_freshPw = true;      // typed by hand -> may offer to remember on success

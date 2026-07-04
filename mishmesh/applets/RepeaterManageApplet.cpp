@@ -1,6 +1,9 @@
 // mishmesh/applets/RepeaterManageApplet.cpp
 #include <mishmesh/applets/RepeaterManageApplet.h>
+#include <mishmesh/applets/AppletChrome.h>
 #include <mishmesh/applets/CommandLineApplet.h>
+#include <mishmesh/applets/StatusApplet.h>
+#include <mishmesh/applets/RepeaterSettingsApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
@@ -8,55 +11,70 @@
 
 namespace mishmesh {
 
-// Fixed hub rows. Index order is contract (see onInput + tests).
-enum { ROW_STATUS = 0, ROW_CLI = 1, ROW_SETTINGS = 2, ROW_COUNT = 3 };
-
-struct HubModel : ListModel {
-  int count() const override { return ROW_COUNT; }
-  const char* label(int i) const override {
-    switch (i) {
-      case ROW_STATUS:   return "Status";
-      case ROW_CLI:      return "Command line";
-      default:           return "Settings";
-    }
-  }
-};
-static HubModel s_hubModel;
-
 void RepeaterManageApplet::setTarget(const uint8_t* pubKey, const char* name) {
-  memcpy(_pub, pubKey, 6);
-  if (name) { strncpy(_name, name, sizeof(_name) - 1); _name[sizeof(_name) - 1] = 0; }
-  else _name[0] = 0;
+  setTargetFields(_pub, _name, sizeof(_name), pubKey, name);
+}
+
+void RepeaterManageApplet::activateTab(int t) {
+  _tab = t;
+  _tabs.setSelected(t);
+  if (!_ctx) return;
+  switch (t) {
+    case 0: statusApplet().onShow(*_ctx); break;
+    case 1: commandLineApplet().onShow(*_ctx); break;
+    default: repeaterSettingsApplet().onShow(*_ctx); break;
+  }
 }
 
 void RepeaterManageApplet::onStart(AppletContext& ctx) {
   _host = ctx.host;
-  _menu.setModel(&s_hubModel);
-  _menu.resetSelection();
+  _app  = ctx.app;
+  _ctxStore = ctx;
+  _ctx  = &_ctxStore;
+
+  // Forward target to all three views so their CLI/status calls go to the right node.
+  statusApplet().setTarget(_pub, _name);
+  commandLineApplet().setTarget(_pub, _name);
+  repeaterSettingsApplet().setTarget(_pub, _name);
+
+  // Full reset of embedded views (same state as if each were pushed standalone).
+  commandLineApplet().onStart(ctx);          // clears log, resets pending
+  repeaterSettingsApplet().onStart(ctx);     // resets menu selection
+
+  _tabs.clear();
+  _tabs.addTab("Status",   (uint16_t)Icon::Radio);
+  _tabs.addTab("Cmd",      (uint16_t)Icon::Comment);
+  _tabs.addTab("Settings", (uint16_t)Icon::Settings);
+
+  // Land on the Status tab and auto-fire the first status request.
+  activateTab(0);
 }
 
 int RepeaterManageApplet::onRender(Canvas& c) {
-  const int w = c.width(), h = c.height();
-  const Font* cap = fontCaption();
-  int caph = c.lineHeight(cap);
-  c.drawText(cap, 2, 1, _name[0] ? _name : "Repeater", DisplayDriver::LIGHT, TextAlign::Left);
-  int top = caph + 2;
-  _menu.draw(c, 0, top, w, h - top);
-  return _menu.needsAnimation() ? ListMenu::TICK_MS : 1000;
+  int w = c.width(), h = c.height();
+  static const int BAR_H = 13;
+  _tabs.setBattery(_app ? _app->batteryMillivolts() : 0);
+  _tabs.draw(c, 0, 0, w, BAR_H);
+  int bodyY = BAR_H + 1;
+  int bodyH = h - bodyY;
+  switch (_tab) {
+    case 0: return statusApplet().renderBody(c, 0, bodyY, w, bodyH);
+    case 1: return commandLineApplet().renderBody(c, 0, bodyY, w, bodyH);
+    default: return repeaterSettingsApplet().renderBody(c, 0, bodyY, w, bodyH);
+  }
 }
 
 bool RepeaterManageApplet::onInput(InputEvent ev) {
-  if (_menu.onInput(ev)) return true;      // NavUp/Down move the selection
-  if (ev == InputEvent::Select) {
-    switch (_menu.selected()) {
-      case ROW_CLI:
-        commandLineApplet().setTarget(_pub, _name);
-        if (_host) _host->push(&commandLineApplet());
-        return true;
-      default:
-        if (_host) _host->postToast("Coming soon");
-        return true;
-    }
+  // Tab bar handles NavLeft/NavRight; on switch activate the new view.
+  if (_tabs.onInput(ev)) {
+    activateTab(_tabs.selected());
+    return true;
+  }
+  // Delegate everything else to the active embedded view.
+  switch (_tab) {
+    case 0: if (statusApplet().onInput(ev)) return true; break;
+    case 1: if (commandLineApplet().onInput(ev)) return true; break;
+    default: if (repeaterSettingsApplet().onInput(ev)) return true; break;
   }
   return false;   // Back bubbles: host pops us back to contact detail
 }

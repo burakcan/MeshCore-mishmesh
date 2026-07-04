@@ -72,8 +72,8 @@ void formatClock(char* out, uint16_t cap, const LocalTime& lt, bool fmt12h) {
   snprintf(out, cap, "%u:%02u %s", h, lt.minute, lt.hour < 12 ? "AM" : "PM");
 }
 
-static const char* MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+const char* const MONTHS[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 void formatDate(char* out, uint16_t cap, const LocalTime& lt, DateFormat fmt) {
   switch (fmt) {

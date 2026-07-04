@@ -78,9 +78,7 @@ void ScrollText::draw(Canvas& c, int x, int y, int w, int h) {
     ly += lineHt[i];
   }
   if (scroll) {
-    int thumbH = h * h / contentH; if (thumbH < 3) thumbH = 3;
-    int thumbY = (h - thumbH) * _scrollPx / maxScroll;
-    view.fillRect(w - 2, thumbY, 2, thumbH, DisplayDriver::LIGHT);
+    view.drawScrollbarThumb(w - 2, h, contentH, _scrollPx);
   }
 }
 

@@ -4,9 +4,9 @@
 namespace mishmesh { namespace sound {
 
 // Equal-tempered octave-4 frequencies, semitone 0=C .. 11=B.
-static const uint16_t kOctave4Hz[12] = {
-  262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494
-};
+// Defined once in ScoreSource.cpp; declared extern so the table isn't emitted
+// per-including-TU (it was duplicated across ScoreSource + RtttlSource).
+extern const uint16_t kOctave4Hz[12];
 
 // Frequency for a semitone (0..11) at an octave offset relative to octave 4.
 // Each octave up doubles the frequency, so a bit-shift is exact enough for a

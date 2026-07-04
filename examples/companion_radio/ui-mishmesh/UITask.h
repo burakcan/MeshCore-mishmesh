@@ -381,6 +381,20 @@ public:
   uint32_t cliSeq() const override;
   bool     cliResult(const uint8_t* pubKey, uint32_t afterSeq, bool& ok, const char*& response) const override;
   // [/mishmesh]
+  // [mishmesh] repeater status (binary) + login clock
+  bool     requestStatus(const uint8_t* pubKey) override;
+  uint32_t statusSeq() const override;
+  bool     latestStatus(const uint8_t* pubKey, mishmesh::RepeaterStatusView& out) const override;
+  uint32_t loginClock(const uint8_t* pubKey) const override;
+  // [/mishmesh]
+  // [mishmesh] repeater ACL (binary GET_ACCESS_LIST)
+  bool     requestAccessList(const uint8_t* pubKey) override;
+  uint32_t accessListSeq() const override;
+  bool     latestAccessList(const uint8_t* pubKey, mishmesh::AccessListView& out) const override;
+  // [/mishmesh]
+  // [mishmesh] Ed25519 keygen: delegates to MyMesh::uiMakeIdentityHex (firmware-only).
+  bool makeIdentityHex(const char* seedHex, char* out, int outCap) override;
+  // [/mishmesh]
   mishmesh::AutoAddConfig getAutoAdd() const override;
   void setAutoAdd(const mishmesh::AutoAddConfig& cfg) override;
   int removeNonChat() override;

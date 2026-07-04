@@ -4,6 +4,7 @@
 #include "ChatNotifyApplet.h"
 #include "ChannelShareApplet.h"
 #include <mishmesh/applets/KeypadApplet.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Anim.h>
@@ -90,8 +91,7 @@ void MessageThreadApplet::statusLabel(const MessageView& m, char* buf, int cap) 
 
 void MessageThreadApplet::setTarget(const ConvoKey& k, const char* fallbackName) {
   _key = k;
-  if (fallbackName) { strncpy(_fallbackName, fallbackName, sizeof(_fallbackName) - 1);
-                      _fallbackName[sizeof(_fallbackName) - 1] = 0; }
+  if (fallbackName) { copyStr(_fallbackName, sizeof(_fallbackName), fallbackName); }
   else _fallbackName[0] = 0;
 }
 
@@ -429,10 +429,7 @@ int MessageThreadApplet::onRender(Canvas& c) {
 
   // Scrollbar thumb on the right edge (content already cleared SB_GUTTER for it).
   if (scrollbar) {
-    int thumbH = _bodyH * _bodyH / _contentH; if (thumbH < 3) thumbH = 3;
-    int maxScroll = _contentH - _bodyH;
-    int thumbY = maxScroll > 0 ? (_bodyH - thumbH) * _scrollY / maxScroll : 0;
-    body.fillRect(body.width() - 2, thumbY, 2, thumbH, DisplayDriver::LIGHT);
+    body.drawScrollbarThumb(body.width() - 2, _bodyH, _contentH, _scrollY);
   }
 
   // New-message chevron: a small downward marker pinned to the bottom-centre of

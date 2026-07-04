@@ -37,12 +37,7 @@ private:
   } _model;
 
   // Per-item action menu (Edit / Move / Delete).
-  struct ActionModel : ListModel {
-    int count() const override { return 3; }
-    const char* label(int i) const override {
-      return i == 0 ? "Edit" : i == 1 ? "Move" : "Delete";
-    }
-  } _actionModel;
+  StaticListModel _actionModel;
 
   AppletHost*   _host = nullptr;
   ListMenu      _list;

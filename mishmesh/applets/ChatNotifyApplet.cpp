@@ -1,6 +1,7 @@
 // mishmesh/applets/ChatNotifyApplet.cpp
 #include "ChatNotifyApplet.h"
 #include <mishmesh/applets/SoundPickerApplet.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/sound/Sounds.h>
@@ -14,8 +15,7 @@ ChatNotifyApplet::ChatNotifyApplet() : Applet("Notify settings") {}
 void ChatNotifyApplet::setTarget(const ConvoKey& key, const char* name) {
   _key = key;
   _isChannel = (key.type == 1);
-  strncpy(_name, name ? name : "", sizeof(_name) - 1);
-  _name[sizeof(_name) - 1] = 0;
+  copyStr(_name, sizeof(_name), name ? name : "");
 }
 
 void ChatNotifyApplet::onStart(AppletContext& ctx) {

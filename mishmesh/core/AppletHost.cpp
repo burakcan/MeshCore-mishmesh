@@ -1,4 +1,5 @@
 #include <mishmesh/core/AppletHost.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/InputSource.h>
 #include <mishmesh/text/Fonts.h>
 #include <helpers/ui/DisplayDriver.h>
@@ -33,8 +34,7 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
 }
 
 void AppletHost::postToast(const char* msg) {
-  strncpy(_toast_msg, msg ? msg : "", sizeof(_toast_msg) - 1);
-  _toast_msg[sizeof(_toast_msg) - 1] = 0;
+  copyStr(_toast_msg, sizeof(_toast_msg), msg ? msg : "");
   _toast_pending = true;   // stamped with a deadline on the next loop (needs now)
   _dirty = true;
 }

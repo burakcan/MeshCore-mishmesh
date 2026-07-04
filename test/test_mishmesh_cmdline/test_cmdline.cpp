@@ -6,6 +6,8 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/applets/CommandLineApplet.h>
 #include <mishmesh/applets/RepeaterManageApplet.h>
+#include <mishmesh/applets/RepeaterSettingsApplet.h>
+#include <mishmesh/applets/StatusApplet.h>
 
 using mishmesh::PendingRequest;
 
@@ -150,7 +152,11 @@ TEST(CommandLine, TimeoutAppendsNoResponse) {
   EXPECT_TRUE(sawTimeout);
 }
 
-TEST(RepeaterHub, RoutesCommandLineToConsole) {
+// --- RepeaterHub tab-model tests ---
+// The hub is a TabBar host (Status / Cmd / Settings). No push on tab switch;
+// drill-ins (keypad from CLI, panels from Settings) still push normally.
+
+TEST(RepeaterHub, OpensOnStatusTabAndFiresRequest) {
   FakeContactsService svc;
   FakeDisplayDriver d;
   mishmesh::AppletContext ctx; ctx.contacts = &svc;
@@ -160,28 +166,80 @@ TEST(RepeaterHub, RoutesCommandLineToConsole) {
   host.setRoot(&mishmesh::repeaterManageApplet());
   host.loop(1);
 
-  // Rows: 0 Status, 1 Command line, 2 Settings. Move to row 1 and select.
-  host.dispatch(mishmesh::InputEvent::NavDown);
+  // Hub opens on Status tab (index 0) and auto-fires the status request.
+  EXPECT_EQ(0, mishmesh::repeaterManageApplet().selectedTabForTest());
+  EXPECT_EQ(FakeContactsService::keyStr(pk), svc.lastStatusReq);
+  EXPECT_EQ(1, host.depth());   // hub is the only applet on the stack
+}
+
+TEST(RepeaterHub, NavRightSwitchesTabsWithoutPush) {
+  FakeContactsService svc;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  uint8_t pk[6] = {'R','E','P','0','0','1'};
+  mishmesh::repeaterManageApplet().setTarget(pk, "Rep1");
+  host.setRoot(&mishmesh::repeaterManageApplet());
+  host.loop(1);
+
+  // NavRight once -> Command line tab.
+  host.dispatch(mishmesh::InputEvent::NavRight);
+  host.loop(2);
+  EXPECT_EQ(1, mishmesh::repeaterManageApplet().selectedTabForTest());
+  EXPECT_EQ(1, host.depth());   // still just the hub
+
+  // NavRight again -> Settings tab.
+  host.dispatch(mishmesh::InputEvent::NavRight);
+  host.loop(3);
+  EXPECT_EQ(2, mishmesh::repeaterManageApplet().selectedTabForTest());
+  EXPECT_EQ(1, host.depth());   // still just the hub
+}
+
+TEST(RepeaterHub, SettingsTabSelectPushesPanel) {
+  FakeContactsService svc;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  uint8_t pk[6] = {'R','E','P','0','0','1'};
+  mishmesh::repeaterManageApplet().setTarget(pk, "Rep1");
+  host.setRoot(&mishmesh::repeaterManageApplet());
+  host.loop(1);
+
+  // Switch to Settings tab (tab 2).
+  host.dispatch(mishmesh::InputEvent::NavRight);
+  host.dispatch(mishmesh::InputEvent::NavRight);
+  host.loop(2);
+  EXPECT_EQ(2, mishmesh::repeaterManageApplet().selectedTabForTest());
+  EXPECT_EQ(1, host.depth());
+
+  // Select the first catalog row (Public info) - should push the settings panel.
+  host.dispatch(mishmesh::InputEvent::Select);
+  host.loop(3);
+  EXPECT_EQ(2, host.depth());   // hub + panel
+}
+
+TEST(RepeaterHub, StatusRefreshButtonRefires) {
+  FakeContactsService svc;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  uint8_t pk[6] = {'R','E','P','0','0','1'};
+  mishmesh::repeaterManageApplet().setTarget(pk, "Rep1");
+  host.setRoot(&mishmesh::repeaterManageApplet());
+  host.loop(1);
+
+  // Opening fires the first request.
+  EXPECT_EQ(FakeContactsService::keyStr(pk), svc.lastStatusReq);
+  size_t reqsBefore = svc.calls.size();
+
+  // Select always re-requests (Refresh is the header; no focus toggle needed).
   host.dispatch(mishmesh::InputEvent::Select);
   host.loop(2);
 
-  EXPECT_EQ(2, host.depth());   // hub + console
-  EXPECT_EQ(0, memcmp(mishmesh::commandLineApplet().targetForTest(), pk, 6));
-}
-
-TEST(RepeaterHub, StatusRowDoesNotPush) {
-  FakeContactsService svc;
-  FakeDisplayDriver d;
-  mishmesh::AppletContext ctx; ctx.contacts = &svc;
-  mishmesh::AppletHost host(&d, ctx);
-  uint8_t pk[6] = {'R','E','P','0','0','1'};
-  mishmesh::repeaterManageApplet().setTarget(pk, "Rep1");
-  host.setRoot(&mishmesh::repeaterManageApplet());
-  host.loop(1);
-
-  host.dispatch(mishmesh::InputEvent::Select);   // row 0 = Status = "coming soon"
-  host.loop(2);
-  EXPECT_EQ(1, host.depth());   // no push
+  bool sawNewReq = false;
+  for (size_t i = reqsBefore; i < svc.calls.size(); i++)
+    if (svc.calls[i] == "reqstatus") sawNewReq = true;
+  EXPECT_TRUE(sawNewReq);
 }
 
 TEST(CommandLine, SelectWhilePendingDoesNotOpenKeypad) {

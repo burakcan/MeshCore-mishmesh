@@ -1,4 +1,5 @@
 #include <mishmesh/applets/ContactDetailApplet.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/applets/ContactPermissionsApplet.h>
 #include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/applets/ServerLoginApplet.h>
@@ -172,8 +173,7 @@ bool ContactDetailApplet::submitSetPath(void* ctx) {
 }
 
 void ContactDetailApplet::setSetPathTextForTest(const char* s, uint8_t hashSize) {
-  strncpy(_pathBuf, s ? s : "", sizeof(_pathBuf) - 1);
-  _pathBuf[sizeof(_pathBuf) - 1] = 0;
+  copyStr(_pathBuf, sizeof(_pathBuf), s ? s : "");
   _hashSize = hashSize;
 }
 
@@ -188,7 +188,7 @@ void ContactDetailApplet::refresh() {
       for (int i = 0; i < n; i++) {
         ContactView v;
         if (_svc->getByKind(kind, i, v) && memcmp(v.pubKey, _pubkey, 6) == 0) {
-          strncpy(_name, v.name, sizeof(_name) - 1); _name[sizeof(_name) - 1] = 0;
+          copyStr(_name, sizeof(_name), v.name);
           _type = v.type; _hasPath = v.hasPath; _hops = v.hops;
           _favourite = v.isFavourite; _lastAdvert = v.lastAdvert;
           memcpy(_fullKey, v.pubKey, PUBKEY_LEN);

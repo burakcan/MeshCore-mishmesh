@@ -642,6 +642,58 @@ bool UITask::cliResult(const uint8_t* pk, uint32_t afterSeq, bool& ok, const cha
 }
 // [/mishmesh]
 
+// [mishmesh] repeater status: request via the_mesh, decode the latched 56 raw bytes by
+// offset into the framework-agnostic view (companion + repeater are both little-endian).
+bool UITask::requestStatus(const uint8_t* pk) { return the_mesh.uiRequestStatus(pk); }
+uint32_t UITask::statusSeq() const { return the_mesh.uiLastStatus().seq; }
+bool UITask::latestStatus(const uint8_t* pk, mishmesh::RepeaterStatusView& out) const {
+  const MyMesh::StatusLatch& l = the_mesh.uiLastStatus();
+  if (memcmp(l.pubkey, pk, 6) != 0 || l.len < MyMesh::MM_STATUS_MAX) { out.valid = false; return false; }
+  const uint8_t* d = l.raw;
+  memcpy(&out.battMilliVolts, d + 0,  2);
+  memcpy(&out.txQueueLen,     d + 2,  2);
+  memcpy(&out.noiseFloor,     d + 4,  2);
+  memcpy(&out.lastRssi,       d + 6,  2);
+  memcpy(&out.packetsRecv,    d + 8,  4);
+  memcpy(&out.packetsSent,    d + 12, 4);
+  memcpy(&out.airTxSecs,      d + 16, 4);
+  memcpy(&out.upTimeSecs,     d + 20, 4);
+  memcpy(&out.sentFlood,      d + 24, 4);
+  memcpy(&out.sentDirect,     d + 28, 4);
+  memcpy(&out.recvFlood,      d + 32, 4);
+  memcpy(&out.recvDirect,     d + 36, 4);
+  memcpy(&out.errEvents,      d + 40, 2);
+  memcpy(&out.lastSnrX4,      d + 42, 2);
+  memcpy(&out.directDups,     d + 44, 2);
+  memcpy(&out.floodDups,      d + 46, 2);
+  memcpy(&out.airRxSecs,      d + 48, 4);
+  memcpy(&out.recvErrors,     d + 52, 4);
+  out.valid = true;
+  return true;
+}
+uint32_t UITask::loginClock(const uint8_t* pk) const { return the_mesh.uiLoginClock(pk); }
+// [/mishmesh]
+
+// [mishmesh] repeater ACL: request via the_mesh, decode latched 7-byte entries (6 pubkey + 1 perms).
+bool UITask::requestAccessList(const uint8_t* pk) { return the_mesh.uiRequestAccessList(pk); }
+uint32_t UITask::accessListSeq() const { return the_mesh.uiLastAcl().seq; }
+bool UITask::latestAccessList(const uint8_t* pk, mishmesh::AccessListView& out) const {
+  const MyMesh::AclLatch& l = the_mesh.uiLastAcl();
+  if (memcmp(l.pubkey, pk, 6) != 0) { out.valid = false; return false; }
+  int n = l.len / 7; if (n > mishmesh::MAX_ACL) n = mishmesh::MAX_ACL;
+  out.count = (uint8_t)n;
+  for (int i = 0; i < n; i++) { memcpy(out.entries[i].pubkey, &l.raw[i*7], 6); out.entries[i].perms = l.raw[i*7+6]; }
+  out.valid = true;
+  return true;
+}
+// [/mishmesh]
+
+// [mishmesh] Ed25519 keygen: delegates to the firmware seam (MyMesh::uiMakeIdentityHex).
+bool UITask::makeIdentityHex(const char* seedHex, char* out, int outCap) {
+  return the_mesh.uiMakeIdentityHex(seedHex, out, outCap);
+}
+// [/mishmesh]
+
 mishmesh::AutoAddConfig UITask::getAutoAdd() const {
   NodePrefs* p = the_mesh.getNodePrefs();
   mishmesh::AutoAddConfig c;

@@ -145,6 +145,7 @@ void ContactsApplet::onStart(AppletContext& ctx) {
   _svc = ctx.contacts;
   _app = ctx.app;
   _pickMode = _pickRequested; _pickRequested = false;
+  if (!_pickMode) { _pickFn = nullptr; }
   _cache.bind(_svc);
   _models[0].bind(&_cache, ContactKind::Chat, kindIcon(ContactKind::Chat));
   _models[1].bind(&_cache, ContactKind::Repeater, kindIcon(ContactKind::Repeater));
@@ -214,6 +215,13 @@ bool ContactsApplet::onInput(InputEvent ev) {
       }
       if (ok) {
         if (_pickMode) {
+          if (_pickFn) {                       // caller wants the pubkey back
+            ContactPickFn fn = _pickFn; void* cx = _pickCtx;
+            _pickFn = nullptr; _pickCtx = nullptr;
+            fn(cx, v.pubKey);                  // set the caller's state FIRST
+            if (_host) _host->pop();           // then return to the caller (fires onForeground)
+            return true;
+          }
           messageThreadApplet().setTarget(directKey(v.pubKey), v.name);
           messageThreadApplet().composeOnOpen();   // picker = intent to write -> focus Write button
           if (_host) _host->replace(&messageThreadApplet());

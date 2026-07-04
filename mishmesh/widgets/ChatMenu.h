@@ -1,6 +1,7 @@
 // mishmesh/widgets/ChatMenu.h
 #pragma once
 #include <mishmesh/widgets/ListMenu.h>
+#include <mishmesh/core/StrUtil.h>
 #include <mishmesh/widgets/ConfirmDialog.h>
 #include <mishmesh/core/MessagesService.h>
 
@@ -28,13 +29,12 @@ public:
   void setTarget(const ConvoKey& k) { _key = k; _model.isChannel = (k.type == 1); }
   // Shows `name` in the Region row's value column, or "None" when empty/null.
   void setRegion(const char* name) {
-    if (name && name[0]) { strncpy(_region, name, sizeof(_region) - 1); _region[sizeof(_region) - 1] = 0; }
+    if (name && name[0]) { copyStr(_region, sizeof(_region), name); }
     else strcpy(_region, "None");
   }
   // Shows `s` in the Notifications row's value column ("All"/"Mentions"/"Mute").
   void setNotifyLabel(const char* s) {
-    strncpy(_notify, s ? s : "All", sizeof(_notify) - 1);
-    _notify[sizeof(_notify) - 1] = 0;
+    copyStr(_notify, sizeof(_notify), s ? s : "All");
   }
   void reset() {
     _menu.setModel(&_model); _menu.setRowHeight(ROW_H); _menu.resetSelection();

@@ -3,6 +3,7 @@
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/widgets/StatusBar.h>
 #include <mishmesh/widgets/StepperDialog.h>
+#include <mishmesh/widgets/FormView.h>
 
 namespace mishmesh {
 
@@ -49,7 +50,7 @@ public:
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
 
-  int focusedRowForTest() const { return _focus; }   // 0.._n-1 = fields, _n = button
+  int focusedRowForTest() const { return _view.focus(); }   // 0.._n-1 = fields, _n = button
 
 private:
   bool submit();                 // true => caller should pop
@@ -59,14 +60,13 @@ private:
   AppServices* _app = nullptr;
   StatusBar    _bar;
   StepperDialog _stepper;
+  FormView     _view;
   bool         _editingStepper = false;
   int          _stepperField = -1;
   const char*  _title = "";
   const char*  _submitLabel = "Submit";
   Field        _fields[MAX_FIELDS];
   int          _n = 0;
-  int          _focus = 0;       // 0.._n-1 = fields, _n = button row
-  int          _scroll = 0;      // vertical scroll offset (px), for tall forms
   FormSubmitFn _onSubmit = nullptr;
   void*        _ctx = nullptr;
 };

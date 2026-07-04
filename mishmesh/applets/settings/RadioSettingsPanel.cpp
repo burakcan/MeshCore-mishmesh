@@ -1,5 +1,6 @@
 #include <mishmesh/applets/settings/RadioSettingsPanel.h>
 #include <mishmesh/applets/settings/RadioPresets.h>
+#include <mishmesh/applets/settings/RadioFormat.h>
 #include <mishmesh/applets/RadioValuePickerApplet.h>
 #include <mishmesh/applets/RadioPresetPickerApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
@@ -30,11 +31,8 @@ const char* RadioSettingsPanel::Model::value(int i) const {
       int m = matchPreset(cfg->freqMhz, cfg->bwKhz, cfg->sf, cfg->cr);
       return m >= 0 ? PRESETS[m].name : "Custom";
     }
-    case 1: snprintf(vbuf, sizeof(vbuf), "%g MHz", cfg->freqMhz); return vbuf;
-    case 2: snprintf(vbuf, sizeof(vbuf), "%g kHz", cfg->bwKhz);  return vbuf;
-    case 3: snprintf(vbuf, sizeof(vbuf), "SF%u", (unsigned)cfg->sf); return vbuf;
-    case 4: snprintf(vbuf, sizeof(vbuf), "CR%u", (unsigned)cfg->cr); return vbuf;
-    case 5: snprintf(vbuf, sizeof(vbuf), "%d dBm", (int)cfg->txPowerDbm); return vbuf;
+    case 1: case 2: case 3: case 4: case 5:
+      return formatRadioField(vbuf, sizeof(vbuf), i, *cfg);
     default:   // Repeater: Off, or the active off-grid frequency
       if (cfg->repeater) { snprintf(vbuf, sizeof(vbuf), "%.3f MHz", cfg->freqMhz); return vbuf; }
       return "Off";

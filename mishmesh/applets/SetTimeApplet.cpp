@@ -6,8 +6,7 @@
 
 namespace mishmesh {
 
-static const char* MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+// MONTHS is shared from TimeFormat.h (single definition in TimeFormat.cpp).
 
 void SetTimeApplet::buildOrder() {
   int d0 = Day, d1 = Month, d2 = Year;

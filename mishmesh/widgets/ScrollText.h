@@ -46,6 +46,13 @@ public:
   int  count() const { return _count; }
   const char* lineForTest(int i) const { return (i >= 0 && i < _count) ? _lines[i] : ""; }
   bool needsAnimation() const { return _animating; }
+  // True when the scroll position is at or past the bottom of the content.
+  // Uses state cached by the last draw(); returns true before the first draw
+  // (content fits in a zero-height view - no overshoot possible).
+  bool atBottom() const {
+    int maxScroll = _contentH > _viewH ? _contentH - _viewH : 0;
+    return _scrollTarget >= maxScroll;
+  }
   bool onInput(InputEvent ev) override;     // NavUp/Down scroll; else false
   void draw(Canvas& c, int x, int y, int w, int h) override;
 };
