@@ -10,7 +10,9 @@ namespace mishmesh {
 // scrollbar appears when content overflows. Fixed storage, no heap.
 class ScrollText : public Widget {
   static const int MAX_LINES = 16;
-  static const int LINE_LEN = 40;
+public:
+  static const int LINE_LEN = 64;
+private:
   char        _lines[MAX_LINES][LINE_LEN];
   int         _count;
   Widget*     _header;
@@ -18,8 +20,10 @@ class ScrollText : public Widget {
   int         _scrollPx, _scrollTarget;   // animated offset eases toward the target
   bool        _animReady;   // false => snap on the next draw (opened/cleared)
   bool        _animating;
+  bool        _wrap = false;    // true => word-wrap each line instead of ellipsizing
   mutable int _lineH;       // from the last draw, for input scrolling
   mutable int _viewH;
+  mutable int _contentH = 0;    // total content height from the last draw (wrap-aware)
 public:
   ScrollText() : _count(0), _header(nullptr), _headerH(0), _scrollPx(0), _scrollTarget(0),
                  _animReady(false), _animating(false), _lineH(9), _viewH(0) {}
@@ -30,8 +34,15 @@ public:
     if (!keepScroll) { _scrollPx = _scrollTarget = 0; _animReady = false; }
   }
   void setHeader(Widget* hdr, int height) { _header = hdr; _headerH = height; }
+  // Word-wrap each line to the panel width instead of truncating with an ellipsis.
+  // Opt-in (default off) so existing single-line callers are unchanged. For consoles
+  // / long-form text where full readability matters more than one row per entry.
+  void setWrap(bool on) { _wrap = on; }
   void addLine(const char* s);
   void addf(const char* fmt, ...);
+  // Snap the view to the bottom on the next draw (e.g. after appending output).
+  // draw() clamps the oversized target to the real max scroll.
+  void scrollToEnd() { _scrollTarget = (1 << 20); _animReady = false; }
   int  count() const { return _count; }
   const char* lineForTest(int i) const { return (i >= 0 && i < _count) ? _lines[i] : ""; }
   bool needsAnimation() const { return _animating; }

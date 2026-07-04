@@ -27,6 +27,16 @@ public:
   uint32_t loginSeqVal = 0;
   std::string lastLogin;
 
+  // cli simulation
+  uint32_t cliSeqVal = 0;
+  bool     cliOk = false;
+  std::string cliResp;
+  std::string lastCli;
+  uint8_t  cliPub[6] = {0};
+  void simulateCliReply(const uint8_t* pk, const char* text) {
+    memcpy(cliPub, pk, 6); cliResp = text ? text : ""; cliOk = true; cliSeqVal++;
+  }
+
   // Action log
   std::vector<std::string> calls;
   std::string lastDeleted, lastTelemetryReq, lastResetPath, lastCleared, lastPing;
@@ -198,6 +208,15 @@ public:
     (void)pk; ok = loginOk; isAdmin = loginAdmin; perms = loginPerms; return true;
   }
   bool isLoggedIn(const uint8_t* pk) const override { (void)pk; return loggedIn; }
+  bool sendCliCommand(const uint8_t* pk, const char* cmd) override {
+    calls.push_back("cli"); memcpy(cliPub, pk, 6); lastCli = cmd ? cmd : ""; return true;
+  }
+  uint32_t cliSeq() const override { return cliSeqVal; }
+  bool cliResult(const uint8_t* pk, uint32_t afterSeq, bool& ok, const char*& response) const override {
+    if (memcmp(cliPub, pk, 6) != 0) return false;
+    if (cliSeqVal <= afterSeq) return false;      // not newer than when the request fired
+    ok = cliOk; response = cliResp.c_str(); return true;
+  }
   mishmesh::AutoAddConfig getAutoAdd() const override { return cfg; }
   void setAutoAdd(const mishmesh::AutoAddConfig& c) override { cfg = c; calls.push_back("setautoadd"); }
   int removeNonChat() override { calls.push_back("removenonchat"); int n=(int)(repeaters.size()+rooms.size()+sensors.size()); repeaters.clear();rooms.clear();sensors.clear(); return n; }

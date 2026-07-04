@@ -24,10 +24,8 @@ void ScrollText::addf(const char* fmt, ...) {
 }
 
 bool ScrollText::onInput(InputEvent ev) {
-  int bodyTop = _headerH + (_header && _headerH > 0 ? 2 : 0);
-  int contentH = bodyTop + _count * _lineH;
-  int maxScroll = contentH > _viewH ? contentH - _viewH : 0;
-  // Move the target a line; draw() eases _scrollPx toward it.
+  // Uses the content height cached by the last draw() (wrap-aware); scrolls a line at a time.
+  int maxScroll = _contentH > _viewH ? _contentH - _viewH : 0;
   if (ev == InputEvent::NavDown) { _scrollTarget += _lineH; if (_scrollTarget > maxScroll) _scrollTarget = maxScroll; return true; }
   if (ev == InputEvent::NavUp)   { _scrollTarget -= _lineH; if (_scrollTarget < 0) _scrollTarget = 0; return true; }
   return false;
@@ -35,11 +33,29 @@ bool ScrollText::onInput(InputEvent ev) {
 
 void ScrollText::draw(Canvas& c, int x, int y, int w, int h) {
   Canvas view = c.region(x, y, w, h);
-  int lh = view.lineHeight(fontBody());
+  const mf_font_s* font = fontBody();
+  int lh = view.lineHeight(font);
   _lineH = lh; _viewH = h;
 
   int bodyTop = _headerH + (_header && _headerH > 0 ? 2 : 0);   // gap below the header
-  int contentH = bodyTop + _count * lh;
+
+  // Per-line heights: one row when ellipsizing, the wrapped height when wrapping.
+  // In wrap mode reserve the scrollbar gutter unconditionally so the wrap width
+  // (and thus the measured heights) don't change when the bar appears/disappears.
+  int cwWrap = w - 4;
+  int lineHt[MAX_LINES];
+  int contentH = bodyTop;
+  for (int i = 0; i < _count; i++) {
+    if (_wrap) {
+      int mh = view.measureTextWrapped(font, cwWrap, _lines[i]);
+      lineHt[i] = mh > 0 ? mh : lh;   // keep blank lines one row tall
+    } else {
+      lineHt[i] = lh;
+    }
+    contentH += lineHt[i];
+  }
+  _contentH = contentH;
+
   int maxScroll = contentH > h ? contentH - h : 0;
   if (_scrollTarget > maxScroll) _scrollTarget = maxScroll;
   if (_scrollTarget < 0) _scrollTarget = 0;
@@ -47,16 +63,19 @@ void ScrollText::draw(Canvas& c, int x, int y, int w, int h) {
   else { int minStep = lh / 2; if (minStep < 3) minStep = 3; _scrollPx = approach(_scrollPx, _scrollTarget, minStep); }
   _animating = (_scrollPx != _scrollTarget);
   bool scroll = contentH > h;
-  int cw = scroll ? w - 4 : w;
+  int cw = _wrap ? cwWrap : (scroll ? w - 4 : w);
 
   if (_header && _headerH > 0) {
     int hy = -_scrollPx;
     if (hy + _headerH > 0 && hy < h) _header->draw(view, 0, hy, cw, _headerH);  // reserve scrollbar gutter
   }
+  int ly = bodyTop - _scrollPx;
   for (int i = 0; i < _count; i++) {
-    int ly = bodyTop + i * lh - _scrollPx;
-    if (ly + lh <= 0 || ly >= h) continue;
-    view.drawTextEllipsized(fontBody(), 0, ly, cw, _lines[i], DisplayDriver::LIGHT);
+    if (ly + lineHt[i] > 0 && ly < h) {
+      if (_wrap) view.drawTextWrapped(font, 0, ly, cw, _lines[i], DisplayDriver::LIGHT);
+      else       view.drawTextEllipsized(font, 0, ly, cw, _lines[i], DisplayDriver::LIGHT);
+    }
+    ly += lineHt[i];
   }
   if (scroll) {
     int thumbH = h * h / contentH; if (thumbH < 3) thumbH = 3;

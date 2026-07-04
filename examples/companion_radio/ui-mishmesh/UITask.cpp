@@ -629,6 +629,19 @@ bool UITask::isLoggedIn(const uint8_t* pk) const {
   return false;
 }
 
+// [mishmesh] admin CLI command channel. Reply arrives asynchronously and is latched
+// in MyMesh::_ui_cli ring (bumped in onCommandDataRecv); we poll it like telemetry.
+bool UITask::sendCliCommand(const uint8_t* pk, const char* cmd) {
+  return the_mesh.mishmeshSendCli(pk, cmd);
+}
+uint32_t UITask::cliSeq() const { return the_mesh.uiCliSeq(); }
+bool UITask::cliResult(const uint8_t* pk, uint32_t afterSeq, bool& ok, const char*& response) const {
+  if (!the_mesh.uiCliReply(pk, afterSeq, response)) return false;
+  ok = true;
+  return true;
+}
+// [/mishmesh]
+
 mishmesh::AutoAddConfig UITask::getAutoAdd() const {
   NodePrefs* p = the_mesh.getNodePrefs();
   mishmesh::AutoAddConfig c;

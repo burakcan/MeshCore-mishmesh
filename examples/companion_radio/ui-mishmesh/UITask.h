@@ -376,6 +376,10 @@ public:
   uint32_t loginSeq() const override { return _loginSeq; }
   bool loginResult(const uint8_t* pubKey, bool& ok, bool& isAdmin, uint8_t& perms) const override;
   bool isLoggedIn(const uint8_t* pubKey) const override;
+  // [mishmesh] admin CLI command channel (delegates to the_mesh; reply latched in MyMesh)
+  bool     sendCliCommand(const uint8_t* pubKey, const char* cmd) override;
+  uint32_t cliSeq() const override;
+  bool     cliResult(const uint8_t* pubKey, uint32_t afterSeq, bool& ok, const char*& response) const override;
   // [/mishmesh]
   mishmesh::AutoAddConfig getAutoAdd() const override;
   void setAutoAdd(const mishmesh::AutoAddConfig& cfg) override;

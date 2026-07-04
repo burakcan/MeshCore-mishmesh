@@ -153,6 +153,24 @@ struct ContactsService {
   virtual bool     isLoggedIn(const uint8_t* pubKey) const { (void)pubKey; return false; }
   // [/mishmesh]
 
+  // [mishmesh] Admin CLI command to a logged-in server (repeater/room). sendCliCommand()
+  // sends a text command; the reply arrives asynchronously (server round-trip) and bumps
+  // cliSeq(). cliResult() reports the outcome for pubKey - false when no reply is latched
+  // for this contact (e.g. a reply for a different one). `response` points at adapter-owned
+  // storage valid until the next reply; consumers copy what they keep. `ok` is reserved for
+  // a future reject signal and is currently always true when a reply is present. Non-pure so
+  // other implementers / host fakes keep compiling.
+  virtual bool     sendCliCommand(const uint8_t* pubKey, const char* cmd) { (void)pubKey; (void)cmd; return false; }
+  virtual uint32_t cliSeq() const { return 0; }
+  // afterSeq: report a reply only if it is newer than this (the cliSeq() captured when the
+  // request was fired) - so a stale earlier reply for the same contact is not mistaken for
+  // this one. Returns false if no newer reply for pubKey is latched. `response` points at
+  // adapter-owned storage valid until the next reply; consumers copy what they keep.
+  virtual bool     cliResult(const uint8_t* pubKey, uint32_t afterSeq, bool& ok, const char*& response) const {
+    (void)pubKey; (void)afterSeq; (void)ok; (void)response; return false;
+  }
+  // [/mishmesh]
+
   virtual AutoAddConfig getAutoAdd() const = 0;
   virtual void          setAutoAdd(const AutoAddConfig& cfg) = 0;
 
