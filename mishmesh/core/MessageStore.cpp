@@ -1,6 +1,7 @@
 // mishmesh/core/MessageStore.cpp
 #include "MessageStore.h"
 #include "MsgCodec.h"
+#include "PersistDebug.h"   // [mishmesh] TEMP: unread-persistence instrumentation
 namespace mishmesh {
 
 ConvoKey directKey(const uint8_t* p)   { ConvoKey k; k.type = 0; memcpy(k.id, p, 6); return k; }
@@ -27,7 +28,11 @@ void MessageStore::begin(MsgLogBackend* b) {
   _winCount = _winFirst = _winTotal = 0;
   if (b) {
     uint32_t n = b->loadIndex(_idxBuf, sizeof(_idxBuf));
-    if (!n || !_index.deserialize(_idxBuf, n)) rebuildIndex();
+    bool ok = n && _index.deserialize(_idxBuf, n);
+    MM_PLOG("begin: loadIndex=%lu deserialize=%d", (unsigned long)n, ok ? 1 : 0);
+    if (!ok) { rebuildIndex(); MM_PLOG("begin: REBUILT from logs"); }
+    MM_PLOG("begin: convos=%d totalUnread=%u totalNotify=%u",
+            _index.count(), (unsigned)totalUnread(), (unsigned)totalNotifyUnread());
   }
 }
 
@@ -190,7 +195,9 @@ void MessageStore::rebuildIndex() {
 void MessageStore::saveIndex() {
   if (!_backend) return;
   uint32_t n = _index.serialize(_idxBuf, sizeof(_idxBuf));
-  if (n) _backend->saveIndex(_idxBuf, n);
+  bool wrote = n && _backend->saveIndex(_idxBuf, n);
+  MM_PLOG("saveIndex: serialize=%lu wrote=%d convos=%d totalUnread=%u",
+          (unsigned long)n, wrote ? 1 : 0, _index.count(), (unsigned)totalUnread());
 }
 
 // ---- internal helpers ----

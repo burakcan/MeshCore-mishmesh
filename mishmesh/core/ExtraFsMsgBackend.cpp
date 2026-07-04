@@ -5,6 +5,7 @@
 // the FILESYSTEM typedef and File class are visible when the header is parsed.
 #include <Arduino.h>
 #include <string.h>
+#include "PersistDebug.h"   // [mishmesh] TEMP: unread-persistence instrumentation
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   #include <Adafruit_LittleFS.h>
@@ -144,6 +145,8 @@ bool ExtraFsMsgBackend::append(const char* name, const uint8_t* rec, uint32_t le
   if (!f) return false;
   size_t w = f.write(rec, len);
   f.close();
+  if (w != (size_t)len)
+    MM_PLOG("fs.append: WRITE FAILED name=%s len=%lu wrote=%lu", name, (unsigned long)len, (unsigned long)w);
   return w == (size_t)len;
 }
 
@@ -345,25 +348,27 @@ int ExtraFsMsgBackend::list(MsgLogInfo* out, int cap) const {
 // ---- index blob ----
 
 bool ExtraFsMsgBackend::saveIndex(const uint8_t* data, uint32_t len) {
-  if (!_fs) return false;
+  if (!_fs) { MM_PLOG("fs.saveIndex: no _fs"); return false; }
   closeReadCache();
   char path[32]; makeIndexPath(path, sizeof(path));
   _fs->remove(path);
   if (len == 0) return true;
   File f = _fs->open(path, FILE_O_WRITE);
-  if (!f) return false;
+  if (!f) { MM_PLOG("fs.saveIndex: open FAILED path=%s", path); return false; }
   size_t w = f.write(data, (size_t)len);
   f.close();
+  MM_PLOG("fs.saveIndex: path=%s len=%lu wrote=%lu", path, (unsigned long)len, (unsigned long)w);
   return w == (size_t)len;
 }
 
 uint32_t ExtraFsMsgBackend::loadIndex(uint8_t* dst, uint32_t cap) const {
-  if (!_fs) return 0;
+  if (!_fs) { MM_PLOG("fs.loadIndex: no _fs"); return 0; }
   char path[32]; makeIndexPath(path, sizeof(path));
   File f = _fs->open(path, FILE_O_READ);
-  if (!f) return 0;
+  if (!f) { MM_PLOG("fs.loadIndex: open FAILED (no file) path=%s", path); return 0; }
   int n = f.read(dst, (uint16_t)(cap > 65535u ? 65535u : cap));
   f.close();
+  MM_PLOG("fs.loadIndex: path=%s read=%d", path, n);
   return n > 0 ? (uint32_t)n : 0;
 }
 

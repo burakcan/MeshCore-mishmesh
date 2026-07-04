@@ -96,7 +96,11 @@ private:
   mutable int      _winTotal;              // total live records in the chat
 
   mutable uint8_t _recBuf[codec::MAX_REC]; // scratch for single-record reads (paging)
-  uint8_t _idxBuf[4096];   // serialised ConvoIndex (MIDX blob, ~3911 bytes max)
+  // Word-aligned: LittleFS programs/reads this blob directly from here on a large
+  // single transfer, and the nRF52840 QSPI DMA rejects a non-word-aligned RAM source.
+  // Without alignas, _recBuf[187] leaves _idxBuf on an odd offset and every index
+  // write silently fails (wrote=0) - the on-device unread-count persistence bug.
+  alignas(uint32_t) uint8_t _idxBuf[4096];   // serialised ConvoIndex (MIDX blob, ~3911 bytes max)
 
   struct Tracked {
     bool     used;

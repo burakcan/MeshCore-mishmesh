@@ -419,6 +419,22 @@ TEST_F(MSFix, RebuildIndexRestoresPreview) {
   EXPECT_EQ(0, memcmp(cs.preview, "last msg", 8));   // matches last appended body
 }
 
+// Reproduces the reported bug: unread counts must survive a normal reboot, where the
+// index blob was flushed to flash (saveIndex) and is intact on the next begin().
+TEST_F(MSFix, UnreadSurvivesRebootViaIndexBlob) {
+  s.appendInbound(dm("ALICE!"), "hi", 2, 1000, 2000, 0, nullptr, 0);   // unread = 1
+  s.appendInbound(dm("BOBBBB"), "yo", 2, 1001, 2001, 0, nullptr, 0);   // unread = 1
+  s.markNotifiable(dm("ALICE!"));                                       // notifyUnread = 1
+  ASSERT_EQ(2u, s.totalUnread());
+  ASSERT_EQ(1u, s.totalNotifyUnread());
+  s.saveIndex();               // debounced flush would have done this after the messages arrived
+
+  MessageStore s2;
+  s2.begin(&backend);          // reboot: index blob intact -> deserialize path (NOT rebuild)
+  EXPECT_EQ(2u, s2.totalUnread());
+  EXPECT_EQ(1u, s2.totalNotifyUnread());
+}
+
 TEST_F(MSFix, RebuildIndexFromLogsWhenIndexMissing) {
   s.appendInbound(dm("ALICE!"), "hi", 2, 1000, 2000, 0, nullptr, 0);
   s.saveIndex();          // save index so it exists, then simulate it being lost
