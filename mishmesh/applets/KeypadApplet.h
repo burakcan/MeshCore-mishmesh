@@ -53,6 +53,7 @@ public:
 
   // Accessors / logic (also used by tests).
   const char* text() const { return _buf; }
+  const char* title() const { return _title; }   // placeholder text shown when empty
   uint16_t length() const { return _len; }
   uint16_t cursor() const { return _cursor; }
   Mode mode() const { return _mode; }

@@ -13,6 +13,7 @@
 #include <mishmesh/applets/RepeaterRegionsApplet.h>
 #include <mishmesh/applets/RepeaterAclApplet.h>
 #include <mishmesh/applets/RepeaterIdentityApplet.h>
+#include <mishmesh/applets/KeypadApplet.h>
 
 using mishmesh::RemoteSettingsEngine;
 using mishmesh::SettingFieldDef;
@@ -217,6 +218,34 @@ TEST(RSettingsPanel, KeypadConfirmResumesPolling) {
   svc.simulateCliReply(pk, "OK");
   host.loop(700);                        // past the 150ms render cadence: polls OK, clears dirty
   EXPECT_FALSE(mishmesh::repeaterSettingsPanel().anyDirtyForTest());
+}
+
+TEST(RSettingsPanel, EmptyFieldKeypadTitleStable) {
+  // Regression: editField() built the keypad title in a stack-local buffer and the
+  // keypad stored it by pointer. Once editField() returned, the empty-state placeholder
+  // (drawn from _title) rendered freed stack memory as garbage. The title must point at
+  // storage that outlives the keypad, so it stays equal to the field label.
+  FakeContactsService svc;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  uint8_t pk[6] = {'R','E','P','0','0','1'};
+  mishmesh::repeaterSettingsPanel().setTarget(pk, "Rep1");
+  mishmesh::repeaterSettingsPanel().setModel(TEXT_DEFS, 1, "General");
+  host.setRoot(&mishmesh::repeaterSettingsPanel());
+  host.loop(1);                          // onStart fetches -> fires "get name"
+  svc.simulateCliReply(pk, "> ");        // "> " strips to an empty value -> empty/placeholder state
+  host.loop(200);
+  EXPECT_STREQ("", mishmesh::repeaterSettingsPanel().valueForTest(0));
+
+  host.dispatch(mishmesh::InputEvent::Select);   // pushes keypad configured from editField()
+  EXPECT_TRUE(mishmesh::repeaterSettingsPanel().editingForTest());
+  // Empty buffer -> the placeholder (title) path is what renders.
+  EXPECT_EQ(0u, mishmesh::keypadApplet().length());
+  // Churn the stack + render frames: with the old bug this clobbered the freed title buffer.
+  host.loop(300);
+  // Title must still be the field label, not garbage.
+  EXPECT_STREQ("Name", mishmesh::keypadApplet().title());
 }
 
 TEST(RActions, SendAdvertFiresCli) {

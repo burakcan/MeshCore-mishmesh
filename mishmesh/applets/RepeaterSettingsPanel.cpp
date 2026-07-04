@@ -78,15 +78,14 @@ void RepeaterSettingsPanel::editField(int i) {
   }
   _editIdx = i;
   _phase = Phase::Editing;
-  char title[40];
   if (f.kind == SettingFieldDef::Number && (f.minVal != f.maxVal))
-    snprintf(title, sizeof(title), "%s (%ld-%ld)", f.label, (long)f.minVal, (long)f.maxVal);
-  else { copyStr(title, sizeof(title), f.label); }
+    snprintf(_editTitle, sizeof(_editTitle), "%s (%ld-%ld)", f.label, (long)f.minVal, (long)f.maxVal);
+  else { copyStr(_editTitle, sizeof(_editTitle), f.label); }
   char* buf = _engine.value(i);
   if (f.kind == SettingFieldDef::Number || f.kind == SettingFieldDef::Float)
-    keypadApplet().configureNumeric(buf, FIELD_CAP - 1, title, &RepeaterSettingsPanel::onEditDone, this);
+    keypadApplet().configureNumeric(buf, FIELD_CAP - 1, _editTitle, &RepeaterSettingsPanel::onEditDone, this);
   else
-    keypadApplet().configure(buf, FIELD_CAP - 1, title, &RepeaterSettingsPanel::onEditDone, this);
+    keypadApplet().configure(buf, FIELD_CAP - 1, _editTitle, &RepeaterSettingsPanel::onEditDone, this);
   if (_host) _host->push(&keypadApplet());
 }
 

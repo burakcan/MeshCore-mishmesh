@@ -96,6 +96,27 @@ struct Harness {
 };
 }
 
+TEST(Keypad, ReopenResetsToFirstPage) {
+  // Regression: the keypad is a singleton, so onStart must reset the emoji page.
+  // Otherwise a reopened keypad resumes on whatever page it was last closed on.
+  const uint32_t cat[] = {0x1F600, 0x1F601, 0x1F602};
+  setEmojiCatalog(cat, 3);
+
+  KeypadApplet k;
+  {
+    Harness h(&k);                 // onStart: fresh open starts on letters
+    EXPECT_FALSE(k.emojiPage());
+    k.cycleBottomLeft();           // letters -> sym
+    k.cycleBottomLeft();           // sym -> emoji (catalog present)
+    EXPECT_TRUE(k.emojiPage());
+  }
+  Harness h2(&k);                  // reopen -> onStart must return to the first page
+  EXPECT_FALSE(k.emojiPage());
+  EXPECT_EQ(0, k.emojiPageIndex());
+
+  setEmojiCatalog(nullptr, 0);     // don't leak the catalog into other tests
+}
+
 TEST(Keypad, TypeSingleTapInsertsFirstLetter) {
   KeypadApplet k; Harness h(&k);
   k.onInput(InputEvent::Select);     // 'a' pending (opens focused on "abc")

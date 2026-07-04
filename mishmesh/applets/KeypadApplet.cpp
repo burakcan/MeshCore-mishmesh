@@ -383,6 +383,8 @@ void KeypadApplet::onStart(AppletContext& ctx) {
   _buf = _own;
   _mode = _numericOnly ? Mode::Num : Mode::Lower;
   _symPage = false;
+  _emojiPage = false;              // singleton: reset to the first page on every open
+  _emojiPageIdx = 0;
   _langFocused = false;
   _langPicking = false;
   commitPending();

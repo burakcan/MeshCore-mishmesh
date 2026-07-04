@@ -61,6 +61,8 @@ private:
   ConfirmDialog _confirm;
   // Single shared preview buffer; valid because a panel has at most one longValue field (a second would clobber it).
   mutable char _truncBuf[12];   // "XXXXXX..." preview
+  // Keypad stores its title by pointer, so it must outlive editField()'s stack frame; hold it here.
+  char _editTitle[40];
 
   bool hasEditable() const;
   void editField(int i);
