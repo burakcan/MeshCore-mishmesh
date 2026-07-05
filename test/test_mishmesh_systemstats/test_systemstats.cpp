@@ -23,6 +23,9 @@ public:
     out = stats;
     return true;
   }
+  int  resetCalls = 0;
+  bool lastKeep   = false;
+  void factoryReset(bool keepIdentity) override { resetCalls++; lastKeep = keepIdentity; }
 };
 
 SystemStats sampleStats() {
@@ -41,6 +44,16 @@ SystemStats sampleStats() {
 }
 
 std::string lineAt(char lines[][SYSSTATS_LINE_LEN], int i) { return std::string(lines[i]); }
+
+// Drive NavDown until focus reaches the action rows (bounded), rendering between
+// presses so ScrollText::atBottom() reflects the current scroll.
+void enterActions(SystemInfoPanel& panel, Canvas& c) {
+  for (int i = 0; i < 40 && !panel.actionsFocusedForTest(); i++) {
+    panel.renderBody(c, 0, 0, 128, 64);
+    panel.onInput(InputEvent::NavDown);
+  }
+  panel.renderBody(c, 0, 0, 128, 64);
+}
 
 }  // namespace
 
@@ -90,7 +103,7 @@ TEST(SystemInfoPanel, ScrollsAndBubblesBack) {
   SystemInfoPanel panel; panel.begin(ctx);
   FakeDisplayDriver d; Canvas c(&d);
   panel.renderBody(c, 0, 0, 128, 64);
-  EXPECT_TRUE(panel.onInput(InputEvent::NavDown));   // scroll consumed
+  EXPECT_TRUE(panel.onInput(InputEvent::NavDown));   // stats scroll (or hand off) - consumed
   EXPECT_FALSE(panel.onInput(InputEvent::Back));     // bubbles
 }
 
@@ -110,6 +123,76 @@ TEST(SystemInfoPanel, UnavailableWhenServiceReturnsFalse) {
   FakeDisplayDriver d; Canvas c(&d);
   panel.renderBody(c, 0, 0, 128, 64);
   EXPECT_STREQ("Stats unavailable", panel.lineForTest(0));   // test seam added in Step 3 header
+}
+
+TEST(SystemInfoPanel, HandsFocusToActionsAtBottom) {
+  FakeApp app; app.stats = sampleStats();
+  AppletContext ctx; ctx.app = &app;
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  panel.renderBody(c, 0, 0, 128, 64);
+  EXPECT_FALSE(panel.actionsFocusedForTest());   // starts on the stats region
+  enterActions(panel, c);
+  EXPECT_TRUE(panel.actionsFocusedForTest());
+  EXPECT_EQ(0, panel.selectedActionForTest());    // lands on row 0
+}
+
+TEST(SystemInfoPanel, KeepIdentityConfirmCallsResetTrue) {
+  FakeApp app; app.stats = sampleStats();
+  AppletContext ctx; ctx.app = &app;
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  enterActions(panel, c);
+  ASSERT_EQ(0, panel.selectedActionForTest());
+  panel.onInput(InputEvent::Select);              // open confirm
+  EXPECT_TRUE(panel.modalActive());
+  panel.renderBody(c, 0, 0, 128, 64);
+  panel.onInput(InputEvent::NavRight);            // dialog opens on Cancel; move to Confirm
+  panel.onInput(InputEvent::Select);              // confirm
+  EXPECT_EQ(1, app.resetCalls);
+  EXPECT_TRUE(app.lastKeep);
+  EXPECT_FALSE(panel.modalActive());
+}
+
+TEST(SystemInfoPanel, FullWipeConfirmCallsResetFalse) {
+  FakeApp app; app.stats = sampleStats();
+  AppletContext ctx; ctx.app = &app;
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  enterActions(panel, c);
+  panel.onInput(InputEvent::NavDown);             // row 0 -> row 1
+  EXPECT_EQ(1, panel.selectedActionForTest());
+  panel.onInput(InputEvent::Select);              // open confirm
+  panel.renderBody(c, 0, 0, 128, 64);
+  panel.onInput(InputEvent::NavRight);            // dialog opens on Cancel; move to Confirm
+  panel.onInput(InputEvent::Select);              // confirm
+  EXPECT_EQ(1, app.resetCalls);
+  EXPECT_FALSE(app.lastKeep);
+}
+
+TEST(SystemInfoPanel, CancelConfirmDoesNotReset) {
+  FakeApp app; app.stats = sampleStats();
+  AppletContext ctx; ctx.app = &app;
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  enterActions(panel, c);
+  panel.onInput(InputEvent::Select);              // open confirm
+  EXPECT_TRUE(panel.modalActive());
+  panel.onInput(InputEvent::Back);                // cancel
+  EXPECT_EQ(0, app.resetCalls);
+  EXPECT_FALSE(panel.modalActive());
+}
+
+TEST(SystemInfoPanel, ConfirmDefaultsToCancelSoStraySelectDoesNotReset) {
+  FakeApp app; app.stats = sampleStats();
+  AppletContext ctx; ctx.app = &app;
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  enterActions(panel, c);
+  panel.onInput(InputEvent::Select);              // open confirm (defaults to Cancel)
+  panel.onInput(InputEvent::Select);              // a stray Select lands on Cancel -> no wipe
+  EXPECT_EQ(0, app.resetCalls);
+  EXPECT_FALSE(panel.modalActive());
 }
 
 int main(int argc, char** argv) {

@@ -119,8 +119,8 @@ bool ExtraFsMsgBackend::copyRange(const char* srcPath, uint32_t srcOff, uint32_t
   File dst = _fs->open(dstPath, FILE_O_WRITE);
   if (!dst) { src.close(); return false; }
 
-  uint8_t chunk[CHUNK];
-  uint32_t remaining = len;
+  alignas(uint32_t) uint8_t chunk[CHUNK];   // word-aligned: LittleFS progs 256B chunks
+  uint32_t remaining = len;                 // directly from here, nRF52 QSPI DMA needs alignment
   bool ok = true;
   while (remaining > 0 && ok) {
     uint32_t want = remaining < CHUNK ? remaining : CHUNK;
@@ -279,7 +279,7 @@ bool ExtraFsMsgBackend::removeRange(const char* name, uint32_t off, uint32_t len
       else {
         if (!src.seek(end)) ok = false;
         else {
-          uint8_t chunk[CHUNK];
+          alignas(uint32_t) uint8_t chunk[CHUNK];   // word-aligned for direct QSPI DMA progs
           uint32_t remaining = sz - end;
           while (remaining > 0 && ok) {
             uint32_t want = remaining < CHUNK ? remaining : CHUNK;

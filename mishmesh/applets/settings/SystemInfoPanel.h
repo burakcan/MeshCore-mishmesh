@@ -2,6 +2,8 @@
 
 #include <mishmesh/core/SettingsPanel.h>
 #include <mishmesh/widgets/ScrollText.h>
+#include <mishmesh/widgets/ListMenu.h>
+#include <mishmesh/widgets/ConfirmDialog.h>
 
 namespace mishmesh {
 
@@ -13,25 +15,41 @@ static const int SYSSTATS_MAX_LINES = 8;
 // lines are omitted entirely when unknown.
 int formatSystemStats(const SystemStats& s, char out[][SYSSTATS_LINE_LEN], int maxLines);
 
-// Read-only device-health panel: a scrollable list rebuilt ~1s so free-heap
-// stays live. NavUp/Down scroll; Back bubbles.
+// Device-health panel in two stacked regions: a scrollable read-only stats block on
+// top (rebuilt ~1s so free-heap stays live) and two factory-reset actions below,
+// split by a 1px divider. Focus starts on the stats; a NavDown while the stats are
+// scrolled to the bottom hands focus to the action rows, and NavUp on the first row
+// hands it back. Selecting an action opens a confirm; confirming calls
+// AppServices::factoryReset (which reboots) and never returns. Back bubbles to pop.
 class SystemInfoPanel : public SettingsPanel {
 public:
   const char* title() const override { return "System Info"; }
   void begin(AppletContext& ctx) override;
-  void onShow() override { _built = false; }   // rebuild on (re)entry
+  void onShow() override { _built = false; _focus = Focus::Stats; }   // reset on (re)entry
   int  renderBody(Canvas& c, int x, int y, int w, int h) override;
-  bool onInput(InputEvent ev) override { return _panel.onInput(ev); }
+  bool onInput(InputEvent ev) override;
+  bool modalActive() const override { return _confirming; }
 
-  // test seam: read a built line (e.g. assert "Stats unavailable")
-  const char* lineForTest(int i) const { return _panel.lineForTest(i); }
+  // test seams
+  const char* lineForTest(int i) const { return _stats.lineForTest(i); }
+  bool actionsFocusedForTest() const { return _focus == Focus::Actions; }
+  int  selectedActionForTest() const { return _list.selected(); }
 
 private:
+  enum class Focus : uint8_t { Stats, Actions };
   void rebuild(uint32_t now, bool keepScroll);
-  AppServices* _app = nullptr;
-  ScrollText   _panel;
-  uint32_t     _lastBuilt = 0;
-  bool         _built = false;
+  void openConfirm(int row);
+
+  AppServices*    _app = nullptr;
+  ScrollText      _stats;
+  ListMenu        _list;
+  StaticListModel _actions;
+  ConfirmDialog   _confirm;
+  Focus           _focus = Focus::Stats;
+  uint32_t        _lastBuilt = 0;
+  bool            _built = false;
+  bool            _confirming = false;
+  int             _pendingRow = -1;   // 0 = keep identity, 1 = full wipe
 };
 
 SystemInfoPanel& systemInfoSettings();   // shared singleton

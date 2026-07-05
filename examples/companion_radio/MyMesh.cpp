@@ -1544,6 +1544,16 @@ void MyMesh::uiApplyRadioParams() {
 int8_t MyMesh::uiTxPowerMax() const { return MAX_LORA_TX_POWER; }
 // [/mishmesh]
 
+// [mishmesh]
+void MyMesh::uiFactoryReset(bool keepIdentity) {
+  bool ok = _store->formatFileSystem();          // wipes both filesystems
+  if (ok && keepIdentity) {
+    _store->saveMainIdentity(self_id);           // self_id is still in RAM
+  }
+  board.reboot();                                // does not return; clean boot
+}
+// [/mishmesh]
+
 struct FreqRange {
   uint32_t lower_freq, upper_freq;
 };

@@ -186,6 +186,11 @@ public:
   // where radio_driver + MAX_LORA_TX_POWER are in scope.
   void uiApplyRadioParams();
   int8_t uiTxPowerMax() const;
+  // Wipe all on-device state and reboot to a clean slate (mirrors the `rebuild`
+  // CLI). keepIdentity re-saves the current keypair after the format so the node
+  // keeps its public key; false leaves no identity file so begin() generates a
+  // fresh one on boot. Does not return (reboots).
+  void uiFactoryReset(bool keepIdentity);
   // [/mishmesh]
 
   // Discovery: adverts seen but not auto-added, so the UI can add them manually.

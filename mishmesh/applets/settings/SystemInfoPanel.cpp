@@ -5,6 +5,14 @@
 namespace mishmesh {
 
 static const uint32_t REBUILD_MS = 1000;
+static const int ACTION_ROW_H = 12;
+static const int ACTIONS_H    = 2 * ACTION_ROW_H;   // exactly two rows
+static const int DIVIDER_GAP  = 2;                  // 1px line + 1px gap
+
+static const char* const RESET_LABELS[2] = {
+  "Factory Reset (keep identity)",
+  "Factory Reset (full wipe)",
+};
 
 // "142.3K", or "--" when zero (unknown).
 static void fmtBytes(char* buf, int n, uint32_t bytes) {
@@ -40,29 +48,89 @@ int formatSystemStats(const SystemStats& s, char out[][SYSSTATS_LINE_LEN], int m
 void SystemInfoPanel::rebuild(uint32_t now, bool keepScroll) {
   _lastBuilt = now;
   _built = true;
-  _panel.clear(keepScroll);
+  _stats.clear(keepScroll);
   SystemStats s;
   if (!(_app && _app->systemStats(s))) {
-    _panel.addLine("Stats unavailable");
+    _stats.addLine("Stats unavailable");
     return;
   }
   char lines[SYSSTATS_MAX_LINES][SYSSTATS_LINE_LEN];
   int n = formatSystemStats(s, lines, SYSSTATS_MAX_LINES);
-  for (int i = 0; i < n; i++) _panel.addLine(lines[i]);
+  for (int i = 0; i < n; i++) _stats.addLine(lines[i]);
 }
 
 void SystemInfoPanel::begin(AppletContext& ctx) {
   _app = ctx.app;
   _built = false;
-  _panel.clear();
+  _confirming = false;
+  _pendingRow = -1;
+  _focus = Focus::Stats;
+  _stats.clear();
+  _actions.set(RESET_LABELS, 2);
+  _list.setRowHeight(ACTION_ROW_H);
+  _list.setModel(&_actions);
+  _list.resetSelection();
+  _list.setDrawSelection(false);   // stats region has focus first
 }
 
 int SystemInfoPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
   uint32_t now = c.now();
   if (!_built) rebuild(now, false);
   else if (now - _lastBuilt >= REBUILD_MS) rebuild(now, true);
-  _panel.draw(c, x, y, w, h);
-  return _panel.needsAnimation() ? 33 : (int)REBUILD_MS;
+
+  int statsH = h - ACTIONS_H - DIVIDER_GAP;
+  if (statsH < 0) statsH = 0;
+  _stats.draw(c, x, y, w, statsH);
+  c.fillRect(x, y + statsH, w, 1, DisplayDriver::LIGHT);   // divider
+  _list.setDrawSelection(_focus == Focus::Actions);
+  _list.draw(c, x, y + statsH + DIVIDER_GAP, w, ACTIONS_H);
+
+  if (_confirming) { _confirm.draw(c, 0, 0, c.width(), c.height()); return 100; }
+
+  bool anim = _stats.needsAnimation() || _list.needsAnimation();
+  return anim ? 33 : (int)REBUILD_MS;
+}
+
+void SystemInfoPanel::openConfirm(int row) {
+  _pendingRow = row;
+  _confirm.configure(row == 0
+    ? "Erase all settings, contacts & messages? Identity is kept. Cannot be undone."
+    : "Erase EVERYTHING including identity? A new key is generated on reboot. Cannot be undone.",
+    /*defaultSel=*/0);   // open on Cancel: irreversible wipe, don't confirm on a stray Select
+  _confirming = true;
+}
+
+bool SystemInfoPanel::onInput(InputEvent ev) {
+  if (_confirming) {
+    if (_confirm.onInput(ev)) {
+      ConfirmResult r = _confirm.result();
+      if (r != ConfirmResult::None) {
+        if (r == ConfirmResult::Confirmed && _app) _app->factoryReset(_pendingRow == 0);
+        _confirming = false; _pendingRow = -1;
+      }
+    }
+    return true;   // modal swallows all input while open
+  }
+
+  if (_focus == Focus::Stats) {
+    if (ev == InputEvent::NavDown && _stats.atBottom()) {
+      _focus = Focus::Actions;
+      _list.setSelected(0);
+      return true;
+    }
+    return _stats.onInput(ev);   // scroll; false (Back / NavUp at top) bubbles
+  }
+
+  // Focus::Actions
+  if (ev == InputEvent::NavUp && _list.selected() == 0) {
+    _focus = Focus::Stats;
+    return true;
+  }
+  if (_list.onInput(ev)) return true;   // move between the two rows
+  // Select must be checked after _list.onInput: ListMenu leaves Select unconsumed
+  // (only handles Nav), so it falls through here to open the confirm.
+  if (ev == InputEvent::Select) { openConfirm(_list.selected()); return true; }
+  return false;   // Back bubbles -> host pops the panel
 }
 
 SystemInfoPanel& systemInfoSettings() {

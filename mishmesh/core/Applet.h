@@ -139,6 +139,10 @@ struct AppServices {
   // Radio airtime / duty-cycle usage for the Airtime applet. Returns false if
   // unavailable. Default keeps the framework companion-agnostic.
   virtual bool airtimeStats(AirtimeStats& out) const { (void)out; return false; }
+  // Wipe all persisted state (settings, contacts, channels, messages) and reboot.
+  // keepIdentity preserves the node keypair; false yields a fresh key on boot. Does
+  // not return. Default no-op keeps the framework companion-agnostic.
+  virtual void factoryReset(bool keepIdentity) { (void)keepIdentity; }
   // [/mishmesh]
 };
 

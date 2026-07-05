@@ -14,10 +14,13 @@ class ConfirmDialog : public Widget {
   ConfirmResult _result;
 public:
   ConfirmDialog() : _msg(""), _sel(1), _result(ConfirmResult::None) {}
-  void configure(const char* msg) {
+  // defaultSel: 1 = open on Confirm (default), 0 = open on Cancel (for
+  // irreversible/destructive actions, so a stray extra Select can't confirm).
+  void configure(const char* msg, int defaultSel) {
     _msg = msg ? msg : "";
-    _sel = 1; _result = ConfirmResult::None;
+    _sel = defaultSel ? 1 : 0; _result = ConfirmResult::None;
   }
+  void configure(const char* msg) { configure(msg, 1); }
   ConfirmResult result() const { return _result; }
   void reset() { _sel = 1; _result = ConfirmResult::None; }
   bool onInput(InputEvent ev) override;

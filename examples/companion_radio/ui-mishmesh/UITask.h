@@ -174,6 +174,9 @@ public:
   bool systemStats(mishmesh::SystemStats& out) const override;
   bool airtimeStats(mishmesh::AirtimeStats& out) const override;
   // [mishmesh]
+  void factoryReset(bool keepIdentity) override { the_mesh.uiFactoryReset(keepIdentity); }
+  // [/mishmesh]
+  // [mishmesh]
   // BLE capability is a build-time fact: deriving it from runtime state
   // (pin/enable) made the Bluetooth settings entry vanish when BLE was
   // toggled off. Serial/USB builds have no BLE at all, so tile/entry hide.
