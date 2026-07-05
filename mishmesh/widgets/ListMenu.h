@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <mishmesh/widgets/Widget.h>
 #include <mishmesh/widgets/Marquee.h>
+#include <mishmesh/widgets/Button.h>
 
 namespace mishmesh {
 
@@ -62,7 +63,9 @@ class ListMenu : public Widget {
   bool _animating;      // true while the highlight or scroll is still settling
   bool _drawSelection;  // false suppresses the highlight bar (e.g. when focus is on an external widget)
 
+  Button _button;       // reused to render each isButton() row via the shared Button widget
   void drawRowContent(Canvas& view, int i, int ry, int cw, DisplayDriver::Color col, uint32_t now);
+  void drawButtonRow(Canvas& view, int i, int ry, int cw);   // isButton() rows: shared Button widget, own focus
   void snapToTarget() { _animReady = false; }
 public:
   static const int TICK_MS = 33;   // ~30 fps while a list is animating

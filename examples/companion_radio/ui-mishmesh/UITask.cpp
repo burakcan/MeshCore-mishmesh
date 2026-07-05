@@ -143,7 +143,10 @@ uint16_t UITask::batteryMillivolts() const {
 
 // [mishmesh] Hand off from the onboarding wizard to the home screen.
 void UITask::finishOnboardingToHome() {
-  if (_host && _home) _host->setRoot(_home);   // wizard leaks intentionally (setup-only, one instance)
+  // replace(), not setRoot(): setRoot no-ops while the wizard is the foreground root
+  // (_depth != 0). replace() swaps the root in place and re-renders. The wizard leaks
+  // intentionally (setup-only, one instance).
+  if (_host && _home) _host->replace(_home);
 }
 // [/mishmesh]
 

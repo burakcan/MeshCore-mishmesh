@@ -1,4 +1,5 @@
 #include <mishmesh/applets/OnboardingApplet.h>
+#include <mishmesh/applets/onboarding_logo.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/applets/SetTimeApplet.h>
 #include <mishmesh/applets/TimezonePickerApplet.h>
@@ -19,14 +20,7 @@ bool shouldShowOnboarding(uint8_t state, bool freshIdentity) {
   return freshIdentity;           // NOT_STARTED
 }
 
-// Region list model over the shared PRESETS table (name only).
-struct RegionModel : ListModel {
-  int count() const override { return PRESET_COUNT; }
-  const char* label(int i) const override {
-    return (i >= 0 && i < PRESET_COUNT) ? PRESETS[i].name : "";
-  }
-};
-static RegionModel s_regionModel;
+// ---- step machine ---------------------------------------------------------
 
 void OnboardingApplet::buildSteps(bool gps) {
   _stepCount = 0;
@@ -38,192 +32,222 @@ void OnboardingApplet::buildSteps(bool gps) {
   _steps[_stepCount++] = Done;
 }
 
+const char* OnboardingApplet::stepTitle() const {
+  switch (cur()) {
+    case Welcome: return "Welcome";
+    case Name:    return "Device name";
+    case Region:  return "Radio region";
+    case Gps:     return "GPS";
+    case Time:    return "Time";
+    case Done:    return "All set";
+    default:      return "Setup";
+  }
+}
+
 void OnboardingApplet::onStart(AppletContext& ctx) {
   _app = ctx.app;
   _host = ctx.host;
   _idx = 0;
-  _timeRow = 0;
   buildSteps(_app && _app->gpsSupported());
-  // seed staged state from current values
   if (_app) {
     snprintf(_name, sizeof(_name), "%s", _app->nodeName() ? _app->nodeName() : "");
     _gps = _app->gpsEnabled();
     _tzCity = _app->tzCityIndex();
     _autoSync = _app->autoTimeSync();
-  }
-  _regionList.setRowHeight(14);
-  _regionList.setModel(&s_regionModel);
-  _regionList.resetSelection();
-  // Pre-select the preset matching the current radio so tapping through Region
-  // without scrolling keeps the existing band (not blindly PRESETS[0]/Australia).
-  if (_app) {
     RadioConfig cfg{};
     if (_app->radioConfig(cfg)) {
       int m = matchPreset(cfg.freqMhz, cfg.bwKhz, cfg.sf, cfg.cr);
-      if (m >= 0) _regionList.setSelected(m);
+      if (m >= 0) _region = m;
     }
   }
+  _list.setRowHeight(14);
+  _list.setModel(this);
+  _list.resetSelection();
 }
 
-void OnboardingApplet::onForeground() {
-  // returning from a pushed child (keypad/picker/clock); nothing to reload here
-  // beyond what the seams already staged via their callbacks.
+void OnboardingApplet::enterStep() {
+  _list.resetSelection();
+  // Radio region: start focus on the currently-chosen preset so it's visible.
+  if (cur() == Region && _region >= 0 && _region < PRESET_COUNT) _list.setSelected(_region);
 }
+void OnboardingApplet::advance() { if (_idx < _stepCount - 1) { _idx++; enterStep(); } }
+void OnboardingApplet::back()    { if (_idx > 0) { _idx--; enterStep(); } }
 
 void OnboardingApplet::onNameDone(void* ctx, const char* text) {
   OnboardingApplet* self = (OnboardingApplet*)ctx;
   if (self && text) snprintf(self->_name, sizeof(self->_name), "%s", text);
 }
-
 void OnboardingApplet::onTzPicked(void* ctx, int cityIndex) {
   OnboardingApplet* self = (OnboardingApplet*)ctx;
   if (self) self->_tzCity = cityIndex;
 }
 
-void OnboardingApplet::next() {
-  if (_idx < _stepCount - 1) _idx++;
-}
-void OnboardingApplet::back() {
-  if (_idx > 0) _idx--;
+void OnboardingApplet::activate(int row) {
+  switch (cur()) {
+    case Name:
+      if (row == 0) {
+        keypadApplet().configure(_name, sizeof(_name) - 1, "Device name", &OnboardingApplet::onNameDone, this);
+        if (_host) _host->push(&keypadApplet());
+      } else advance();
+      break;
+    case Region:
+      if (row >= 0 && row < PRESET_COUNT) { _region = row; advance(); }   // pick + auto-advance
+      break;
+    case Gps:
+      if (row == 0) _gps = !_gps;
+      else advance();
+      break;
+    case Time:
+      if (row == 0) {
+        timezonePickerApplet().configure(_tzCity, &OnboardingApplet::onTzPicked, this);
+        if (_host) _host->push(&timezonePickerApplet());
+      } else if (row == 1) {
+        _autoSync = !_autoSync;                          // row count changes (3<->4)
+        if (_list.selected() >= count()) _list.setSelected(count() - 1);
+      } else if (!_autoSync && row == 2) {
+        setTimeApplet().configure(_app);                 // manual clock, applies immediately
+        if (_host) _host->push(&setTimeApplet());
+      } else advance();                                  // Next
+      break;
+    default: break;
+  }
 }
 
+// Apply only what changed, so Finish does the minimum flash writes / radio reinit.
 void OnboardingApplet::finish() {
   if (_app) {
-    if (isValidNodeName(_name)) _app->setNodeName(_name);
+    const char* curName = _app->nodeName() ? _app->nodeName() : "";
+    if (isValidNodeName(_name) && strcmp(_name, curName) != 0) _app->setNodeName(_name);
+
     RadioConfig cfg{};
-    if (!_app->radioConfig(cfg)) cfg = RadioConfig{};
-    int r = _regionList.selected();
-    if (r >= 0 && r < PRESET_COUNT) {
-      const RadioPreset& p = PRESETS[r];
-      cfg.freqMhz = p.freq; cfg.bwKhz = p.bw; cfg.sf = p.sf; cfg.cr = p.cr;
-      _app->setRadioConfig(cfg);   // txPowerDbm/repeater preserved from the current config above
+    bool haveCfg = _app->radioConfig(cfg);
+    if (_region >= 0 && _region < PRESET_COUNT) {
+      int curPreset = haveCfg ? matchPreset(cfg.freqMhz, cfg.bwKhz, cfg.sf, cfg.cr) : -1;
+      if (curPreset != _region) {                        // only reconfigure the radio if the band changed
+        const RadioPreset& p = PRESETS[_region];
+        if (!haveCfg) cfg = RadioConfig{};
+        cfg.freqMhz = p.freq; cfg.bwKhz = p.bw; cfg.sf = p.sf; cfg.cr = p.cr;
+        _app->setRadioConfig(cfg);                       // txPowerDbm/repeater preserved
+      }
     }
-    if (_app->gpsSupported()) _app->setGpsEnabled(_gps);
-    if (_tzCity >= 0) _app->setTzCity(_tzCity);
-    _app->setAutoTimeSync(_autoSync);
+    if (_app->gpsSupported() && _gps != _app->gpsEnabled()) _app->setGpsEnabled(_gps);
+    if (_tzCity >= 0 && _tzCity != _app->tzCityIndex())     _app->setTzCity(_tzCity);
+    if (_autoSync != _app->autoTimeSync())                  _app->setAutoTimeSync(_autoSync);
     _app->markOnboardingComplete();
   }
-  if (_done) _done(_doneCtx);   // adapter persists + setRoot(home)
+  if (_done) _done(_doneCtx);   // adapter persists + replace(home)
+}
+
+// ---- input ---------------------------------------------------------------
+
+bool OnboardingApplet::onInput(InputEvent ev) {
+  if (ev == InputEvent::Back) { back(); return true; }   // Welcome: no-op (can't exit)
+
+  Step s = cur();
+  if (s == Welcome) { if (ev == InputEvent::Select) advance(); return true; }
+  if (s == Done)    { if (ev == InputEvent::Select) finish(); return true; }
+
+  if (_list.onInput(ev)) return true;                    // NavUp/NavDown move focus
+  if (ev == InputEvent::Select) { activate(_list.selected()); return true; }
+  return true;                                           // modal root: never bubble
+}
+
+// ---- ListModel (middle steps) --------------------------------------------
+
+int OnboardingApplet::count() const {
+  switch (cur()) {
+    case Name:   return 2;
+    case Region: return PRESET_COUNT;
+    case Gps:    return 2;
+    case Time:   return _autoSync ? 3 : 4;
+    default:     return 0;
+  }
+}
+
+const char* OnboardingApplet::label(int i) const {
+  switch (cur()) {
+    case Name:   return i == 0 ? "Name" : "Next";
+    case Region: return (i >= 0 && i < PRESET_COUNT) ? PRESETS[i].name : "";
+    case Gps:    return i == 0 ? "Enable GPS" : "Next";
+    case Time:
+      if (i == 0) return "Time zone";
+      if (i == 1) return "Auto-sync";
+      if (!_autoSync && i == 2) return "Set clock...";
+      return "Next";
+    default: return "";
+  }
+}
+
+const char* OnboardingApplet::value(int i) const {
+  if (cur() == Name && i == 0) return _name[0] ? _name : "(unset)";
+  if (cur() == Time && i == 0) {
+    if (_tzCity >= 0 && _tzCity < worldCityCount()) return worldCity(_tzCity).name;
+    return "(set)";
+  }
+  return nullptr;
+}
+
+bool OnboardingApplet::isToggle(int i) const {
+  return (cur() == Gps && i == 0) || (cur() == Time && i == 1);
+}
+bool OnboardingApplet::toggleState(int i) const {
+  if (cur() == Gps && i == 0) return _gps;
+  if (cur() == Time && i == 1) return _autoSync;
+  return false;
+}
+bool OnboardingApplet::isRadio(int i) const { return cur() == Region && i >= 0 && i < PRESET_COUNT; }
+bool OnboardingApplet::radioOn(int i) const { return cur() == Region && i == _region; }
+bool OnboardingApplet::isButton(int i) const { return hasNextButton(cur()) && i == count() - 1; }
+
+// ---- render --------------------------------------------------------------
+
+void OnboardingApplet::drawTitleBar(Canvas& c, int w) {
+  c.drawText(fontBody(), 2, 1, stepTitle(), DisplayDriver::LIGHT);
+  char cnt[8]; snprintf(cnt, sizeof(cnt), "%d/%d", _idx + 1, _stepCount);
+  c.drawText(fontBody(), w - 2, 1, cnt, DisplayDriver::LIGHT, TextAlign::Right);
+}
+
+void OnboardingApplet::drawCenterButton(Canvas& c, int x, int y, int w, const char* text) {
+  int bh = c.fontHeight(fontBody()) + 4;
+  int bw = c.textWidth(fontBody(), text) + 16;
+  if (bw > w - 8) bw = w - 8;
+  _btn.set(text, 0);
+  _btn.setFocused(true);
+  _btn.draw(c, x + (w - bw) / 2, y, bw, bh);
+}
+
+void OnboardingApplet::drawWelcome(Canvas& c, int x, int y, int w, int h) {
+  c.drawXbm(x + (w - MESHCORE_LOGO_W) / 2, y + 3, MESHCORE_LOGO, MESHCORE_LOGO_W, MESHCORE_LOGO_H);
+  c.drawTextEllipsized(fontBody(), x + w / 2, y + MESHCORE_LOGO_H + 8, w - 6,
+                       "Let's set up your node", DisplayDriver::LIGHT, TextAlign::Center);
+  drawCenterButton(c, x, y + h - (c.fontHeight(fontBody()) + 5), w, "Get started");
+}
+
+void OnboardingApplet::drawDone(Canvas& c, int x, int y, int w, int h) {
+  c.drawTextEllipsized(fontSubtitle(), x + w / 2, y + 2, w - 6, "You're all set",
+                       DisplayDriver::LIGHT, TextAlign::Center);
+  char line[40];
+  const char* region = (_region >= 0 && _region < PRESET_COUNT) ? PRESETS[_region].name : "?";
+  snprintf(line, sizeof(line), "%s / %s", _name[0] ? _name : "(unset)", region);
+  c.drawTextEllipsized(fontBody(), x + w / 2, y + 20, w - 6, line, DisplayDriver::LIGHT, TextAlign::Center);
+  drawCenterButton(c, x, y + h - (c.fontHeight(fontBody()) + 5), w, "Finish");
 }
 
 int OnboardingApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   c.fillRect(0, 0, w, h, DisplayDriver::DARK);
-  const int titleY = 4, bodyY = h / 2 - 6, footY = h - 11;
-  char line[40];
 
-  switch (cur()) {
-    case Welcome:
-      c.drawGlyph(iconFont(), w / 2 - 6, titleY + 2, (uint16_t)Icon::Check, DisplayDriver::LIGHT);
-      c.drawTextCentered(fontSubtitle(), 0, titleY + 16, w, 12, "Welcome to MeshCore", DisplayDriver::LIGHT);
-      c.drawTextCentered(fontBody(), 0, titleY + 30, w, 10, "Your node is ready", DisplayDriver::LIGHT);
-      { char pk[20]; if (_app) _app->selfPublicKeyHex(pk, sizeof(pk), 4); else pk[0] = 0;
-        c.drawTextCentered(fontBody(), 0, titleY + 42, w, 10, pk, DisplayDriver::LIGHT); }
-      c.drawTextCentered(fontBody(), 0, footY, w, 10, "Get started >", DisplayDriver::LIGHT);
-      break;
-    case Name:
-      c.drawTextCentered(fontSubtitle(), 0, titleY, w, 12, "Device name", DisplayDriver::LIGHT);
-      c.drawTextCentered(fontSubtitle(), 0, bodyY, w, 12, _name[0] ? _name : "(unset)", DisplayDriver::LIGHT);
-      c.drawTextCentered(fontBody(), 0, footY, w, 10, "< Back   Edit   Next >", DisplayDriver::LIGHT);
-      break;
-    case Region: {
-      c.drawTextCentered(fontSubtitle(), 0, titleY, w, 12, "Region", DisplayDriver::LIGHT);
-      const int barH = titleY + 14;
-      _regionList.draw(c, 0, barH, w, h - barH - 11);
-      c.drawTextCentered(fontBody(), 0, footY, w, 10, "< Back   Next >", DisplayDriver::LIGHT);
-      break;
-    }
-    case Gps:
-      c.drawTextCentered(fontSubtitle(), 0, titleY, w, 12, "GPS", DisplayDriver::LIGHT);
-      snprintf(line, sizeof(line), "Enable GPS:  %s", _gps ? "On" : "Off");
-      c.drawTextCentered(fontSubtitle(), 0, bodyY, w, 12, line, DisplayDriver::LIGHT);
-      c.drawTextCentered(fontBody(), 0, bodyY + 14, w, 10, "sets location + time", DisplayDriver::LIGHT);
-      c.drawTextCentered(fontBody(), 0, footY, w, 10, "< Back  Toggle  Next >", DisplayDriver::LIGHT);
-      break;
-    case Time: {
-      c.drawTextCentered(fontSubtitle(), 0, titleY, w, 12, "Time", DisplayDriver::LIGHT);
-      char zone[24];
-      if (_tzCity >= 0 && _tzCity < worldCityCount())
-        snprintf(zone, sizeof(zone), "%s", worldCity(_tzCity).name);
-      else snprintf(zone, sizeof(zone), "(set)");
-      snprintf(line, sizeof(line), "%c Zone: %s", _timeRow == 0 ? '>' : ' ', zone);
-      c.drawText(fontBody(), 6, bodyY - 6, line, DisplayDriver::LIGHT);
-      snprintf(line, sizeof(line), "%c Auto-sync: %s", _timeRow == 1 ? '>' : ' ', _autoSync ? "On" : "Off");
-      c.drawText(fontBody(), 6, bodyY + 4, line, DisplayDriver::LIGHT);
-      if (!_autoSync) {
-        snprintf(line, sizeof(line), "%c Set clock...", _timeRow == 2 ? '>' : ' ');
-        c.drawText(fontBody(), 6, bodyY + 14, line, DisplayDriver::LIGHT);
-      }
-      c.drawTextCentered(fontBody(), 0, footY, w, 10, "< Back   Next >", DisplayDriver::LIGHT);
-      break;
-    }
-    case Done: {
-      c.drawTextCentered(fontSubtitle(), 0, titleY, w, 12, "All set", DisplayDriver::LIGHT);
-      int r = _regionList.selected();
-      snprintf(line, sizeof(line), "%s / %s", _name[0] ? _name : "(unset)",
-               (r >= 0 && r < PRESET_COUNT) ? PRESETS[r].name : "?");
-      c.drawTextCentered(fontBody(), 0, bodyY, w, 10, line, DisplayDriver::LIGHT);
-      if (_app && _app->gpsSupported()) {
-        snprintf(line, sizeof(line), "GPS %s", _gps ? "on" : "off");
-        c.drawTextCentered(fontBody(), 0, bodyY + 11, w, 10, line, DisplayDriver::LIGHT);
-      }
-      c.drawTextCentered(fontBody(), 0, footY, w, 10, "< Back   Finish", DisplayDriver::LIGHT);
-      break;
-    }
-    default: break;
-  }
-  return _regionList.needsAnimation() ? ListMenu::TICK_MS : 750;
-}
+  int bh = c.fontHeight(fontBody()) + 3;
+  drawTitleBar(c, w);
+  c.fillRect(0, bh - 1, w, 1, DisplayDriver::LIGHT);
 
-bool OnboardingApplet::onInput(InputEvent ev) {
-  // Universal step nav: Back/NavLeft -> previous step; NavRight -> next step.
-  if (ev == InputEvent::Back || ev == InputEvent::NavLeft) { back(); return true; }
-  if (ev == InputEvent::NavRight) { next(); return true; }
+  int by = bh, bhBody = h - by;
+  Step s = cur();
+  if (s == Welcome)      drawWelcome(c, 0, by, w, bhBody);
+  else if (s == Done)    drawDone(c, 0, by, w, bhBody);
+  else                   _list.draw(c, 0, by, w, bhBody);
 
-  switch (cur()) {
-    case Welcome:
-      if (ev == InputEvent::Select) { next(); return true; }
-      break;
-    case Name:
-      if (ev == InputEvent::Select) {
-        keypadApplet().configure(_name, sizeof(_name) - 1, "Device name", &OnboardingApplet::onNameDone, this);
-        if (_host) _host->push(&keypadApplet());
-        return true;
-      }
-      break;
-    case Region:
-      if (_regionList.onInput(ev)) return true;   // NavUp/NavDown scroll presets
-      if (ev == InputEvent::Select) { next(); return true; }
-      break;
-    case Gps:
-      if (ev == InputEvent::Select || ev == InputEvent::NavUp || ev == InputEvent::NavDown) {
-        _gps = !_gps; return true;
-      }
-      break;
-    case Time: {
-      int rows = _autoSync ? 2 : 3;
-      if (ev == InputEvent::NavUp)   { _timeRow = (_timeRow + rows - 1) % rows; return true; }
-      if (ev == InputEvent::NavDown) { _timeRow = (_timeRow + 1) % rows; return true; }
-      if (ev == InputEvent::Select) {
-        if (_timeRow == 0) {
-          timezonePickerApplet().configure(_tzCity, &OnboardingApplet::onTzPicked, this);
-          if (_host) _host->push(&timezonePickerApplet());
-        } else if (_timeRow == 1) {
-          _autoSync = !_autoSync;   // toggling to auto hides the "set clock" row; _timeRow stays valid (<=1)
-        } else {   // _timeRow == 2, manual set (auto off) — applies immediately
-          setTimeApplet().configure(_app);
-          if (_host) _host->push(&setTimeApplet());
-        }
-        return true;
-      }
-      break;
-    }
-    case Done:
-      if (ev == InputEvent::Select) { finish(); return true; }
-      break;
-    default: break;
-  }
-  return true;   // wizard is modal-root: never bubble (no exit until Finish)
+  return _list.needsAnimation() ? ListMenu::TICK_MS : 750;
 }
 
 }  // namespace mishmesh

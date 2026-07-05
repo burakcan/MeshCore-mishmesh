@@ -9,13 +9,11 @@
 using namespace mishmesh;
 
 namespace {
-// Records every apply the wizard performs at Finish.
 struct FakeApp : AppServices {
   char name[32] = "OLD";
-  RadioConfig radio{910.0f, 250.0f, 10, 5, 20, false};
+  RadioConfig radio{910.0f, 250.0f, 10, 5, 20, false};   // matches no preset
   bool gpsSup = true, gpsOn = false, autoSync = true;
   int tzCity = -1;
-  // captured
   char setName[32] = {0}; bool didSetRadio = false; RadioConfig setRadioCfg{};
   bool didSetGps = false, setGpsVal = false;
   int setTzVal = -99; bool didSetTz = false;
@@ -25,9 +23,6 @@ struct FakeApp : AppServices {
   const char* nodeName() const override { return name; }
   uint16_t batteryMillivolts() const override { return 4000; }
   uint32_t epochSeconds() const override { return 1782993600u; }
-  void selfPublicKeyHex(char* out, size_t cap, int bytes) const override {
-    (void)bytes; snprintf(out, cap, "A1B2C3D4");
-  }
   bool setNodeName(const char* n) override { snprintf(setName, sizeof(setName), "%s", n); return true; }
   bool radioConfig(RadioConfig& out) const override { out = radio; return true; }
   void setRadioConfig(const RadioConfig& c) override { didSetRadio = true; setRadioCfg = c; }
@@ -44,83 +39,70 @@ struct FakeApp : AppServices {
 int g_doneCalls = 0;
 void onDone(void*) { g_doneCalls++; }
 
-// Advance to the last step (Done) by pressing NavRight stepCount-1 times.
-void gotoDone(OnboardingApplet& w) {
-  int guard = 0;
-  while (w.stepForTest() < w.stepCountForTest() - 1 && guard++ < 10)
-    w.onInput(InputEvent::NavRight);
+// Advance one step. Name/GPS/Time: move focus onto the Next button then Select.
+// Welcome/Done: Select. Radio region: Select picks the focused preset + auto-advances.
+void advance(OnboardingApplet& w) {
+  int br = w.buttonRowForTest();
+  if (br < 0) { w.onInput(InputEvent::Select); return; }
+  for (int i = 0; i < 40 && w.focusForTest() != br; i++) w.onInput(InputEvent::NavDown);
+  w.onInput(InputEvent::Select);
+}
+void gotoStep(OnboardingApplet& w, int target) {
+  for (int i = 0; i < 12 && w.stepForTest() < target; i++) advance(w);
 }
 }  // namespace
 
 TEST(ShouldShowOnboarding, TruthTable) {
-  EXPECT_FALSE(shouldShowOnboarding(2, true));   // DONE never shows
+  EXPECT_FALSE(shouldShowOnboarding(2, true));
   EXPECT_FALSE(shouldShowOnboarding(2, false));
-  EXPECT_TRUE (shouldShowOnboarding(1, false));  // IN_PROGRESS always resumes
+  EXPECT_TRUE (shouldShowOnboarding(1, false));
   EXPECT_TRUE (shouldShowOnboarding(1, true));
-  EXPECT_TRUE (shouldShowOnboarding(0, true));   // NOT_STARTED + fresh -> show
-  EXPECT_FALSE(shouldShowOnboarding(0, false));  // NOT_STARTED + existing -> home
+  EXPECT_TRUE (shouldShowOnboarding(0, true));
+  EXPECT_FALSE(shouldShowOnboarding(0, false));
 }
 
 TEST(OnboardingApplet, GpsStepPresentWhenSupported) {
   FakeApp app; app.gpsSup = true;
   AppletContext ctx; ctx.app = &app;
   OnboardingApplet w; w.onStart(ctx);
-  EXPECT_EQ(6, w.stepCountForTest());   // Welcome,Name,Region,Gps,Time,Done
+  EXPECT_EQ(6, w.stepCountForTest());
 }
 
 TEST(OnboardingApplet, GpsStepHiddenWhenUnsupported) {
   FakeApp app; app.gpsSup = false;
   AppletContext ctx; ctx.app = &app;
   OnboardingApplet w; w.onStart(ctx);
-  EXPECT_EQ(5, w.stepCountForTest());   // Welcome,Name,Region,Time,Done
+  EXPECT_EQ(5, w.stepCountForTest());
 }
 
-TEST(OnboardingApplet, BackAndNextMoveSteps) {
+TEST(OnboardingApplet, NextAdvancesBackReturns) {
   FakeApp app; AppletContext ctx; ctx.app = &app;
   OnboardingApplet w; w.onStart(ctx);
   EXPECT_EQ(0, w.stepForTest());
-  w.onInput(InputEvent::NavRight); EXPECT_EQ(1, w.stepForTest());
-  w.onInput(InputEvent::NavLeft);  EXPECT_EQ(0, w.stepForTest());
-  w.onInput(InputEvent::NavLeft);  EXPECT_EQ(0, w.stepForTest());  // Welcome: Back ignored
+  advance(w); EXPECT_EQ(1, w.stepForTest());   // Welcome -> Name
+  advance(w); EXPECT_EQ(2, w.stepForTest());   // Name -> Region
+  w.onInput(InputEvent::Back); EXPECT_EQ(1, w.stepForTest());
+  w.onInput(InputEvent::Back); EXPECT_EQ(0, w.stepForTest());
+  w.onInput(InputEvent::Back); EXPECT_EQ(0, w.stepForTest());   // Welcome: Back no-op
 }
 
-TEST(OnboardingApplet, RegionNavPicksPreset) {
+TEST(OnboardingApplet, RegionSelectPicksAndAutoAdvances) {
   FakeApp app; AppletContext ctx; ctx.app = &app;
   OnboardingApplet w; w.onStart(ctx);
-  w.onInput(InputEvent::NavRight);   // -> Name
-  w.onInput(InputEvent::NavRight);   // -> Region
-  int first = w.regionForTest();
-  w.onInput(InputEvent::NavDown);    // next preset
-  EXPECT_NE(first, w.regionForTest());
-}
-
-TEST(OnboardingApplet, FinishAppliesEverythingAndHandsOff) {
-  g_doneCalls = 0;
-  FakeApp app; app.gpsSup = true; app.tzCity = 5; app.autoSync = true;
-  AppletContext ctx; ctx.app = &app;
-  OnboardingApplet w; w.configure(onDone, nullptr); w.onStart(ctx);
-  gotoDone(w);
-  EXPECT_EQ(w.stepCountForTest() - 1, w.stepForTest());  // on Done
-  w.onInput(InputEvent::Select);     // Finish
-  EXPECT_STREQ("OLD", app.setName);  // name defaulted from nodeName(), applied
-  EXPECT_TRUE(app.didSetRadio);
-  EXPECT_FLOAT_EQ(915.800f, app.setRadioCfg.freqMhz);  // PRESETS[0] = Australia
-  EXPECT_EQ(20, app.setRadioCfg.txPowerDbm);           // preserved from current radioConfig()
-  EXPECT_TRUE(app.didSetGps);
-  EXPECT_TRUE(app.didSetTz);   EXPECT_EQ(5, app.setTzVal);
-  EXPECT_TRUE(app.didSetAuto);
-  EXPECT_TRUE(app.didComplete);
-  EXPECT_EQ(1, g_doneCalls);
+  gotoStep(w, 2);                       // Radio region
+  ASSERT_EQ(2, w.stepForTest());
+  w.onInput(InputEvent::NavDown);       // focus preset (region+1)
+  int picked = w.focusForTest();
+  w.onInput(InputEvent::Select);        // pick + auto-advance
+  EXPECT_EQ(picked, w.regionForTest());
+  EXPECT_EQ(3, w.stepForTest());        // advanced off Region
 }
 
 TEST(OnboardingApplet, RegionPreselectsCurrentRadio) {
-  // onStart should highlight the preset matching the device's current radio,
-  // so an untouched Region step keeps the existing band (not PRESETS[0]).
   int usa = -1;
   for (int i = 0; i < PRESET_COUNT; i++)
     if (strcmp(PRESETS[i].name, "USA/Canada") == 0) usa = i;
-  ASSERT_GE(usa, 0);
-  ASSERT_NE(0, usa);   // must differ from the reset-selection default to be meaningful
+  ASSERT_GE(usa, 0); ASSERT_NE(0, usa);
   FakeApp app;
   app.radio.freqMhz = PRESETS[usa].freq; app.radio.bwKhz = PRESETS[usa].bw;
   app.radio.sf = PRESETS[usa].sf; app.radio.cr = PRESETS[usa].cr;
@@ -129,12 +111,48 @@ TEST(OnboardingApplet, RegionPreselectsCurrentRadio) {
   EXPECT_EQ(usa, w.regionForTest());
 }
 
-TEST(OnboardingApplet, RendersWithoutCrashing) {
-  FakeApp app; AppletContext ctx; ctx.app = &app;
+TEST(OnboardingApplet, FinishAppliesChangedAndSkipsUnchanged) {
+  g_doneCalls = 0;
+  FakeApp app; app.gpsSup = true; app.tzCity = 5; app.autoSync = true; app.gpsOn = false;
+  AppletContext ctx; ctx.app = &app;
+  OnboardingApplet w; w.configure(onDone, nullptr); w.onStart(ctx);
+  for (int i = 0; i < 12 && w.stepForTest() < w.stepCountForTest() - 1; i++) advance(w);
+  ASSERT_EQ(w.stepCountForTest() - 1, w.stepForTest());   // Done
+  advance(w);   // Select -> finish
+  EXPECT_TRUE(app.didSetRadio);                 // band changed from the no-match default
+  EXPECT_FLOAT_EQ(915.800f, app.setRadioCfg.freqMhz);
+  EXPECT_EQ(20, app.setRadioCfg.txPowerDbm);
+  EXPECT_TRUE(app.didComplete);
+  EXPECT_EQ(1, g_doneCalls);
+  EXPECT_STREQ("", app.setName);                // unchanged -> skipped
+  EXPECT_FALSE(app.didSetGps);
+  EXPECT_FALSE(app.didSetTz);
+  EXPECT_FALSE(app.didSetAuto);
+}
+
+TEST(OnboardingApplet, ChangedGpsToggleIsApplied) {
+  FakeApp app; app.gpsSup = true; app.gpsOn = false;
+  AppletContext ctx; ctx.app = &app;
+  OnboardingApplet w; w.configure(onDone, nullptr); w.onStart(ctx);
+  gotoStep(w, 3);                       // GPS step
+  ASSERT_EQ(3, w.stepForTest());
+  w.onInput(InputEvent::Select);        // focus 0 = GPS toggle -> On
+  for (int i = 0; i < 12 && w.stepForTest() < w.stepCountForTest() - 1; i++) advance(w);
+  advance(w);   // finish
+  EXPECT_TRUE(app.didSetGps);
+  EXPECT_TRUE(app.setGpsVal);
+}
+
+TEST(OnboardingApplet, RendersEveryStepWithoutCrashing) {
+  FakeApp app; app.gpsSup = true;
+  AppletContext ctx; ctx.app = &app;
   OnboardingApplet w; w.onStart(ctx);
   FakeDisplayDriver d; Canvas c(&d);
-  w.onRender(c);
-  EXPECT_GT(d.fills.size(), 0u);
+  for (int i = 0; i < w.stepCountForTest(); i++) {
+    w.onRender(c);
+    EXPECT_GT(d.fills.size(), 0u);
+    if (i < w.stepCountForTest() - 1) advance(w);
+  }
 }
 
 int main(int argc, char** argv) {

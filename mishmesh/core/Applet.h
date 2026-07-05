@@ -155,6 +155,9 @@ struct AppServices {
     (void)bytes; if (out && cap) out[0] = 0;
   }
   virtual void markOnboardingComplete() {}
+  // Dev tool: re-trigger the first-boot onboarding wizard (sets onboarding_state to
+  // IN_PROGRESS and reboots). Default no-op. Only wired/surfaced in dev builds.
+  virtual void resetOnboarding() {}
   // [/mishmesh]
 };
 

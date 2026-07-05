@@ -7,6 +7,7 @@
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
 #include <mishmesh/applets/settings/RadioSettingsPanel.h>
 #include <mishmesh/applets/settings/TimeSettingsPanel.h>
+#include <mishmesh/applets/settings/DevResetOnboardingPanel.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
@@ -21,8 +22,16 @@ static SettingsPanel* advertPanelPtr()      { return &advertSettings(); }
 static SettingsPanel* systemInfoPanelPtr()  { return &systemInfoSettings(); }
 static SettingsPanel* radioPanelPtr()       { return &radioSettings(); }
 static SettingsPanel* timePanelPtr()        { return &timeSettings(); }
+static SettingsPanel* devResetPanelPtr()    { return &devResetOnboardingSettings(); }
 
 static bool always(const AppletContext&) { return true; }
+static bool devBuildOnly(const AppletContext&) {
+#ifdef MISHMESH_DEV_TOOLS
+  return true;
+#else
+  return false;
+#endif
+}
 
 const SettingsApplet::Entry SettingsApplet::ENTRIES[ENTRY_COUNT] = {
   { "Home",        homePanelPtr,       (uint16_t)Icon::Home,      always    },
@@ -32,6 +41,7 @@ const SettingsApplet::Entry SettingsApplet::ENTRIES[ENTRY_COUNT] = {
   { "Radio",       radioPanelPtr,      (uint16_t)Icon::Wifi,      always    },
   { "Time & date", timePanelPtr,       (uint16_t)Icon::Clock,     always    },
   { "System Info", systemInfoPanelPtr, (uint16_t)Icon::Chip,      always    },
+  { "Reset onboarding", devResetPanelPtr, (uint16_t)Icon::Reload, devBuildOnly },
 };
 
 int SettingsApplet::Model::count() const { return owner ? owner->_visibleCount : 0; }

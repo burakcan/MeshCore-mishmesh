@@ -106,6 +106,11 @@ public:
   // DisplayDriver::blitColumnMajor1bpp. Intended for full-frame sources (e.g. a game).
   void blit1bpp(const uint8_t* buf, int w, int h);
 
+  // Draw a row-major XBM bitmap (as `drawXbm`/logo assets use) at local (x,y). Not
+  // clipped to the Canvas clip window - intended for small on-screen marks (e.g. the
+  // boot logo) positioned within the visible area.
+  void drawXbm(int x, int y, const uint8_t* bits, int w, int h);
+
   // [mishmesh] Optional inline glyph-overlay hook: a secondary bitmap font whose
   // glyphs replace mapped codepoints in body text (used for a small emoji atlas).
   // Registered once at startup; when unset, all text rendering/measuring is

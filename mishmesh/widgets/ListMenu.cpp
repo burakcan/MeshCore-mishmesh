@@ -44,21 +44,18 @@ int ListMenu::firstVisibleRow(int box_height) const {
 // Draws a row's icon/label/value in one colour, no selection fill. Called once
 // per visible row in LIGHT, then again (clipped to the highlight bar) in DARK so
 // text inverts cleanly as the bar slides over it.
+// isButton() rows render via the shared Button widget so every button in the system
+// looks identical. The button shows its own focus (filled when selected); it is drawn
+// on top of everything and never inverted by the row highlight bar.
+void ListMenu::drawButtonRow(Canvas& view, int i, int ry, int cw) {
+  int bh = _rowH - 2;   // 1px margin top and bottom
+  int bw = cw / 2; if (bw < 32) bw = 32; if (bw > cw - 4) bw = cw - 4;
+  _button.set(_model->label(i), _model->icon(i));
+  _button.setFocused(_drawSelection && i == _selected);
+  _button.draw(view, (cw - bw) / 2, ry + 1, bw, bh);
+}
+
 void ListMenu::drawRowContent(Canvas& view, int i, int ry, int cw, DisplayDriver::Color col, uint32_t now) {
-  if (_model->isButton(i)) {
-    // Centered box button: outline rect + centered text in col.
-    // LIGHT pass (idle): LIGHT border + LIGHT text on dark background.
-    // DARK pass (selected, clipped to highlight bar): DARK border + DARK text on LIGHT bar.
-    const char* lbl = _model->label(i);
-    int bh = _rowH - 2;   // 1px margin top and bottom
-    int bw = cw / 2; if (bw < 32) bw = 32; if (bw > cw - 4) bw = cw - 4;
-    int bx = (cw - bw) / 2;
-    int by = ry + 1;
-    view.drawRect(bx, by, bw, bh, col);
-    int ty = by + (bh - view.fontHeight(fontBody())) / 2; if (ty < by) ty = by;
-    view.drawTextEllipsized(fontBody(), bx + bw / 2, ty, bw - 4, lbl, col, TextAlign::Center);
-    return;
-  }
   int tx = 4;
   uint16_t ic = _model->icon(i);
   if (ic) {
@@ -174,25 +171,37 @@ void ListMenu::draw(Canvas& c, int x, int y, int w, int h) {
     if (hy + _headerH > 0 && hy < h) _header->draw(view, 0, hy, cw, _headerH);
   }
 
-  // Base pass: every visible row in LIGHT (un-inverted).
+  // Base pass: every visible non-button row in LIGHT (un-inverted). Button rows are
+  // drawn last (below) so the highlight bar never paints over them.
   for (int i = 0; i < n; i++) {
+    if (_model->isButton(i)) continue;
     int ry = bodyTop + i * _rowH - _scrollPx;
     if (ry + _rowH <= 0 || ry >= h) continue;
     drawRowContent(view, i, ry, cw, DisplayDriver::LIGHT, now);
   }
 
   // Highlight bar, then re-draw the rows it overlaps in DARK clipped to it, so
-  // text inverts pixel-by-pixel as the bar glides between rows.
-  // Skipped when _drawSelection is false (e.g. focus has moved to an external widget).
-  if (_drawSelection) {
+  // text inverts pixel-by-pixel as the bar glides between rows. Skipped when the
+  // selection is on a button row (the Button widget shows its own focus) or when
+  // _drawSelection is false (focus has moved to an external widget).
+  if (_drawSelection && !_model->isButton(_selected)) {
     int barY = bodyTop + _barY - _scrollPx;
     view.fillRect(0, barY, cw, _rowH, DisplayDriver::LIGHT);
     for (int i = 0; i < n; i++) {
+      if (_model->isButton(i)) continue;
       int ry = bodyTop + i * _rowH - _scrollPx;
       if (ry + _rowH <= barY || ry >= barY + _rowH) continue;   // no overlap with the bar
       Canvas bar = view.region(0, barY, cw, _rowH);
       drawRowContent(bar, i, ry - barY, cw, DisplayDriver::DARK, now);
     }
+  }
+
+  // Button rows on top: the shared Button widget renders its own focus state.
+  for (int i = 0; i < n; i++) {
+    if (!_model->isButton(i)) continue;
+    int ry = bodyTop + i * _rowH - _scrollPx;
+    if (ry + _rowH <= 0 || ry >= h) continue;
+    drawButtonRow(view, i, ry, cw);
   }
 
   if (scrollbar) {

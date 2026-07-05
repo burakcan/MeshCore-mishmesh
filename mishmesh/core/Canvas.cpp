@@ -289,4 +289,8 @@ void Canvas::blit1bpp(const uint8_t* buf, int w, int h) {
   if (_d != nullptr) _d->blitColumnMajor1bpp(buf, w, h);
 }
 
+void Canvas::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
+  if (_d != nullptr) _d->drawXbm(_ox + x, _oy + y, bits, w, h);
+}
+
 }  // namespace mishmesh

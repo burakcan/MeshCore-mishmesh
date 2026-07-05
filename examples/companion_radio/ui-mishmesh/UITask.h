@@ -194,6 +194,11 @@ public:
     NodePrefs* p = the_mesh.getNodePrefs();
     if (p) { p->onboarding_state = 2; the_mesh.savePrefs(); }
   }
+  void resetOnboarding() override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (p) { p->onboarding_state = 1; the_mesh.savePrefs(); }   // IN_PROGRESS: gate re-shows the wizard
+    _board->reboot();   // does not return
+  }
   // [/mishmesh]
   // [mishmesh]
   // BLE capability is a build-time fact: deriving it from runtime state
