@@ -28,6 +28,13 @@
 // [mishmesh] (ExtraFsMsgBackend replaces the old _msgIoBuf snapshot approach)
 // [/mishmesh]
 
+// [mishmesh] onboarding finished: hand off to the home screen.
+static void onboardingDone(void* ctx) {
+  UITask* self = (UITask*)ctx;
+  self->finishOnboardingToHome();
+}
+// [/mishmesh]
+
 // Free and total heap in bytes, best-effort per platform; 0 where unavailable.
 static void platformHeap(uint32_t& freeBytes, uint32_t& totalBytes) {
 #if defined(ESP32)
@@ -134,6 +141,12 @@ uint16_t UITask::batteryMillivolts() const {
   return _batt_mv;
 }
 
+// [mishmesh] Hand off from the onboarding wizard to the home screen.
+void UITask::finishOnboardingToHome() {
+  if (_host && _home) _host->setRoot(_home);   // wizard leaks intentionally (setup-only, one instance)
+}
+// [/mishmesh]
+
 void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs) {
   _display = display;
   _sensors = sensors;
@@ -219,7 +232,19 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _home = new mishmesh::HomeApplet();
   _home->setMenu(_menu);
   _home->setLock(_lock);
-  _host->setRoot(_home);
+  // [mishmesh] first-boot onboarding gate
+  uint8_t obState = _node_prefs ? _node_prefs->onboarding_state : 2;
+  if (mishmesh::shouldShowOnboarding(obState, the_mesh.identityFresh())) {
+    if (obState == 0 && _node_prefs) {          // first show: mark in-progress (resumable)
+      _node_prefs->onboarding_state = 1; the_mesh.savePrefs();
+    }
+    _onboard = new mishmesh::OnboardingApplet();
+    _onboard->configure(onboardingDone, this);
+    _host->setRoot(_onboard);
+  } else {
+    _host->setRoot(_home);
+  }
+  // [/mishmesh]
 
 #ifdef UI_HAS_JOYSTICK
   // Wio Tracker L1 buttons are active-low (pull-up), hence reverse=true.

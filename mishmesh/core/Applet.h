@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 #include <mishmesh/core/AppletStorage.h>
 #include <mishmesh/core/InputEvent.h>
@@ -107,6 +108,10 @@ struct AppServices {
   virtual bool    autoTimeSync() const { return true; }
   virtual void    setAutoTimeSync(bool) {}
   virtual void    setEpochSeconds(uint32_t) {}    // manual clock set (writes RTC)
+  // Timezone as a WorldClock city index (source of truth): -1 = custom/fixed
+  // (use the raw offset). tzOffsetMinutes() above resolves this DST-aware.
+  virtual int  tzCityIndex() const { return -1; }
+  virtual void setTzCity(int cityIndex) { (void)cityIndex; }
   virtual uint8_t dateFormat() const { return 0; }   // mishmesh::DateFormat (0=DMY)
   virtual void    setDateFormat(uint8_t) {}
   // GPS power. Defaults keep the framework companion-agnostic (unsupported);
@@ -143,6 +148,13 @@ struct AppServices {
   // keepIdentity preserves the node keypair; false yields a fresh key on boot. Does
   // not return. Default no-op keeps the framework companion-agnostic.
   virtual void factoryReset(bool keepIdentity) { (void)keepIdentity; }
+  // Onboarding wizard support. selfPublicKeyHex writes the node's public-key prefix
+  // as hex (bytes = how many key bytes to render; out must hold 2*bytes+1). Default
+  // writes an empty string. markOnboardingComplete persists "onboarding done".
+  virtual void selfPublicKeyHex(char* out, size_t cap, int bytes) const {
+    (void)bytes; if (out && cap) out[0] = 0;
+  }
+  virtual void markOnboardingComplete() {}
   // [/mishmesh]
 };
 

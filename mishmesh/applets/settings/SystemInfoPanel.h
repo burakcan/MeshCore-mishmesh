@@ -15,9 +15,10 @@ static const int SYSSTATS_MAX_LINES = 8;
 // lines are omitted entirely when unknown.
 int formatSystemStats(const SystemStats& s, char out[][SYSSTATS_LINE_LEN], int maxLines);
 
-// Device-health panel in two stacked regions: a scrollable read-only stats block on
-// top (rebuilt ~1s so free-heap stays live) and two factory-reset actions below,
-// split by a 1px divider. Focus starts on the stats; a NavDown while the stats are
+// Device-health panel: a scrollable read-only stats block (rebuilt ~1s so free-heap
+// stays live) with two factory-reset actions riding at the end of the same scroll as
+// a footer (split by a 1px divider), so they scroll inline with the text rather than
+// pinning to the viewport. Focus starts on the stats; a NavDown while the stats are
 // scrolled to the bottom hands focus to the action rows, and NavUp on the first row
 // hands it back. Selecting an action opens a confirm; confirming calls
 // AppServices::factoryReset (which reboots) and never returns. Back bubbles to pop.

@@ -191,6 +191,9 @@ public:
   // keeps its public key; false leaves no identity file so begin() generates a
   // fresh one on boot. Does not return (reboots).
   void uiFactoryReset(bool keepIdentity);
+  // [mishmesh] true when begin() generated a brand-new identity this boot (no
+  // existing identity file) - drives the first-boot onboarding gate.
+  bool identityFresh() const { return _identity_fresh; }
   // [/mishmesh]
 
   // Discovery: adverts seen but not auto-added, so the UI can add them manually.
@@ -344,6 +347,7 @@ private:
 
   DataStore* _store;
   NodePrefs _prefs;
+  bool _identity_fresh = false;   // [mishmesh]
   uint32_t pending_login;
   bool mishmesh_login_pending = false;   // [mishmesh] login initiated on-device -> route result to _ui
   uint32_t pending_status;

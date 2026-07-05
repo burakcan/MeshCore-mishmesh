@@ -54,6 +54,8 @@ void ScrollText::draw(Canvas& c, int x, int y, int w, int h) {
     }
     contentH += lineHt[i];
   }
+  int footerTop = contentH + (_footer && _footerH > 0 ? 2 : 0);   // gap above the footer
+  if (_footer && _footerH > 0) contentH = footerTop + _footerH;
   _contentH = contentH;
 
   int maxScroll = contentH > h ? contentH - h : 0;
@@ -76,6 +78,14 @@ void ScrollText::draw(Canvas& c, int x, int y, int w, int h) {
       else       view.drawTextEllipsized(font, 0, ly, cw, _lines[i], DisplayDriver::LIGHT);
     }
     ly += lineHt[i];
+  }
+  if (_footer && _footerH > 0) {
+    int fy = footerTop - _scrollPx;
+    if (_footerDivider) {
+      int dy = fy - 1;
+      if (dy >= 0 && dy < h) view.fillRect(0, dy, cw, 1, DisplayDriver::LIGHT);
+    }
+    if (fy + _footerH > 0 && fy < h) _footer->draw(view, 0, fy, cw, _footerH);
   }
   if (scroll) {
     view.drawScrollbarThumb(w - 2, h, contentH, _scrollPx);

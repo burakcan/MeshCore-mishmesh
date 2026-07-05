@@ -17,6 +17,7 @@
 #include <mishmesh/applets/AppMenuApplet.h>
 #include <mishmesh/applets/LockApplet.h>
 // [mishmesh]
+#include <mishmesh/core/WorldClock.h>
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/core/AppletStorage.h>
 #include <mishmesh/core/RetryEngine.h>
@@ -28,6 +29,7 @@
 #include <mishmesh/core/ContactsFullLatch.h>
 #include <mishmesh/applets/ContactsFullApplet.h>
 #include <mishmesh/core/ExtraFsMsgBackend.h>
+#include <mishmesh/applets/OnboardingApplet.h>
 // [/mishmesh]
 
 class UITask : public AbstractUITask, public mishmesh::AppServices, public mishmesh::ContactsService {
@@ -38,6 +40,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   mishmesh::HomeApplet* _home;
   mishmesh::AppMenuApplet* _menu;
   mishmesh::LockApplet* _lock;
+  mishmesh::OnboardingApplet* _onboard = nullptr;   // [mishmesh] first-boot wizard (null after)
 
   mutable uint16_t _batt_mv;        // smoothed; raw ADC reads are noisy
   mutable uint32_t _batt_sampled_at;
@@ -142,6 +145,9 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   UIEventType _notifyEvent = UIEventType::none;
   void dispatchNotification(UIEventType t);
   void applyTimeSyncGate(bool on);
+  // [mishmesh] per-minute memo for the DST-aware tz resolver (see tzOffsetMinutes)
+  mutable uint32_t _tzCacheMin = 0xFFFFFFFFu;
+  mutable int16_t  _tzCacheOff = 0;
   // [/mishmesh]
 
 #ifdef UI_HAS_JOYSTICK
@@ -166,6 +172,7 @@ public:
   }
 
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
+  void finishOnboardingToHome();   // [mishmesh] called by onboardingDone callback
 
   // mishmesh::AppServices
   const char* nodeName() const override { return _node_prefs ? _node_prefs->node_name : ""; }
@@ -175,6 +182,18 @@ public:
   bool airtimeStats(mishmesh::AirtimeStats& out) const override;
   // [mishmesh]
   void factoryReset(bool keepIdentity) override { the_mesh.uiFactoryReset(keepIdentity); }
+  // [/mishmesh]
+  // [mishmesh]
+  void selfPublicKeyHex(char* out, size_t cap, int bytes) const override {
+    if (!out || !cap) return;
+    if (bytes < 1) bytes = 1;
+    if ((size_t)(2 * bytes + 1) > cap) bytes = (int)((cap - 1) / 2);
+    mesh::Utils::toHex(out, the_mesh.self_id.pub_key, bytes);
+  }
+  void markOnboardingComplete() override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (p) { p->onboarding_state = 2; the_mesh.savePrefs(); }
+  }
   // [/mishmesh]
   // [mishmesh]
   // BLE capability is a build-time fact: deriving it from runtime state
@@ -265,13 +284,38 @@ public:
     return (float)the_mesh.uiRepeatFreqKhz(i) / 1000.0f;
   }
   int16_t tzOffsetMinutes() const override {
-    return _node_prefs ? (int16_t)_node_prefs->tz_quarter_hours * 15 : 0;
+    if (!_node_prefs) return 0;
+    int16_t fixed = (int16_t)_node_prefs->tz_quarter_hours * 15;
+    if (_node_prefs->tz_city_index < 0) return fixed;   // custom: no RTC read
+    uint32_t now = epochSeconds();
+    uint32_t nowMin = now / 60;
+    if (nowMin != _tzCacheMin) {   // recompute DST only when the minute rolls over
+      _tzCacheMin = nowMin;
+      _tzCacheOff = mishmesh::resolveTzOffset(_node_prefs->tz_city_index, fixed, now);
+    }
+    return _tzCacheOff;
   }
   void setTzOffsetMinutes(int16_t m) override {
     NodePrefs* p = the_mesh.getNodePrefs();
     if (!p) return;
     if (m < -720) m = -720; else if (m > 840) m = 840;
     p->tz_quarter_hours = (int8_t)(m / 15);
+    p->tz_city_index = -1;         // raw offset = custom
+    _tzCacheMin = 0xFFFFFFFFu;     // invalidate memo
+    the_mesh.savePrefs();
+  }
+  int tzCityIndex() const override {
+    return _node_prefs ? _node_prefs->tz_city_index : -1;
+  }
+  void setTzCity(int cityIndex) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    if (cityIndex < 0 || cityIndex >= mishmesh::worldCityCount()) return;   // reject garbage
+    p->tz_city_index = (int8_t)cityIndex;
+    int16_t off = mishmesh::worldCityOffsetNow(cityIndex, epochSeconds());
+    if (off < -720) off = -720; else if (off > 840) off = 840;
+    p->tz_quarter_hours = (int8_t)(off / 15);   // keep the fixed-offset fallback in sync
+    _tzCacheMin = 0xFFFFFFFFu;
     the_mesh.savePrefs();
   }
   bool timeFormat12h() const override {

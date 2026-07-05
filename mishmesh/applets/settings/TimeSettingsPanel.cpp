@@ -1,6 +1,8 @@
 #include <mishmesh/applets/settings/TimeSettingsPanel.h>
 #include <mishmesh/applets/SetTimeApplet.h>
 #include <mishmesh/applets/SoundPickerApplet.h>
+#include <mishmesh/applets/TimezonePickerApplet.h>
+#include <mishmesh/core/WorldClock.h>
 #include <mishmesh/core/Actions.h>   // volumeLevelName
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
@@ -11,9 +13,9 @@
 
 namespace mishmesh {
 
-// Stepper works in quarter-hour units; render as UTC±HH:MM.
-static void tzStepLabel(int qh, char* out, uint16_t cap) {
-  formatOffset(out, cap, (int16_t)(qh * 15));
+// Picker callback: ctx is the AppServices; apply the chosen city.
+static void applyTzCity(void* ctx, int cityIndex) {
+  if (ctx) ((AppServices*)ctx)->setTzCity(cityIndex);
 }
 
 // Date-format stepper renders each option as a real example date. The sample is
@@ -39,7 +41,12 @@ static const char* ringVolumeName(uint8_t v) {
 const char* TimeSettingsPanel::Model::value(int i) const {
   if (!app) return nullptr;
   static char buf[24];
-  if (i == TimeZone) { formatOffset(buf, sizeof(buf), app->tzOffsetMinutes()); return buf; }
+  if (i == TimeZone) {
+    int ci = app->tzCityIndex();
+    if (ci >= 0 && ci < worldCityCount()) return worldCity(ci).name;
+    formatOffset(buf, sizeof(buf), app->tzOffsetMinutes());
+    return buf;
+  }
   if (i == TimeFmt)  { snprintf(buf, sizeof(buf), "%s", app->timeFormat12h() ? "12h" : "24h"); return buf; }
   if (i == DateFmt) {   // live example rendered in the chosen format
     LocalTime lt = applyTz(app->epochSeconds(), app->tzOffsetMinutes());
@@ -66,7 +73,6 @@ void TimeSettingsPanel::begin(AppletContext& ctx) {
   _list.setRowHeight(14);
   _list.setModel(&_model);
   _list.resetSelection();   // singleton reuse: setModel skips reset on same-ptr rebind
-  _editingTz = false;
 }
 
 void TimeSettingsPanel::onShow() {
@@ -76,20 +82,19 @@ void TimeSettingsPanel::onShow() {
 
 int TimeSettingsPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
   _list.draw(c, x, y, w, h);
-  if (_editingTz || _editingDateFmt) { _stepper.draw(c, 0, 0, c.width(), c.height()); return 100; }
+  if (_editingDateFmt) { _stepper.draw(c, 0, 0, c.width(), c.height()); return 100; }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool TimeSettingsPanel::onInput(InputEvent ev) {
-  if (_editingTz || _editingDateFmt) {
+  if (_editingDateFmt) {
     if (_stepper.onInput(ev)) {
       StepperResult r = _stepper.result();
       if (r != StepperResult::None) {
         if (r == StepperResult::Confirmed && _app) {
-          if (_editingTz) _app->setTzOffsetMinutes((int16_t)(_stepper.value() * 15));
-          else            _app->setDateFormat((uint8_t)_stepper.value());
+          _app->setDateFormat((uint8_t)_stepper.value());
         }
-        _editingTz = _editingDateFmt = false;
+        _editingDateFmt = false;
         _stepper.reset();
       }
     }
@@ -100,8 +105,8 @@ bool TimeSettingsPanel::onInput(InputEvent ev) {
   if (ev == InputEvent::Select && _app) {
     int i = _list.selected();
     if (i == Model::TimeZone) {
-      _stepper.configure("Time zone", _app->tzOffsetMinutes() / 15, -48, 56, tzStepLabel);
-      _editingTz = true;
+      timezonePickerApplet().configure(_app->tzCityIndex(), applyTzCity, _app);
+      if (_host) _host->push(&timezonePickerApplet());
     } else if (i == Model::TimeFmt) {
       _app->setTimeFormat12h(!_app->timeFormat12h());
     } else if (i == Model::DateFmt) {

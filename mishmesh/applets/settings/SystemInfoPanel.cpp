@@ -7,7 +7,6 @@ namespace mishmesh {
 static const uint32_t REBUILD_MS = 1000;
 static const int ACTION_ROW_H = 12;
 static const int ACTIONS_H    = 2 * ACTION_ROW_H;   // exactly two rows
-static const int DIVIDER_GAP  = 2;                  // 1px line + 1px gap
 
 static const char* const RESET_LABELS[2] = {
   "Factory Reset (keep identity)",
@@ -71,6 +70,9 @@ void SystemInfoPanel::begin(AppletContext& ctx) {
   _list.setModel(&_actions);
   _list.resetSelection();
   _list.setDrawSelection(false);   // stats region has focus first
+  // The actions ride at the end of the scrolled content, not pinned to the
+  // viewport: they scroll into view after the last stat line.
+  _stats.setFooter(&_list, ACTIONS_H, /*divider=*/true);
 }
 
 int SystemInfoPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
@@ -78,12 +80,8 @@ int SystemInfoPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
   if (!_built) rebuild(now, false);
   else if (now - _lastBuilt >= REBUILD_MS) rebuild(now, true);
 
-  int statsH = h - ACTIONS_H - DIVIDER_GAP;
-  if (statsH < 0) statsH = 0;
-  _stats.draw(c, x, y, w, statsH);
-  c.fillRect(x, y + statsH, w, 1, DisplayDriver::LIGHT);   // divider
   _list.setDrawSelection(_focus == Focus::Actions);
-  _list.draw(c, x, y + statsH + DIVIDER_GAP, w, ACTIONS_H);
+  _stats.draw(c, x, y, w, h);   // actions ride as a scrolling footer inside the stats view
 
   if (_confirming) { _confirm.draw(c, 0, 0, c.width(), c.height()); return 100; }
 
@@ -93,9 +91,11 @@ int SystemInfoPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
 
 void SystemInfoPanel::openConfirm(int row) {
   _pendingRow = row;
+  // Kept short: the confirm box holds ~2 body lines, so long copy overflows behind
+  // the buttons. The menu row already names which reset this is.
   _confirm.configure(row == 0
-    ? "Erase all settings, contacts & messages? Identity is kept. Cannot be undone."
-    : "Erase EVERYTHING including identity? A new key is generated on reboot. Cannot be undone.",
+    ? "Erase data, keep identity. Can't undo."
+    : "Erase all incl. identity. Can't undo.",
     /*defaultSel=*/0);   // open on Cancel: irreversible wipe, don't confirm on a stray Select
   _confirming = true;
 }

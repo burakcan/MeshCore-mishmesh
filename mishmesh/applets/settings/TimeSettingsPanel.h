@@ -14,17 +14,7 @@ namespace sound { class SoundEngine; }
 // auto is on). Source of truth: AppServices (+ ClockService for the tunes).
 class TimeSettingsPanel : public SettingsPanel {
 public:
-  const char* title() const override { return "Time & date"; }
-  void begin(AppletContext& ctx) override;
-  void onShow() override;
-  int  renderBody(Canvas& c, int x, int y, int w, int h) override;
-  bool onInput(InputEvent ev) override;
-  bool modalActive() const override { return _editingTz || _editingDateFmt; }
-
-  int  rowCountForTest() const { return _model.count(); }
-  bool autoToggleForTest() const { return _model.toggleState(Model::SetAuto); }
-
-private:
+  // Row indices (public for test seams and the .cpp select handler).
   struct Model : ListModel {
     AppServices* app = nullptr;
     enum Row : int { TimeZone, TimeFmt, DateFmt, AlarmSound, AlarmVolume,
@@ -34,14 +24,27 @@ private:
     bool isToggle(int i) const override { return i == SetAuto; }
     bool toggleState(int i) const override { return app && app->autoTimeSync(); }
     const char* value(int i) const override;
-  } _model;
+  };
+
+  const char* title() const override { return "Time & date"; }
+  void begin(AppletContext& ctx) override;
+  void onShow() override;
+  int  renderBody(Canvas& c, int x, int y, int w, int h) override;
+  bool onInput(InputEvent ev) override;
+  bool modalActive() const override { return _editingDateFmt; }
+
+  int  rowCountForTest() const { return _model.count(); }
+  bool autoToggleForTest() const { return _model.toggleState(Model::SetAuto); }
+  const char* rowValueForTest(int i) const { return _model.value(i); }
+
+private:
+  Model         _model;
 
   AppServices*  _app = nullptr;
   AppletHost*   _host = nullptr;
   sound::SoundEngine* _snd = nullptr;   // ring preview on volume cycle
   ListMenu      _list;
-  StepperDialog _stepper;   // shared modal: timezone or date-format (one at a time)
-  bool          _editingTz = false;
+  StepperDialog _stepper;   // shared modal: date-format stepper
   bool          _editingDateFmt = false;
 };
 

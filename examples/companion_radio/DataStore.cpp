@@ -246,6 +246,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     _prefs.repeat_saved_freq = 0.0f; // 0 = none
     _prefs.ble_enabled = 1;         // default on (old/shorter files keep BLE enabled)
     _prefs.contacts_full_notify = 1; // default on (old/shorter files keep the alert enabled)
+    _prefs.tz_city_index = -1;      // old/shorter files: custom/fixed (no regression)
+    _prefs.onboarding_state = 0;    // old/shorter files: treat as not-started (upgraders won't onboard: identity isn't fresh)
     file.read((uint8_t *)&_prefs.sound_volume, sizeof(_prefs.sound_volume));      // 137
     file.read((uint8_t *)&_prefs.sound_mute_mask, sizeof(_prefs.sound_mute_mask)); // 138
     file.read((uint8_t *)&_prefs.notify_tone_ch, sizeof(_prefs.notify_tone_ch));   // 139
@@ -258,6 +260,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     file.read((uint8_t *)&_prefs.repeat_saved_freq, sizeof(_prefs.repeat_saved_freq));     // 146
     file.read((uint8_t *)&_prefs.ble_enabled, sizeof(_prefs.ble_enabled));                 // 150
     file.read((uint8_t *)&_prefs.contacts_full_notify, sizeof(_prefs.contacts_full_notify)); // 151
+    file.read((uint8_t *)&_prefs.tz_city_index, sizeof(_prefs.tz_city_index));
+    file.read((uint8_t *)&_prefs.onboarding_state, sizeof(_prefs.onboarding_state));
     // [/mishmesh]
 
     file.close();
@@ -312,6 +316,8 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.repeat_saved_freq, sizeof(_prefs.repeat_saved_freq));     // 146
     file.write((uint8_t *)&_prefs.ble_enabled, sizeof(_prefs.ble_enabled));                 // 150
     file.write((uint8_t *)&_prefs.contacts_full_notify, sizeof(_prefs.contacts_full_notify)); // 151
+    file.write((uint8_t *)&_prefs.tz_city_index, sizeof(_prefs.tz_city_index));
+    file.write((uint8_t *)&_prefs.onboarding_state, sizeof(_prefs.onboarding_state));
     // [/mishmesh]
 
     file.close();

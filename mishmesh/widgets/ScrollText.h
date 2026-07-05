@@ -17,6 +17,9 @@ private:
   int         _count;
   Widget*     _header;
   int         _headerH;
+  Widget*     _footer = nullptr;   // optional widget below the lines, scrolls with them
+  int         _footerH = 0;
+  bool        _footerDivider = false;   // 1px line above the footer
   int         _scrollPx, _scrollTarget;   // animated offset eases toward the target
   bool        _animReady;   // false => snap on the next draw (opened/cleared)
   bool        _animating;
@@ -34,6 +37,12 @@ public:
     if (!keepScroll) { _scrollPx = _scrollTarget = 0; _animReady = false; }
   }
   void setHeader(Widget* hdr, int height) { _header = hdr; _headerH = height; }
+  // Optional widget rendered after the last line, scrolling together with the
+  // content (e.g. action rows that belong at the end of the text, not pinned to
+  // the viewport). `divider` draws a 1px separator above it.
+  void setFooter(Widget* ftr, int height, bool divider = false) {
+    _footer = ftr; _footerH = height; _footerDivider = divider;
+  }
   // Word-wrap each line to the panel width instead of truncating with an ellipsis.
   // Opt-in (default off) so existing single-line callers are unchanged. For consoles
   // / long-form text where full readability matters more than one row per entry.

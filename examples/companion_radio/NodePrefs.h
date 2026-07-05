@@ -56,5 +56,7 @@ struct NodePrefs {  // persisted to file
   float   repeat_saved_freq; // pre-repeat frequency (MHz) to restore when off-grid repeat is disabled; 0 = none
   uint8_t ble_enabled;      // serial/BLE link enabled across reboots; 0 = off, else on (default on)
   uint8_t contacts_full_notify; // mishmesh "contacts full" alert; 0 = off, else on (default on)
+  int8_t  tz_city_index;    // WorldClock city index (DST source of truth); -1 = custom/fixed (use tz_quarter_hours)
+  uint8_t onboarding_state; // 0=not started, 1=in progress, 2=done (first-boot wizard)
   // [/mishmesh]
 };

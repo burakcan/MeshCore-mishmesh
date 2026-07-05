@@ -73,6 +73,8 @@ public:
 
   // Test/inspection accessor: current toast text (empty if no toast has been posted).
   const char* toastForTest() const { return _toast_msg; }
+  // Test/inspection accessor: current applet stack depth.
+  int depthForTest() const { return _depth; }
 
   // Test/inspection accessor for the live held-button snapshot.
   const InputState& ctxInput() const { return _input_state; }

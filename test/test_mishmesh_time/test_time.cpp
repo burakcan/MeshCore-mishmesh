@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <mishmesh/core/TimeFormat.h>
+#include <mishmesh/core/WorldClock.h>
 #include <string.h>
 
 using namespace mishmesh;
@@ -96,6 +97,7 @@ TEST(TimeFormat, FormatStamp) {
 
 #include <mishmesh/applets/SetTimeApplet.h>
 #include <mishmesh/core/AppletHost.h>
+#include "FakeDisplayDriver.h"
 
 namespace {
 struct FakeApp : mishmesh::AppServices {
@@ -225,6 +227,51 @@ TEST(TimeSettingsPanel, PicksDateFormatViaModal) {
   EXPECT_EQ(1, app.datefmt);
 }
 
+// AppServices that reports a chosen tz city and records setTzCity.
+struct CityApp : FakeApp {
+  int city = -1;
+  int lastSet = -999;
+  int tzCityIndex() const override { return city; }
+  void setTzCity(int idx) override { lastSet = idx; city = idx; }
+};
+
+TEST(TimeSettingsPanel, TimeZoneRowShowsCityNameWhenSet) {
+  int berlin = -1;
+  for (int i = 0; i < mishmesh::worldCityCount(); i++)
+    if (strcmp(mishmesh::worldCity(i).name, "Berlin") == 0) berlin = i;
+  ASSERT_GE(berlin, 0);
+  CityApp app; app.epoch = kEpoch; app.city = berlin; app.off = 120;
+  mishmesh::AppletContext ctx; ctx.app = &app;
+  auto& p = mishmesh::timeSettings();
+  p.begin(ctx);
+  EXPECT_STREQ("Berlin", p.rowValueForTest(mishmesh::TimeSettingsPanel::Model::TimeZone));
+}
+
+TEST(TimeSettingsPanel, TimeZoneRowShowsOffsetWhenCustom) {
+  CityApp app; app.epoch = kEpoch; app.city = -1; app.off = 180;
+  mishmesh::AppletContext ctx; ctx.app = &app;
+  auto& p = mishmesh::timeSettings();
+  p.begin(ctx);
+  EXPECT_STREQ("UTC+03:00", p.rowValueForTest(mishmesh::TimeSettingsPanel::Model::TimeZone));
+}
+
+TEST(TimeSettingsPanel, SelectingTimeZonePushesPicker) {
+  CityApp app; app.epoch = kEpoch; app.city = -1;
+  FakeDisplayDriver disp;
+  mishmesh::AppletHost host(&disp, mishmesh::AppletContext{});
+  struct RootA : mishmesh::Applet { RootA() : Applet("root") {}
+    int onRender(mishmesh::Canvas&) override { return 1000; }
+    bool onInput(mishmesh::InputEvent) override { return false; } } root;
+  host.setRoot(&root);
+  mishmesh::AppletContext ctx; ctx.app = &app; ctx.host = &host;
+  auto& p = mishmesh::timeSettings();
+  p.begin(ctx);
+  // Row 0 is TimeZone; Select must push the picker (stack depth grows).
+  int before = host.depthForTest();
+  p.onInput(mishmesh::InputEvent::Select);
+  EXPECT_GT(host.depthForTest(), before);
+}
+
 TEST(SetTimeApplet, MdyOrderPutsMonthFirst) {
   FakeApp app; app.epoch = kEpoch; app.off = 0; app.datefmt = 1;   // MDY
   auto& a = mishmesh::setTimeApplet();
@@ -234,6 +281,46 @@ TEST(SetTimeApplet, MdyOrderPutsMonthFirst) {
   a.onInput(InputEvent::NavUp);   // field 0 = Month -> 8
   EXPECT_EQ(8, a.editing().month);
   EXPECT_EQ(1, a.editing().day);  // day untouched
+}
+
+// Find a city index by name (test helper; table is append-only).
+static int cityIdx(const char* name) {
+  for (int i = 0; i < mishmesh::worldCityCount(); i++)
+    if (strcmp(mishmesh::worldCity(i).name, name) == 0) return i;
+  return -1;
+}
+
+// 2026-07-02 12:00 UTC (summer, EU+US DST active) and 2026-01-01 12:00 UTC (winter).
+static const uint32_t kSummer = 1782993600u;
+static const uint32_t kWinter = 1767268800u;
+
+TEST(ResolveTzOffset, CustomIndexReturnsFixed) {
+  EXPECT_EQ(180, mishmesh::resolveTzOffset(-1, 180, kSummer));   // ignores epoch/city
+  EXPECT_EQ(-300, mishmesh::resolveTzOffset(-1, -300, kWinter));
+}
+
+TEST(ResolveTzOffset, EuCityShiftsForDst) {
+  int berlin = cityIdx("Berlin");                 // base +60, DST_EU
+  ASSERT_GE(berlin, 0);
+  EXPECT_EQ(120, mishmesh::resolveTzOffset(berlin, 0, kSummer));  // +2h in summer
+  EXPECT_EQ(60,  mishmesh::resolveTzOffset(berlin, 0, kWinter));  // +1h in winter
+}
+
+TEST(ResolveTzOffset, UsCityShiftsForDst) {
+  int ny = cityIdx("New York");                   // base -300, DST_US
+  ASSERT_GE(ny, 0);
+  EXPECT_EQ(-240, mishmesh::resolveTzOffset(ny, 0, kSummer));     // EDT
+  EXPECT_EQ(-300, mishmesh::resolveTzOffset(ny, 0, kWinter));     // EST
+}
+
+TEST(AppServices, TzCityIndexDefaultsToCustom) {
+  struct Bare : mishmesh::AppServices {
+    const char* nodeName() const override { return "n"; }
+    uint16_t batteryMillivolts() const override { return 0; }
+    uint32_t epochSeconds() const override { return 0; }
+  } a;
+  EXPECT_EQ(-1, a.tzCityIndex());
+  a.setTzCity(5);   // default no-op must not crash
 }
 
 int main(int argc, char** argv) {

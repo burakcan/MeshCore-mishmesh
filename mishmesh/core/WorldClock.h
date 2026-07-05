@@ -32,4 +32,9 @@ const WorldCity& worldCity(int i);
 // The offset in effect for the city at the given instant (base + DST shift).
 int16_t worldCityOffsetNow(int i, uint32_t epochUtc);
 
+// The effective offset (minutes) for a stored timezone: a WorldClock city index
+// (>= 0) resolves DST-aware via worldCityOffsetNow; -1 means "custom/fixed" and
+// returns fixedMinutes unchanged (phone/CLI-set offsets, or zones with no city).
+int16_t resolveTzOffset(int cityIndex, int16_t fixedMinutes, uint32_t epochUtc);
+
 }  // namespace mishmesh

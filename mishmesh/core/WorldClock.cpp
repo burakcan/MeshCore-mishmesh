@@ -130,4 +130,9 @@ int16_t worldCityOffsetNow(int i, uint32_t epochUtc) {
   return (int16_t)(c.baseOffsetMin + (inDst(c.dstRule, epochUtc, c.baseOffsetMin) ? 60 : 0));
 }
 
+int16_t resolveTzOffset(int cityIndex, int16_t fixedMinutes, uint32_t epochUtc) {
+  if (cityIndex < 0 || cityIndex >= worldCityCount()) return fixedMinutes;
+  return worldCityOffsetNow(cityIndex, epochUtc);
+}
+
 }  // namespace mishmesh

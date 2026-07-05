@@ -1430,6 +1430,8 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.airtime_factor = 1.0;
   strcpy(_prefs.node_name, "NONAME");
   _prefs.freq = LORA_FREQ;
+  _prefs.tz_city_index = -1;   // [mishmesh] default custom/fixed until a city is chosen
+  _prefs.onboarding_state = 0;   // [mishmesh] not started (fresh device before wizard runs)
   _prefs.sf = LORA_SF;
   _prefs.bw = LORA_BW;
   _prefs.cr = LORA_CR;
@@ -1457,6 +1459,7 @@ void MyMesh::begin(bool has_display) {
       count++;
     }
     _store->saveMainIdentity(self_id);
+    _identity_fresh = true;   // [mishmesh]
   }
 
 // if name is provided as a build flag, use that as default node name instead
