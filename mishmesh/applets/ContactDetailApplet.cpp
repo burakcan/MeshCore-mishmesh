@@ -3,6 +3,7 @@
 #include <mishmesh/applets/ContactPermissionsApplet.h>
 #include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/applets/ServerLoginApplet.h>
+#include <mishmesh/applets/SetPathApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/ContactsService.h>
 #include <mishmesh/core/ContactFormat.h>
@@ -58,9 +59,6 @@ static void pathSummary(const char* buf, char* out, uint16_t cap) {
   if (n == 0) { snprintf(out, cap, "flood"); return; }
   snprintf(out, cap, "%d hop%s", n, n == 1 ? "" : "s");
 }
-
-// Path field accepts empty (= flood); the real hex check happens in submitSetPath.
-static bool acceptAny(const char*) { return true; }
 
 ContactDetailApplet::ContactDetailApplet()
     : Applet("Contact"), _host(nullptr), _svc(nullptr), _app(nullptr), _type(0),
@@ -148,13 +146,9 @@ void ContactDetailApplet::openSetPath() {
     }
     _pathBuf[o] = 0;
   }
-  FormApplet::Field f[2] = {
-    { "Hash size", nullptr, 0, nullptr, nullptr, nullptr,
-      FormApplet::Stepper, &_hashSize, 1, 3, hashSizeLabel },
-    { "Path", _pathBuf, sizeof(_pathBuf), acceptAny, nullptr, pathSummary },
-  };
-  formApplet().configure(_displayName, f, 2, &ContactDetailApplet::submitSetPath, this, "Save");
-  if (_host) _host->push(&formApplet());
+  setPathApplet().configure(_displayName, _pathBuf, sizeof(_pathBuf), &_hashSize, 1, 3,
+                            hashSizeLabel, pathSummary, &ContactDetailApplet::submitSetPath, this);
+  if (_host) _host->push(&setPathApplet());
 }
 
 bool ContactDetailApplet::submitSetPath(void* ctx) {

@@ -9,7 +9,6 @@
 #include <mishmesh/widgets/ScrollText.h>
 #include <mishmesh/widgets/Card.h>
 #include <mishmesh/applets/KeypadApplet.h>
-#include <mishmesh/applets/FormApplet.h>
 
 namespace mishmesh {
 

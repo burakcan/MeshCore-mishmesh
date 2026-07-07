@@ -54,7 +54,9 @@ void RepeaterSettingsPanel::onStart(AppletContext& ctx) {
   _app = ctx.app;
   _phase = Phase::List;
   _textBuilt = false;
-  _view.reset();
+  _view.setRowHeight(14);
+  _view.setModel(this);
+  _view.resetSelection();
   _engine.configure(_svc, _pub, _defs, _n, &s_staged[0][0], FIELD_CAP, s_dirty, s_fetched);
   _engine.beginFetch(_host ? _host->nowMs() : 0);
   if (_host) _host->requestRender();
@@ -158,20 +160,8 @@ int RepeaterSettingsPanel::onRender(Canvas& c) {
     }
     _textView.draw(c, 0, bodyY, w, bodyH);
   } else {
-    // Form mode: boxed label+value rows + "Save" button at focus _n.
-    FormRow rows[MAX_FIELDS];
-    for (int i = 0; i < _n; i++) {
-      rows[i].label = _defs[i].label;
-      if (_defs[i].kind == SettingFieldDef::Toggle) {
-        rows[i].value = strcmp(_engine.value(i), "on") == 0 ? "On" : "Off";
-      } else if (_defs[i].longValue) {
-        strncpy(_truncBuf, _engine.value(i), 6); _truncBuf[6] = 0; strcat(_truncBuf, "...");
-        rows[i].value = _truncBuf;
-      } else {
-        rows[i].value = _engine.value(i);
-      }
-    }
-    _view.draw(c, 0, bodyY, w, bodyH, rows, _n, "Save");
+    // Form mode: label+value field rows + a Save button row (model-driven; see label()/value()/isButton()).
+    _view.draw(c, 0, bodyY, w, bodyH);
   }
 
   // Status line at the very bottom.
@@ -226,11 +216,11 @@ bool RepeaterSettingsPanel::onInput(InputEvent ev) {
     return false;
   }
 
-  // Form mode: FormView owns NavUp/Down focus movement.
-  if (_view.onInput(ev, _n, true)) { if (_host) _host->requestRender(); return true; }
+  // Form mode: ListMenu owns NavUp/Down focus movement.
+  if (_view.onInput(ev)) { if (_host) _host->requestRender(); return true; }
 
   if (ev == InputEvent::Select) {
-    int f = _view.focus();
+    int f = _view.selected();
     if (f == _n) {
       // Save button.
       _engine.beginSave(_host ? _host->nowMs() : 0);

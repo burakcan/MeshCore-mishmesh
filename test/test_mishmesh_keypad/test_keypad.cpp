@@ -399,7 +399,7 @@ TEST(Keypad, OkCommitsWorkingBufferToSource) {
   static KeypadApplet root; host.setRoot(&root);
   KeypadApplet k;
   char buf[KeypadApplet::KP_MAX + 1]; buf[0] = 0;
-  k.configure(buf, KeypadApplet::KP_MAX, "T");   // no onConfirm: write-back path (FormApplet)
+  k.configure(buf, KeypadApplet::KP_MAX, "T");   // no onConfirm: in-place write-back path
   host.push(&k);
   k.onInput(InputEvent::Select);         // 'a'
   k.setFocusForTest(3, 3);               // OK cell

@@ -2,7 +2,7 @@
 #pragma once
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/core/RemoteSettings.h>
-#include <mishmesh/widgets/FormView.h>
+#include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/ConfirmDialog.h>
 #include <mishmesh/widgets/StatusBar.h>
 #include <mishmesh/widgets/ScrollText.h>
@@ -10,12 +10,12 @@
 namespace mishmesh {
 
 // Generic remote-settings panel: renders any SettingFieldDef[] (label + fetched value)
-// as a FormView (boxed fields + "Save" button at focus _n). Drives RemoteSettingsEngine,
-// edits fields via the keypad/toggle, and Saves via the button at focus _n. A read-only-only
+// as a ListMenu (label+value rows + a "Save" button row at index _n). Drives RemoteSettingsEngine,
+// edits fields via the keypad/toggle, and Saves via the button at index _n. A read-only-only
 // field set (e.g. Version) renders as plain ScrollText instead of a form. Back with
 // unsaved edits raises a Discard confirm. One shared static staged buffer (only one panel
 // is open at a time). Host-safe.
-class RepeaterSettingsPanel : public Applet {
+class RepeaterSettingsPanel : public Applet, public ListModel {
 public:
   static const int MAX_FIELDS = 4;
   static const int FIELD_CAP  = 132;   // owner.info (120) / public key (64 hex) both fit
@@ -30,7 +30,7 @@ public:
 
   int  fieldCountForTest() const { return _n; }             // field count (_n)
   bool hasButtonForTest() const { return hasEditable(); }   // Save button present when editable
-  int  focusForTest() const { return _view.focus(); }       // current FormView focus index
+  int  focusForTest() const { return _view.selected(); }   // current list focus (Save at _n)
   const char* valueForTest(int i) const { return _engine.value(i); }
   const char* displayValueForTest(int i) const;             // display string (truncated for longValue)
   const char* textViewLineForTest(int i) const { return _textView.lineForTest(i); }
@@ -38,6 +38,12 @@ public:
   bool editingForTest() const { return _phase == Phase::Editing; }
   bool hasEditableForTest() const { return hasEditable(); }
   bool inModalForTest() const { return _phase == Phase::Modal; }
+
+  // ListModel (form-mode field rows + Save button at _n)
+  int count() const override { return hasEditable() ? _n + 1 : _n; }
+  const char* label(int i) const override { return (i >= 0 && i < _n) ? _defs[i].label : "Save"; }
+  const char* value(int i) const override { return (i >= 0 && i < _n) ? displayValueForTest(i) : nullptr; }
+  bool isButton(int i) const override { return hasEditable() && i == _n; }
 
 private:
   enum class Phase : uint8_t { List, Editing, Confirm, Modal };
@@ -55,7 +61,7 @@ private:
   Phase    _phase = Phase::List;
   bool     _textBuilt = false;   // true once the read-only text view has been populated
   RemoteSettingsEngine _engine;
-  FormView _view;
+  ListMenu _view;
   ScrollText _textView;    // used when !hasEditable() (e.g. Version panel)
   ScrollText _modalText;   // used for longValue ReadOnly field pop-up
   ConfirmDialog _confirm;

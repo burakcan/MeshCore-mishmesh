@@ -203,7 +203,9 @@ bool OnboardingApplet::isButton(int i) const { return hasNextButton(cur()) && i 
 
 void OnboardingApplet::drawTitleBar(Canvas& c, int w) {
   c.drawText(fontBody(), 2, 1, stepTitle(), DisplayDriver::LIGHT);
-  char cnt[8]; snprintf(cnt, sizeof(cnt), "%d/%d", _idx + 1, _stepCount);
+  // Welcome is an uncounted cover screen (no title bar), so counting starts at Name:
+  // _idx is already the 1-based position among the counted steps, over _stepCount-1 total.
+  char cnt[8]; snprintf(cnt, sizeof(cnt), "%d/%d", _idx, _stepCount - 1);
   c.drawText(fontBody(), w - 2, 1, cnt, DisplayDriver::LIGHT, TextAlign::Right);
 }
 
@@ -217,9 +219,10 @@ void OnboardingApplet::drawCenterButton(Canvas& c, int x, int y, int w, const ch
 }
 
 void OnboardingApplet::drawWelcome(Canvas& c, int x, int y, int w, int h) {
-  c.drawXbm(x + (w - MESHCORE_LOGO_W) / 2, y + 3, MESHCORE_LOGO, MESHCORE_LOGO_W, MESHCORE_LOGO_H);
-  c.drawTextEllipsized(fontBody(), x + w / 2, y + MESHCORE_LOGO_H + 8, w - 6,
-                       "Let's set up your node", DisplayDriver::LIGHT, TextAlign::Center);
+  int top = y + 6;
+  c.drawXbm(x + (w - MESHCORE_LOGO_W) / 2, top, MESHCORE_LOGO, MESHCORE_LOGO_W, MESHCORE_LOGO_H);
+  c.drawXbm(x + (w - MISHMESH_LOGO_W) / 2, top + MESHCORE_LOGO_H + 5,
+            MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H);
   drawCenterButton(c, x, y + h - (c.fontHeight(fontBody()) + 5), w, "Get started");
 }
 
@@ -237,12 +240,15 @@ int OnboardingApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   c.fillRect(0, 0, w, h, DisplayDriver::DARK);
 
-  int bh = c.fontHeight(fontBody()) + 3;
-  drawTitleBar(c, w);
-  c.fillRect(0, bh - 1, w, 1, DisplayDriver::LIGHT);
-
-  int by = bh, bhBody = h - by;
   Step s = cur();
+  int by = 0, bhBody = h;
+  if (s != Welcome) {                       // Welcome is full-screen branding: no title bar
+    int bh = c.fontHeight(fontBody()) + 3;
+    drawTitleBar(c, w);
+    c.fillRect(0, bh - 1, w, 1, DisplayDriver::LIGHT);
+    by = bh; bhBody = h - by;
+  }
+
   if (s == Welcome)      drawWelcome(c, 0, by, w, bhBody);
   else if (s == Done)    drawDone(c, 0, by, w, bhBody);
   else                   _list.draw(c, 0, by, w, bhBody);

@@ -4,7 +4,6 @@
 #include <mishmesh/widgets/TabBar.h>
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/ChatMenu.h>
-#include <mishmesh/applets/FormApplet.h>
 
 namespace mishmesh {
 
@@ -33,9 +32,9 @@ private:
   static void onRegionDone(void* ctx, const char* text);
   bool applyResult(ChanResult res, const char* okToast);   // true => pop form
   static bool isHexKey(const char* s);
-  static bool submitCreatePrivate(void* ctx);
+  static void onCreatePrivateDone(void* ctx, const char* text);
   static bool submitJoinPrivate(void* ctx);
-  static bool submitJoinHashtag(void* ctx);
+  static void onJoinHashtagDone(void* ctx, const char* text);
 
   char _chName[32];
   char _chKey[33];   // 32 hex chars + NUL

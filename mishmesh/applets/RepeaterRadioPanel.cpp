@@ -18,7 +18,7 @@
 
 namespace mishmesh {
 
-static const int N = 6;    // field count; Save button is at focus N in the FormView
+static const int N = 6;    // field count; Save button is at index N in the ListMenu
 
 void RepeaterRadioPanel::setTarget(const uint8_t* pubKey, const char* name) {
   setTargetFields(_pub, _name, sizeof(_name), pubKey, name);
@@ -43,7 +43,9 @@ void RepeaterRadioPanel::stagePreset(int i) {
 
 void RepeaterRadioPanel::onStart(AppletContext& ctx) {
   _host = ctx.host; _svc = ctx.contacts; _app = ctx.app;
-  _view.reset();
+  _view.setRowHeight(14);
+  _view.setModel(this);
+  _view.resetSelection();
   _radioDirty = _txDirty = _rebootNote = _saveFailed = false;
   _phase = Phase::Loading; _step = Step::Radio;
   fireGet("get radio", _host ? _host->nowMs() : 0);
@@ -137,18 +139,8 @@ int RepeaterRadioPanel::onRender(Canvas& c) {
   if (_phase == Phase::Loading) {
     c.drawTextCentered(body, 0, top, w, bottom - top, "Loading...", DisplayDriver::LIGHT);
   } else {
-    // Build FormRow array from current staged config then draw via FormView.
-    char vbuf[5][24];
-    FormRow rows[N];
-    const RadioConfig& cfg = _cfg;
-    int m = matchPreset(cfg.freqMhz, cfg.bwKhz, cfg.sf, cfg.cr);
-    rows[0] = { "Preset",        m >= 0 ? PRESETS[m].name : "Custom" };
-    rows[1] = { "Frequency",     formatRadioField(vbuf[0], sizeof(vbuf[0]), 1, cfg) };
-    rows[2] = { "Bandwidth",     formatRadioField(vbuf[1], sizeof(vbuf[1]), 2, cfg) };
-    rows[3] = { "Spread factor", formatRadioField(vbuf[2], sizeof(vbuf[2]), 3, cfg) };
-    rows[4] = { "Coding rate",   formatRadioField(vbuf[3], sizeof(vbuf[3]), 4, cfg) };
-    rows[5] = { "TX power",      formatRadioField(vbuf[4], sizeof(vbuf[4]), 5, cfg) };
-    _view.draw(c, 0, top, w, bottom - top, rows, N, "Save");
+    // Field rows + a Save button row (model-driven; see label()/value()/isButton()).
+    _view.draw(c, 0, top, w, bottom - top);
   }
 
   const char* status = "";
@@ -174,11 +166,11 @@ bool RepeaterRadioPanel::onInput(InputEvent ev) {
     return true;
   }
 
-  // FormView owns NavUp/Down focus movement; Save button is at focus N.
-  if (_view.onInput(ev, N, true)) { if (_host) _host->requestRender(); return true; }
+  // ListMenu owns NavUp/Down focus movement; Save button is at index N.
+  if (_view.onInput(ev)) { if (_host) _host->requestRender(); return true; }
 
   if (ev == InputEvent::Select) {
-    int f = _view.focus();
+    int f = _view.selected();
     if (f == N) { beginSave(); return true; }   // Save button
     switch (f) {
       case 0: radioPresetPickerApplet().configure(this); _phase = Phase::Editing;

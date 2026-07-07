@@ -308,7 +308,7 @@ TEST(RepeaterRadio, SaveSendsRadioThenTx) {
 
   p.stageSf(11);         // radio dirty
   p.stageTxPower(14);    // tx dirty
-  // FormView: Save button is at focus N=6 (6 field rows at 0..5). NavDown 6 times from focus 0.
+  // Save is the ListMenu button row at index 6 (6 field rows at 0..5). NavDown 6 times from index 0.
   for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavDown);
   EXPECT_EQ(6, p.focusForTest());   // confirms focus is on Save button (N)
   host.dispatch(mishmesh::InputEvent::Select);

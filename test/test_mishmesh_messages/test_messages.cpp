@@ -807,19 +807,19 @@ TEST(MessagesApplet, JoinPublicCallsServiceNoForm) {
   EXPECT_EQ(0, mishmesh::messagesApplet().selectedTabForTest());  // switched to Chats on Ok
 }
 
-TEST(MessagesApplet, CreatePrivateHappyPath) {
+TEST(MessagesApplet, CreatePrivateOpensKeypadAndCreates) {
   FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Ok;
   FakeDisplayDriver d; auto* host = openNewTab(svc, d);
   host->dispatch(mishmesh::InputEvent::NavDown);    // -> row 1 (Create private)
-  host->dispatch(mishmesh::InputEvent::Select);     // push form
+  host->dispatch(mishmesh::InputEvent::Select);     // push keypad (not a form)
   EXPECT_EQ(2, host->depth());
-  mishmesh::messagesApplet().setChannelNameForTest("teamA");
-  host->dispatch(mishmesh::InputEvent::NavDown);    // field0 -> Submit
-  host->dispatch(mishmesh::InputEvent::Select);     // submit
+  host->dispatch(mishmesh::InputEvent::Select);     // type 'a' (keypad opens on the abc cell)
+  mishmesh::keypadApplet().setFocusForTest(3, 3);   // OK cell
+  host->dispatch(mishmesh::InputEvent::Select);     // confirm -> onCreatePrivateDone
   EXPECT_EQ(FakeMessagesService::OP_CREATE_PRIV, svc.lastChanOp);
-  EXPECT_EQ("teamA", svc.lastChanName);
-  EXPECT_EQ(1, host->depth());                       // form popped
-  EXPECT_EQ(0, mishmesh::messagesApplet().selectedTabForTest());
+  EXPECT_EQ("a", svc.lastChanName);
+  EXPECT_EQ(1, host->depth());                       // keypad popped
+  EXPECT_EQ(0, mishmesh::messagesApplet().selectedTabForTest());   // switched to Chats on Ok
 }
 
 TEST(MessagesApplet, JoinPrivateRejectsBadKey) {
@@ -827,71 +827,70 @@ TEST(MessagesApplet, JoinPrivateRejectsBadKey) {
   FakeDisplayDriver d; auto* host = openNewTab(svc, d);
   host->dispatch(mishmesh::InputEvent::NavDown);
   host->dispatch(mishmesh::InputEvent::NavDown);    // -> row 2 (Join private)
-  host->dispatch(mishmesh::InputEvent::Select);     // push form
+  host->dispatch(mishmesh::InputEvent::Select);     // push JoinPrivateApplet
   EXPECT_EQ(2, host->depth());
   mishmesh::messagesApplet().setChannelNameForTest("p");
   mishmesh::messagesApplet().setChannelKeyForTest("nothex");   // invalid
-  host->dispatch(mishmesh::InputEvent::NavDown);    // field0 -> field1
-  host->dispatch(mishmesh::InputEvent::NavDown);    // field1 -> Submit
-  host->dispatch(mishmesh::InputEvent::Select);     // submit blocked by isHexKey
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::NavDown);     // focus Join button
+  host->dispatch(mishmesh::InputEvent::Select);      // blocked by isHexKey
   EXPECT_EQ(0, svc.chanCalls);
-  EXPECT_EQ(2, host->depth());                       // form stays open
+  EXPECT_EQ(2, host->depth());                        // stays open
 }
 
 TEST(MessagesApplet, JoinPrivateHappyPath) {
   FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Ok;
   FakeDisplayDriver d; auto* host = openNewTab(svc, d);
   host->dispatch(mishmesh::InputEvent::NavDown);
-  host->dispatch(mishmesh::InputEvent::NavDown);    // -> row 2 (Join private)
-  host->dispatch(mishmesh::InputEvent::Select);
+  host->dispatch(mishmesh::InputEvent::NavDown);
+  host->dispatch(mishmesh::InputEvent::Select);       // push JoinPrivateApplet
   mishmesh::messagesApplet().setChannelNameForTest("p");
   mishmesh::messagesApplet().setChannelKeyForTest("00112233445566778899aabbccddeeff");
   host->dispatch(mishmesh::InputEvent::NavDown);
-  host->dispatch(mishmesh::InputEvent::NavDown);    // -> Submit
+  host->dispatch(mishmesh::InputEvent::NavDown);       // focus Join
   host->dispatch(mishmesh::InputEvent::Select);
   EXPECT_EQ(FakeMessagesService::OP_JOIN_PRIV, svc.lastChanOp);
   EXPECT_EQ("00112233445566778899aabbccddeeff", svc.lastChanKey);
-  EXPECT_EQ(1, host->depth());
+  EXPECT_EQ(1, host->depth());                          // popped on Ok
 }
 
-TEST(MessagesApplet, ChannelsFullKeepsFormOpen) {
+TEST(MessagesApplet, CreatePrivateFullPopsKeypadWithToast) {
   FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Full;
   FakeDisplayDriver d; auto* host = openNewTab(svc, d);
   host->dispatch(mishmesh::InputEvent::NavDown);    // -> row 1 (Create private)
-  host->dispatch(mishmesh::InputEvent::Select);
-  mishmesh::messagesApplet().setChannelNameForTest("x");
-  host->dispatch(mishmesh::InputEvent::NavDown);    // -> Submit
-  host->dispatch(mishmesh::InputEvent::Select);
+  host->dispatch(mishmesh::InputEvent::Select);     // push keypad
+  host->dispatch(mishmesh::InputEvent::Select);     // type a char
+  mishmesh::keypadApplet().setFocusForTest(3, 3);   // OK cell
+  host->dispatch(mishmesh::InputEvent::Select);     // confirm -> createPrivate returns Full
   EXPECT_EQ(FakeMessagesService::OP_CREATE_PRIV, svc.lastChanOp);
-  EXPECT_EQ(2, host->depth());                       // stayed open (Full)
+  EXPECT_EQ(1, host->depth());                       // keypad pops regardless of Full (toast shows the error)
 }
 
 TEST(MessagesAppletHelpers, IsHexKeyValidation) {
-  // exercised indirectly above; assert the boundary cases via the form path
   FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Ok;
   FakeDisplayDriver d; auto* host = openNewTab(svc, d);
   host->dispatch(mishmesh::InputEvent::NavDown);
   host->dispatch(mishmesh::InputEvent::NavDown);
-  host->dispatch(mishmesh::InputEvent::Select);      // join-private form
+  host->dispatch(mishmesh::InputEvent::Select);       // JoinPrivateApplet
   mishmesh::messagesApplet().setChannelNameForTest("p");
   mishmesh::messagesApplet().setChannelKeyForTest("00112233445566778899aabbccddeeg0"); // 'g' invalid
   host->dispatch(mishmesh::InputEvent::NavDown);
   host->dispatch(mishmesh::InputEvent::NavDown);
   host->dispatch(mishmesh::InputEvent::Select);
-  EXPECT_EQ(0, svc.chanCalls);                        // rejected: non-hex char
+  EXPECT_EQ(0, svc.chanCalls);                          // rejected: non-hex char
 }
 
-TEST(MessagesApplet, JoinHashtagHappyPath) {
+TEST(MessagesApplet, JoinHashtagOpensKeypadAndJoins) {
   FakeMessagesService svc; svc.publicJoined = true; svc.chanResult = mishmesh::ChanResult::Ok;
   FakeDisplayDriver d; auto* host = openNewTab(svc, d);
   host->dispatch(mishmesh::InputEvent::NavDown);
   host->dispatch(mishmesh::InputEvent::NavDown);
-  host->dispatch(mishmesh::InputEvent::NavDown);   // 4 rows -> row 3 = Join hashtag
-  host->dispatch(mishmesh::InputEvent::Select);    // push form
+  host->dispatch(mishmesh::InputEvent::NavDown);    // 4 rows -> row 3 = Join hashtag
+  host->dispatch(mishmesh::InputEvent::Select);     // push keypad
   EXPECT_EQ(2, host->depth());
-  mishmesh::messagesApplet().setChannelNameForTest("#foo");
-  host->dispatch(mishmesh::InputEvent::NavDown);   // field0 -> Submit
-  host->dispatch(mishmesh::InputEvent::Select);
+  host->dispatch(mishmesh::InputEvent::Select);     // type a char
+  mishmesh::keypadApplet().setFocusForTest(3, 3);   // OK cell
+  host->dispatch(mishmesh::InputEvent::Select);     // confirm -> onJoinHashtagDone
   EXPECT_EQ(FakeMessagesService::OP_JOIN_HASH, svc.lastChanOp);
   EXPECT_EQ(1, host->depth());
 }

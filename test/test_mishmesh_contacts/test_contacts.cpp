@@ -349,10 +349,10 @@ TEST(SetPath, SaveEncodesAndPersists) {
   cd.setTarget((const uint8_t*)"ARAS01");
   host.setRoot(&cd);
 
-  cd.openSetPathForTest();                    // configures + pushes the form
+  cd.openSetPathForTest();                    // configures + pushes SetPathApplet
   cd.setSetPathTextForTest("3f,a1", 1);
-  host.dispatch(mishmesh::InputEvent::NavDown);   // Hash size -> Path
-  host.dispatch(mishmesh::InputEvent::NavDown);   // Path -> Save button
+  host.dispatch(mishmesh::InputEvent::NavDown);   // row 0 Hash size -> row 1 Path
+  host.dispatch(mishmesh::InputEvent::NavDown);   // row 1 Path -> row 2 Save
   host.dispatch(mishmesh::InputEvent::Select);    // save + pop
 
   EXPECT_EQ("ARAS01", svc.lastPathSet);
@@ -395,7 +395,7 @@ TEST(SetPath, OpenedFromContactDetailPushes) {
   host.dispatch(mishmesh::InputEvent::Select);   // open Alice detail (depth 2)
   // Chat order: Message, View, Rename, Favourite, Telemetry, Permissions, Set path(6), ...
   for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavDown);
-  host.dispatch(mishmesh::InputEvent::Select);   // push the form
+  host.dispatch(mishmesh::InputEvent::Select);   // push SetPathApplet
   EXPECT_EQ(3, host.depth());
 }
 

@@ -5,6 +5,7 @@
 #include "ChannelShareApplet.h"
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
+#include <mishmesh/applets/JoinPrivateApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/widgets/Modal.h>
@@ -266,26 +267,23 @@ bool MessagesApplet::applyResult(ChanResult res, const char* okToast) {
 
 void MessagesApplet::openCreatePrivate() {
   _chName[0] = 0;
-  FormApplet::Field f[1] = { { "Name", _chName, sizeof(_chName), nullptr, "Name required" } };
-  formApplet().configure("Create private", f, 1, &MessagesApplet::submitCreatePrivate, this, "Create");
-  if (_host) _host->push(&formApplet());
+  keypadApplet().configure(_chName, sizeof(_chName) - 1, "Create private",
+                           &MessagesApplet::onCreatePrivateDone, this);
+  if (_host) _host->push(&keypadApplet());
 }
 
 void MessagesApplet::openJoinPrivate() {
   _chName[0] = 0; _chKey[0] = 0;
-  FormApplet::Field f[2] = {
-    { "Name", _chName, sizeof(_chName), nullptr,                   "Name required" },
-    { "Key",  _chKey,  sizeof(_chKey),  &MessagesApplet::isHexKey, "Key: 32 hex chars" },
-  };
-  formApplet().configure("Join private", f, 2, &MessagesApplet::submitJoinPrivate, this, "Join");
-  if (_host) _host->push(&formApplet());
+  joinPrivateApplet().configure(_chName, sizeof(_chName), _chKey, sizeof(_chKey),
+                                &MessagesApplet::isHexKey, &MessagesApplet::submitJoinPrivate, this);
+  if (_host) _host->push(&joinPrivateApplet());
 }
 
 void MessagesApplet::openJoinHashtag() {
   _chName[0] = 0;
-  FormApplet::Field f[1] = { { "Hashtag", _chName, sizeof(_chName), nullptr, "Hashtag required" } };
-  formApplet().configure("Join hashtag", f, 1, &MessagesApplet::submitJoinHashtag, this, "Join");
-  if (_host) _host->push(&formApplet());
+  keypadApplet().configure(_chName, sizeof(_chName) - 1, "Join hashtag",
+                           &MessagesApplet::onJoinHashtagDone, this);
+  if (_host) _host->push(&keypadApplet());
 }
 
 void MessagesApplet::refreshRegion() {
@@ -310,11 +308,12 @@ void MessagesApplet::onRegionDone(void* ctx, const char* text) {
   a->refreshRegion();
 }
 
-bool MessagesApplet::submitCreatePrivate(void* ctx) {
+void MessagesApplet::onCreatePrivateDone(void* ctx, const char* text) {
   MessagesApplet* a = (MessagesApplet*)ctx;
-  ChanResult r = a->_svc ? a->_svc->createPrivateChannel(a->_chName) : ChanResult::Error;
-  char ok[40]; snprintf(ok, sizeof(ok), "Created %s", a->_chName);
-  return a->applyResult(r, ok);
+  if (!text || !text[0]) { if (a->_host) a->_host->postToast("Name required"); return; }
+  ChanResult r = a->_svc ? a->_svc->createPrivateChannel(text) : ChanResult::Error;
+  char ok[40]; snprintf(ok, sizeof(ok), "Created %s", text);
+  a->applyResult(r, ok);   // toast + (on Ok) switch to Chats; keypad already pops itself
 }
 
 bool MessagesApplet::submitJoinPrivate(void* ctx) {
@@ -324,10 +323,11 @@ bool MessagesApplet::submitJoinPrivate(void* ctx) {
   return a->applyResult(r, ok);
 }
 
-bool MessagesApplet::submitJoinHashtag(void* ctx) {
+void MessagesApplet::onJoinHashtagDone(void* ctx, const char* text) {
   MessagesApplet* a = (MessagesApplet*)ctx;
-  ChanResult r = a->_svc ? a->_svc->joinHashtagChannel(a->_chName) : ChanResult::Error;
-  return a->applyResult(r, "Joined channel");
+  if (!text || !text[0]) { if (a->_host) a->_host->postToast("Hashtag required"); return; }
+  ChanResult r = a->_svc ? a->_svc->joinHashtagChannel(text) : ChanResult::Error;
+  a->applyResult(r, "Joined channel");
 }
 
 void MessagesApplet::setChannelNameForTest(const char* s) {

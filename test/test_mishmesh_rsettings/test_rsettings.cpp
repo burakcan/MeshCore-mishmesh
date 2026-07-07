@@ -132,7 +132,7 @@ TEST(RSettingsPanel, FetchRendersValues) {
 }
 
 TEST(RSettingsPanel, SaveRowExistsForEditablePanel) {
-  // Save is now the FormView button at focus _n (not a list row).
+  // Save is the ListMenu button row at index _n (the last row).
   // fieldCountForTest() == _n (fields only); hasButtonForTest() == true when editable.
   FakeContactsService svc;
   FakeDisplayDriver d;
