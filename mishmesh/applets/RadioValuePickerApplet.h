@@ -34,6 +34,7 @@ private:
   int currentIndex() const;          // index of staged value, or 0
 
   RadioStagingTarget* _tgt = nullptr;
+  AppServices* _app = nullptr;
   RadioField _field = RadioField::SF;
   char _title[24] = {0};
   mutable char _lbl[16];

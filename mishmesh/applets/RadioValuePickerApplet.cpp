@@ -1,4 +1,5 @@
 #include <mishmesh/applets/RadioValuePickerApplet.h>
+#include <mishmesh/applets/AppletChrome.h>
 #include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
@@ -59,7 +60,7 @@ const char* RadioValuePickerApplet::label(int i) const {
 bool RadioValuePickerApplet::radioOn(int i) const { return currentIndex() == i; }
 
 void RadioValuePickerApplet::onStart(AppletContext& ctx) {
-  (void)ctx;
+  _app = ctx.app;
   _list.setRowHeight(12);
   _list.setModel(this);
   _list.resetSelection();
@@ -68,10 +69,8 @@ void RadioValuePickerApplet::onStart(AppletContext& ctx) {
 
 int RadioValuePickerApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
-  const int barH = c.fontHeight(fontBody()) + 3;
-  _bar.setTitle(_title);
-  _bar.draw(c, 0, 0, w, barH);
-  _list.draw(c, 0, barH, w, h - barH);
+  int barH = drawTopBar(c, _bar, _title, _app, w);   // title + battery
+  _list.draw(c, 0, barH + 1, w, h - barH - 1);
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 

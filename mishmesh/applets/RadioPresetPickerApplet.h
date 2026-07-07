@@ -32,6 +32,7 @@ public:
 
 private:
   RadioStagingTarget* _tgt = nullptr;
+  AppServices* _app = nullptr;
   mutable char _summary[28];
   ListMenu  _list;
   StatusBar _bar;

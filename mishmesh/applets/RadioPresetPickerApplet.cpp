@@ -1,4 +1,5 @@
 #include <mishmesh/applets/RadioPresetPickerApplet.h>
+#include <mishmesh/applets/AppletChrome.h>
 #include <mishmesh/applets/settings/RadioPresets.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
@@ -30,7 +31,7 @@ bool RadioPresetPickerApplet::radioOn(int i) const {
 }
 
 void RadioPresetPickerApplet::onStart(AppletContext& ctx) {
-  (void)ctx;
+  _app = ctx.app;
   _list.setRowHeight(16);   // taller rows: name + summary
   _list.setModel(this);
   _list.resetSelection();
@@ -43,10 +44,8 @@ void RadioPresetPickerApplet::onStart(AppletContext& ctx) {
 
 int RadioPresetPickerApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
-  const int barH = c.fontHeight(fontBody()) + 3;
-  _bar.setTitle("Presets");
-  _bar.draw(c, 0, 0, w, barH);
-  _list.draw(c, 0, barH, w, h - barH);
+  int barH = drawTopBar(c, _bar, "Presets", _app, w);   // title + battery
+  _list.draw(c, 0, barH + 1, w, h - barH - 1);
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 

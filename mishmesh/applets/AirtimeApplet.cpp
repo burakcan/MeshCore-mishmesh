@@ -161,6 +161,6 @@ AirtimeApplet& airtimeApplet() {
 }
 
 MISHMESH_REGISTER_APPLET_ICON(&airtimeApplet(), Placement::AppMenu, "Airtime", 6,
-                              (uint16_t)Icon::Reload);   // cycle arrows = duty cycle
+                              (uint16_t)Icon::Zap);   // lightning = transmit airtime
 
 }  // namespace mishmesh

@@ -77,7 +77,13 @@ void TabBar::draw(Canvas& c, int x, int y, int w, int h) {
       DisplayDriver::Color col = sel ? DisplayDriver::DARK : DisplayDriver::LIGHT;
       // Highlight runs the full bar height (minus the bottom border row) so the
       // centred 10px icon gets 1px of breathing room above and below it.
-      if (sel) strip.fillRect(sx, 0, tw, h - 1, DisplayDriver::LIGHT);
+      if (sel) {
+        strip.fillRect(sx, 0, tw, h - 1, DisplayDriver::LIGHT);
+        // Rounded top: clear the two top-corner pixels so the active tab reads as
+        // a folder tab. Off-screen corners (scrolled strip) clip harmlessly.
+        strip.fillRect(sx, 0, 1, 1, DisplayDriver::DARK);
+        strip.fillRect(sx + tw - 1, 0, 1, 1, DisplayDriver::DARK);
+      }
 
       int iconX = sel ? sx + PAD : sx + (tw - ICON_W) / 2;
       strip.drawGlyph(iconFont(), iconX, (h - iconH) / 2, _icons[i], col);

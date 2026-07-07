@@ -1,4 +1,5 @@
 #include <mishmesh/applets/TimezonePickerApplet.h>
+#include <mishmesh/applets/AppletChrome.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/WorldClock.h>
@@ -36,10 +37,8 @@ void TimezonePickerApplet::onStart(AppletContext& ctx) {
 
 int TimezonePickerApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
-  const int barH = c.fontHeight(fontBody()) + 3;
-  _bar.setTitle("Time zone");
-  _bar.draw(c, 0, 0, w, barH);
-  _list.draw(c, 0, barH, w, h - barH);
+  int barH = drawTopBar(c, _bar, "Time zone", _app, w);   // title + battery
+  _list.draw(c, 0, barH + 1, w, h - barH - 1);
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
