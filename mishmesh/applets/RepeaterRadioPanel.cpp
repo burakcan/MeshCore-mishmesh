@@ -153,7 +153,9 @@ int RepeaterRadioPanel::onRender(Canvas& c) {
   if (_phase == Phase::Confirm) _confirm.draw(c, 0, 0, w, h);
 
   if (_phase == Phase::Loading || _phase == Phase::Saving) return 150;
-  return 500;
+  // Re-render fast while the ListMenu highlight bar / marquee animates, else
+  // navigation between rows crawls one step per idle tick.
+  return _view.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool RepeaterRadioPanel::onInput(InputEvent ev) {

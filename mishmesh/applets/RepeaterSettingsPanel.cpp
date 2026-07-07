@@ -186,7 +186,9 @@ int RepeaterSettingsPanel::onRender(Canvas& c) {
 
   if (ep == RemoteSettingsEngine::Phase::Saving) return 150;
   if (!hasEditable()) return _textView.needsAnimation() ? 33 : 1000;
-  return 1000;   // idle: nav/edit paths call requestRender(), so no faster tick needed
+  // Editable list: re-render fast while the ListMenu highlight bar / marquee animates,
+  // else navigation between rows crawls one step per idle tick.
+  return _view.needsAnimation() ? ListMenu::TICK_MS : 1000;
 }
 
 bool RepeaterSettingsPanel::onInput(InputEvent ev) {

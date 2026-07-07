@@ -537,6 +537,32 @@ TEST(RSettingsPanel, LongValueListShowsTruncated) {
   EXPECT_STREQ("AABBCC...", display);
 }
 
+TEST(RSettingsPanel, ListNavUsesFastAnimationTick) {
+  // Regression: after the FormView->ListMenu migration, onRender kept returning the
+  // slow idle cadence (1000ms) even while the ListMenu highlight bar was mid-animation,
+  // so moving between rows crawled ~1 step/second. onRender must drop to
+  // ListMenu::TICK_MS whenever the list still needs to animate.
+  FakeContactsService svc;
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  uint8_t pk[6] = {'R','E','P','0','0','1'};
+  auto& p = mishmesh::repeaterSettingsPanel();
+  p.setTarget(pk, "Rep1");
+  p.setModel(TEXT_DEFS, 1, "General");
+  host.setRoot(&p);
+  host.loop(1);
+  svc.simulateCliReply(pk, "> old");
+  host.loop(200);                                 // phase Ready; list drawn
+
+  mishmesh::Canvas c(&d);
+  p.onRender(c);                                  // settle: bar snaps to row 0, not animating
+  host.dispatch(mishmesh::InputEvent::NavDown);   // change selection -> bar target shifts
+  int delay = p.onRender(c);                       // first animating frame
+  const int tick = mishmesh::ListMenu::TICK_MS;    // local rvalue: avoid ODR-use of the header const
+  EXPECT_LE(delay, tick);                          // fast tick while animating, not 1000
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
