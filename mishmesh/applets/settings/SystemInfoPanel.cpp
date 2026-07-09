@@ -39,7 +39,8 @@ int formatSystemStats(const SystemStats& s, char out[][SYSSTATS_LINE_LEN], int m
             (unsigned)((s.batteryMv % 1000) / 10));
   uint32_t mins = s.uptimeSecs / 60;
   SS_EMIT("Uptime: %uh %02um", (unsigned)(mins / 60), (unsigned)(mins % 60));
-  if (s.firmwareVersion) SS_EMIT("FW: %s", s.firmwareVersion);
+  if (s.meshcoreVersion) SS_EMIT("meshcore: %s", s.meshcoreVersion);
+  if (s.mishmeshVersion) SS_EMIT("mishmesh: %s", s.mishmeshVersion);
 #undef SS_EMIT
   return n;
 }

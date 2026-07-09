@@ -3,6 +3,7 @@
 // [mishmesh]
 #include <helpers/sensors/LocationProvider.h>
 // [/mishmesh]
+#include <mishmesh/Version.h>
 #include <mishmesh/applets/NotificationApplet.h>
 #include <mishmesh/applets/onboarding_logo.h>   // MeshCore + mishmesh wordmarks
 #include <mishmesh/applets/ClockAlertApplet.h>
@@ -104,10 +105,11 @@ bool UITask::systemStats(mishmesh::SystemStats& out) const {
   out.uptimeSecs       = millis() / 1000;
   out.batteryMv        = batteryMillivolts();
 #ifdef FIRMWARE_VERSION
-  out.firmwareVersion  = FIRMWARE_VERSION;
+  out.meshcoreVersion  = FIRMWARE_VERSION;
 #else
-  out.firmwareVersion  = nullptr;
+  out.meshcoreVersion  = nullptr;
 #endif
+  out.mishmeshVersion  = MISHMESH_VERSION;
   return true;
 }
 

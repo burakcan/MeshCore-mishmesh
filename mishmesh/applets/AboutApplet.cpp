@@ -5,6 +5,7 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/StrUtil.h>
 #include <mishmesh/text/Fonts.h>
+#include <stdio.h>   // snprintf
 
 namespace mishmesh {
 
@@ -17,10 +18,13 @@ const char* AboutApplet::qrTextForTest() const { return SUPPORT_URL; }
 void AboutApplet::onStart(AppletContext& ctx) {
   _app = ctx.app;
   _version[0] = 0;
+  _mmVersion[0] = 0;
   if (_app) {
     SystemStats s;
-    if (_app->systemStats(s) && s.firmwareVersion)
-      copyStr(_version, sizeof(_version), s.firmwareVersion);
+    if (_app->systemStats(s)) {
+      if (s.meshcoreVersion) snprintf(_version, sizeof(_version), "mc %s", s.meshcoreVersion);
+      if (s.mishmeshVersion) snprintf(_mmVersion, sizeof(_mmVersion), "mm %s", s.mishmeshVersion);
+    }
   }
   _qr.build(SUPPORT_URL);
 }
@@ -47,8 +51,11 @@ int AboutApplet::onRender(Canvas& c) {
     r.drawText(fontCaption(), 0, y, "ko-fi.com/", DisplayDriver::LIGHT); y += 6;
     r.drawText(fontCaption(), 0, y, "burak_can", DisplayDriver::LIGHT);
 
-    if (_version[0])   // pinned to the bottom, recessive
-      r.drawText(fontCaption(), 0, h - 6, _version, DisplayDriver::LIGHT);
+    // Both versions pinned to the bottom, recessive: mishmesh on the last row,
+    // firmware just above it.
+    int vy = h - 6;
+    if (_mmVersion[0]) { r.drawText(fontCaption(), 0, vy, _mmVersion, DisplayDriver::LIGHT); vy -= 6; }
+    if (_version[0])     r.drawText(fontCaption(), 0, vy, _version, DisplayDriver::LIGHT);
   }
   return 1000;
 }

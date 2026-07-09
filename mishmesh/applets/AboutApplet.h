@@ -6,8 +6,9 @@
 namespace mishmesh {
 
 // "About mishmesh": app-menu credits + support screen. Shows the mishmesh
-// wordmark, firmware version, and a Ko-fi donation QR (drawn theme-neutral so it
-// scans in either mode). Read-only; Back pops. App-menu singleton.
+// wordmark, the mishmesh and meshcore/firmware versions, and a Ko-fi donation QR
+// (drawn theme-neutral so it scans in either mode). Read-only; Back pops.
+// App-menu singleton.
 class AboutApplet : public Applet {
 public:
   AboutApplet() : Applet("About") {}
@@ -20,7 +21,8 @@ public:
 
 private:
   AppServices* _app = nullptr;
-  char   _version[24] = {0};
+  char   _version[24] = {0};     // "fw <meshcore version>"
+  char   _mmVersion[20] = {0};   // "mm <mishmesh version>"
   QrView _qr;
 };
 

@@ -14,7 +14,8 @@ struct FakeApp : AppServices {
   uint16_t batteryMillivolts() const override { return 4000; }
   uint32_t epochSeconds() const override { return 0; }
   bool systemStats(SystemStats& out) const override {
-    out.firmwareVersion = "mishmesh-1.2.3";
+    out.meshcoreVersion = "v1.16.0";
+    out.mishmeshVersion = "v1.0.0";
     return true;
   }
 };

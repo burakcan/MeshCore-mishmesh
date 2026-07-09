@@ -39,7 +39,8 @@ SystemStats sampleStats() {
   s.storageTotalKb   = 192;
   s.uptimeSecs       = 4980;     // 1h 23m
   s.batteryMv        = 4010;     // 4.01V
-  s.firmwareVersion  = "mishmesh-dev";
+  s.meshcoreVersion  = "v1.16.0";
+  s.mishmeshVersion  = "v1.0.0";
   return s;
 }
 
@@ -62,14 +63,15 @@ TEST(FormatSystemStats, RendersKnownFields) {
   int n = formatSystemStats(sampleStats(), lines, SYSSTATS_MAX_LINES);
 
   // heapTotal unknown -> no "Heap total" line.
-  ASSERT_EQ(7, n);
+  ASSERT_EQ(8, n);
   EXPECT_EQ("Heap free: 142.3K", lineAt(lines, 0));
   EXPECT_EQ("Heap min: 138.0K",  lineAt(lines, 1));
   EXPECT_EQ("Contacts: 12/100", lineAt(lines, 2));
   EXPECT_EQ("Storage: 48/192K", lineAt(lines, 3));
   EXPECT_EQ("Battery: 4.01V",   lineAt(lines, 4));
   EXPECT_EQ("Uptime: 1h 23m",   lineAt(lines, 5));
-  EXPECT_EQ("FW: mishmesh-dev", lineAt(lines, 6));
+  EXPECT_EQ("meshcore: v1.16.0", lineAt(lines, 6));
+  EXPECT_EQ("mishmesh: v1.0.0",  lineAt(lines, 7));
 }
 
 TEST(FormatSystemStats, UnknownsRenderAsDashes) {
@@ -78,7 +80,7 @@ TEST(FormatSystemStats, UnknownsRenderAsDashes) {
   char lines[SYSSTATS_MAX_LINES][SYSSTATS_LINE_LEN];
   int n = formatSystemStats(s, lines, SYSSTATS_MAX_LINES);
 
-  // No Heap total (0), no FW (nullptr): Heap free, Heap min, Contacts, Storage, Battery, Uptime.
+  // No Heap total (0), no version lines (nullptr): Heap free, Heap min, Contacts, Storage, Battery, Uptime.
   ASSERT_EQ(6, n);
   EXPECT_EQ("Heap free: --",   lineAt(lines, 0));
   EXPECT_EQ("Heap min: --",    lineAt(lines, 1));
@@ -93,7 +95,7 @@ TEST(FormatSystemStats, ShowsRamTotalWhenKnown) {
   s.heapTotalBytes = 253952;   // 248.0K
   char lines[SYSSTATS_MAX_LINES][SYSSTATS_LINE_LEN];
   int n = formatSystemStats(s, lines, SYSSTATS_MAX_LINES);
-  ASSERT_EQ(8, n);
+  ASSERT_EQ(9, n);
   EXPECT_EQ("Heap total: 248.0K", lineAt(lines, 2));
 }
 

@@ -8,11 +8,11 @@
 namespace mishmesh {
 
 static const int SYSSTATS_LINE_LEN  = 40;
-static const int SYSSTATS_MAX_LINES = 8;
+static const int SYSSTATS_MAX_LINES = 9;
 
 // Pure formatter: one display line per known metric into `out`, returning the
-// count (<= maxLines). Unknown metrics render as "--"; RAM total and firmware
-// lines are omitted entirely when unknown.
+// count (<= maxLines). Unknown metrics render as "--"; RAM total and the two
+// version lines are omitted entirely when unknown.
 int formatSystemStats(const SystemStats& s, char out[][SYSSTATS_LINE_LEN], int maxLines);
 
 // Device-health panel: a scrollable read-only stats block (rebuilt ~1s so free-heap
