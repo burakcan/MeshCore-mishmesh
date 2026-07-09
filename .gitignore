@@ -23,3 +23,6 @@ platformio.local.ini
 # build-glob (variants/*/platformio.ini) has a valid dir on fresh clones.
 mishmesh/text/emoji-local/*
 !mishmesh/text/emoji-local/.gitkeep
+
+# Local-only mishmesh screenshot tool (uncommitted dev tooling)
+tools/mishmesh-shots/

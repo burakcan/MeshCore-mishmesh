@@ -1,0 +1,63 @@
+name: Release mishmesh Firmware
+
+permissions:
+  contents: write
+
+# Tag a commit `mishmesh-v<version>` (e.g. mishmesh-v0.9.0) to build the mishmesh
+# firmwares (Wio Tracker L1, BLE + USB) and publish a GitHub Release with the .uf2s.
+# Or run manually from the Actions tab (uploads artifacts, no release).
+#
+# Official builds include the licensed EmojiMania glyphs, restored from the
+# EMOJI_OVERLAY_B64 repo secret. Forks without that secret build without emoji
+# (glyphs fall back to a placeholder block); everything else is identical.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'mishmesh-v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Repo
+        uses: actions/checkout@v6
+
+      - name: Setup Build Environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Restore emoji overlay (official builds only)
+        env:
+          EMOJI_OVERLAY_B64: ${{ secrets.EMOJI_OVERLAY_B64 }}
+        run: |
+          if [ -z "${EMOJI_OVERLAY_B64}" ]; then
+            echo "No EMOJI_OVERLAY_B64 secret (fork build) - building without emoji."
+            exit 0
+          fi
+          printf '%s' "${EMOJI_OVERLAY_B64}" | base64 -d | tar xzf - -C mishmesh/text/emoji-local
+          echo "Emoji overlay restored for official build."
+
+      - name: Build mishmesh Firmware
+        env:
+          # GIT_TAG_VERSION = the part after the last '-' (tag mishmesh-v0.9.0 -> v0.9.0).
+          # On workflow_dispatch (no tag) it's the branch name, so fall back to a dev stamp.
+          FIRMWARE_VERSION: ${{ env.GIT_TAG_VERSION || 'v0.0.0-dev' }}
+        run: >
+          /usr/bin/env bash build.sh build-firmware
+          WioTrackerL1_companion_radio_ble_mishmesh
+          WioTrackerL1_companion_radio_usb_mishmesh
+
+      - name: Upload Workflow Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: mishmesh-firmware
+          path: out
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: mishmesh Firmware ${{ env.GIT_TAG_VERSION }}
+          generate_release_notes: true
+          draft: false
+          files: out/*
