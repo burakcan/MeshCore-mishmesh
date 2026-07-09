@@ -1,22 +1,11 @@
 name: PR Build Check
 
+# Disabled for the mishmesh fork: this is upstream MeshCore's cross-platform smoke
+# test (Heltec/RAK/Pico/... boards we don't ship). It only runs when triggered by
+# hand from the Actions tab now, not on every push/PR. The mishmesh release build is
+# release-mishmesh-firmware.yml.
 on:
-  pull_request:
-    branches: [main, dev]
-    paths:
-      - 'src/**'
-      - 'examples/**'
-      - 'variants/**'
-      - 'platformio.ini'
-      - '.github/workflows/pr-build-check.yml'
-  push:
-    branches: [main, dev]
-    paths:
-      - 'src/**'
-      - 'examples/**'
-      - 'variants/**'
-      - 'platformio.ini'
-      - '.github/workflows/pr-build-check.yml'
+  workflow_dispatch:
 
 jobs:
   build:
