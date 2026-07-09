@@ -247,8 +247,11 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     _prefs.ble_enabled = 1;         // default on (old/shorter files keep BLE enabled)
     _prefs.contacts_full_notify = 1; // default on (old/shorter files keep the alert enabled)
     _prefs.tz_city_index = -1;      // old/shorter files: custom/fixed (no regression)
-    _prefs.onboarding_state = 0;    // old/shorter files: treat as not-started (upgraders won't onboard: identity isn't fresh)
-    file.read((uint8_t *)&_prefs.sound_volume, sizeof(_prefs.sound_volume));      // 137
+    _prefs.onboarding_state = 0;    // default; corrected below once we know the file's provenance
+    // sound_volume is the first mishmesh-block field; if it's absent the file was
+    // written by stock MeshCore firmware. Detect that to run onboarding for stock->mishmesh
+    // upgraders (mishmesh->mishmesh files have the block and keep their stored state).
+    size_t got_mm_block = file.read((uint8_t *)&_prefs.sound_volume, sizeof(_prefs.sound_volume));      // 137
     file.read((uint8_t *)&_prefs.sound_mute_mask, sizeof(_prefs.sound_mute_mask)); // 138
     file.read((uint8_t *)&_prefs.notify_tone_ch, sizeof(_prefs.notify_tone_ch));   // 139
     file.read((uint8_t *)&_prefs.notify_tone_dm, sizeof(_prefs.notify_tone_dm));   // 140
@@ -262,6 +265,10 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     file.read((uint8_t *)&_prefs.contacts_full_notify, sizeof(_prefs.contacts_full_notify)); // 151
     file.read((uint8_t *)&_prefs.tz_city_index, sizeof(_prefs.tz_city_index));
     file.read((uint8_t *)&_prefs.onboarding_state, sizeof(_prefs.onboarding_state));
+    // Stock-firmware prefs (no mishmesh block): mark onboarding pending so the wizard
+    // runs. IN_PROGRESS is the same "force onboarding on a non-fresh device" trigger the
+    // dev Reset-onboarding tool uses; the first mishmesh savePrefs writes the full block.
+    if (got_mm_block == 0) _prefs.onboarding_state = 1;
     // [/mishmesh]
 
     file.close();

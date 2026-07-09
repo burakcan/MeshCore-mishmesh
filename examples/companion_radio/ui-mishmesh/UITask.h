@@ -1,5 +1,8 @@
 #pragma once
 
+// [mishmesh] lets main.cpp swap the generic "Loading..." boot text for our splash
+#define MISHMESH_UI 1
+
 #include <MeshCore.h>
 #include <helpers/ui/DisplayDriver.h>
 #include <helpers/SensorManager.h>
@@ -173,6 +176,10 @@ public:
 
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
   void finishOnboardingToHome();   // [mishmesh] called by onboardingDone callback
+
+  // [mishmesh] one-shot boot splash drawn from setup() before any applet exists;
+  // touches only the passed display, so it runs before begin().
+  static void drawBootSplash(DisplayDriver* disp);
 
   // mishmesh::AppServices
   const char* nodeName() const override { return _node_prefs ? _node_prefs->node_name : ""; }

@@ -8,6 +8,7 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/NameValidation.h>
 #include <mishmesh/core/WorldClock.h>
+#include <mishmesh/core/Anim.h>
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 #include <string.h>
@@ -67,6 +68,7 @@ void OnboardingApplet::onStart(AppletContext& ctx) {
 
 void OnboardingApplet::enterStep() {
   _list.resetSelection();
+  if (cur() == Welcome) _logoSnap = true;   // replay the slide-up on (re)entry
   // Radio region: start focus on the currently-chosen preset so it's visible.
   if (cur() == Region && _region >= 0 && _region < PRESET_COUNT) _list.setSelected(_region);
 }
@@ -219,11 +221,22 @@ void OnboardingApplet::drawCenterButton(Canvas& c, int x, int y, int w, const ch
 }
 
 void OnboardingApplet::drawWelcome(Canvas& c, int x, int y, int w, int h) {
-  int top = y + 6;
-  c.drawXbm(x + (w - MESHCORE_LOGO_W) / 2, top, MESHCORE_LOGO, MESHCORE_LOGO_W, MESHCORE_LOGO_H);
-  c.drawXbm(x + (w - MISHMESH_LOGO_W) / 2, top + MESHCORE_LOGO_H + 5,
+  const int gap = 5;
+  const int blockH = MESHCORE_LOGO_H + gap + MISHMESH_LOGO_H;
+  const int finalTop = y + 6;
+  const int splashTop = y + (h - blockH) / 2;  // where UITask::drawBootSplash left them
+
+  if (_logoSnap) { _logoTop = splashTop; _logoSnap = false; }
+  _logoTop = approach(_logoTop, finalTop, 1);
+  _logoSettling = (_logoTop != finalTop);
+
+  c.drawXbm(x + (w - MESHCORE_LOGO_W) / 2, _logoTop, MESHCORE_LOGO, MESHCORE_LOGO_W, MESHCORE_LOGO_H);
+  c.drawXbm(x + (w - MISHMESH_LOGO_W) / 2, _logoTop + MESHCORE_LOGO_H + gap,
             MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H);
-  drawCenterButton(c, x, y + h - (c.fontHeight(fontBody()) + 5), w, "Get started");
+
+  // hold the button back until the logos land, so the first frame matches the splash
+  if (!_logoSettling)
+    drawCenterButton(c, x, y + h - (c.fontHeight(fontBody()) + 5), w, "Get started");
 }
 
 void OnboardingApplet::drawDone(Canvas& c, int x, int y, int w, int h) {
@@ -253,6 +266,7 @@ int OnboardingApplet::onRender(Canvas& c) {
   else if (s == Done)    drawDone(c, 0, by, w, bhBody);
   else                   _list.draw(c, 0, by, w, bhBody);
 
+  if (s == Welcome && _logoSettling) return ListMenu::TICK_MS;
   return _list.needsAnimation() ? ListMenu::TICK_MS : 750;
 }
 

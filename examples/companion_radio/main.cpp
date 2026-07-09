@@ -124,7 +124,13 @@ void setup() {
   #ifdef ST7789
     disp->setTextSize(2);
   #endif
+  // [mishmesh] branded boot splash (two wordmarks) in place of the plain text
+  #if defined(MISHMESH_UI)
+    UITask::drawBootSplash(disp);
+  #else
     disp->drawTextCentered(disp->width() / 2, 28, "Loading...");
+  #endif
+  // [/mishmesh]
     disp->endFrame();
   }
 #endif

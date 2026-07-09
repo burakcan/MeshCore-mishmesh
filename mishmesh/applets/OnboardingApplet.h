@@ -86,6 +86,11 @@ private:
   ListMenu     _list;    // middle-step rows
   Button       _btn;     // Welcome/Done button
   mutable char _val[24]; // scratch (unused-safe)
+
+  // Welcome logos slide up from the boot-splash centering to their resting spot.
+  int  _logoTop = 0;
+  bool _logoSnap = true;       // snap to the splash position on the next draw
+  bool _logoSettling = false;  // true while the slide is still in flight
 };
 
 }  // namespace mishmesh

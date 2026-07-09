@@ -4,6 +4,7 @@
 #include <helpers/sensors/LocationProvider.h>
 // [/mishmesh]
 #include <mishmesh/applets/NotificationApplet.h>
+#include <mishmesh/applets/onboarding_logo.h>   // MeshCore + mishmesh wordmarks
 #include <mishmesh/applets/ClockAlertApplet.h>
 #include <mishmesh/core/ClockService.h>
 #include <mishmesh/core/QuickReplyStore.h>
@@ -147,6 +148,17 @@ void UITask::finishOnboardingToHome() {
   // (_depth != 0). replace() swaps the root in place and re-renders. The wizard leaks
   // intentionally (setup-only, one instance).
   if (_host && _home) _host->replace(_home);
+}
+
+void UITask::drawBootSplash(DisplayDriver* disp) {
+  using namespace mishmesh;
+  const int gap = 5;   // matches the onboarding Welcome stacking
+  const int blockH = MESHCORE_LOGO_H + gap + MISHMESH_LOGO_H;
+  const int top = (disp->height() - blockH) / 2;
+  disp->drawXbm((disp->width() - MESHCORE_LOGO_W) / 2, top,
+                MESHCORE_LOGO, MESHCORE_LOGO_W, MESHCORE_LOGO_H);
+  disp->drawXbm((disp->width() - MISHMESH_LOGO_W) / 2, top + MESHCORE_LOGO_H + gap,
+                MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H);
 }
 // [/mishmesh]
 
