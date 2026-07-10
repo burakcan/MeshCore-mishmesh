@@ -15,6 +15,7 @@ public:
 
   virtual bool isOn() = 0;
   virtual bool isEink() { return false; } // default to non-eink, override in eink drivers
+  virtual void setBusyPoll(void (*cb)(const void*), const void* ctx) {}
   virtual void turnOn() = 0;
   virtual void turnOff() = 0;
   virtual void clear() = 0;

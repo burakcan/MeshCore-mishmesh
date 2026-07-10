@@ -71,6 +71,9 @@ public:
 
   bool isOn() override { return _isOn; }
   bool isEink() override { return true; }
+  void setBusyPoll(void (*cb)(const void*), const void* ctx) override {
+    display.epd2.setBusyCallback(cb, ctx);
+  }
   void turnOn() override;
   void turnOff() override;
   void clear() override;

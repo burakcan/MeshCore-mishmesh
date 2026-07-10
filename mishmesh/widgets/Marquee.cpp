@@ -1,4 +1,5 @@
 #include <mishmesh/widgets/Marquee.h>
+#include <mishmesh/core/Anim.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
 
@@ -22,7 +23,7 @@ void Marquee::draw(Canvas& c, const mf_font_s* font, int x, int y, int availW, i
   _active = false;
   int ty = (rowH - c.fontHeight(font)) / 2; if (ty < 0) ty = 0;
   int tw = c.textWidth(font, text);
-  if (tw <= availW) {
+  if (tw <= availW || reducedMotion()) {
     c.drawTextEllipsized(font, x, y + ty, availW, text, col);
     return;
   }

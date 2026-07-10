@@ -96,7 +96,10 @@ private:
   // report. Called both before and after rendering each loop so a slow frame can't
   // open an input-blind gap - see loop().
   void pumpInput(uint32_t now_ms);
+  void handleReport(const InputReport& rep, uint32_t now_ms);
   void refreshInputState();   // OR every source's heldMask() into _input_state
+  static void busyPollThunk(const void* self);
+  void pollDuringBusy();
 
   DisplayDriver* _display;
   Canvas _canvas;
@@ -107,6 +110,10 @@ private:
 
   InputSource* _sources[MAX_SOURCES];
   int _nsources;
+
+  static const int BUSY_QUEUE = 8;
+  InputReport _busyQueue[BUSY_QUEUE];
+  uint8_t _busy_count;
 
   uint32_t _next_render_at;
   uint32_t _last_flush_ms;   // exclusive-mode flush-rate cap timestamp
