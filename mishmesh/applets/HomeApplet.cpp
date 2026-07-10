@@ -164,7 +164,8 @@ int HomeApplet::onRender(Canvas& c) {
     int total = wl + wa + wt + wr;
     int gaps = (lr ? 1 : 0) + (_menu ? 1 : 0) + (rr ? 1 : 0);
     if (gaps > 0 && total + gaps * GAP > w) {
-      GAP = 3;
+      GAP = (w - total) / gaps;
+      if (GAP < 2) GAP = 2;
     }
     total += gaps * GAP;
     int x = (w - total) / 2;

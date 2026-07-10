@@ -174,6 +174,14 @@ bool mm_measure_line(mf_str line, uint16_t count, void* state) {
 
 }  // namespace
 
+static int glyphAdvance(const mf_font_s* font, mf_char ch) {
+  if (s_emojiZeroWidth && s_emojiZeroWidth((uint16_t)ch)) return 0;
+  uint16_t glyph;
+  if (s_emojiFont && s_emojiLookup && s_emojiLookup((uint16_t)ch, glyph))
+    return s_emojiFont->character_width(s_emojiFont, glyph) + 2 * kEmojiPadPx;
+  return mf_character_width(font, ch);
+}
+
 int Canvas::textWidth(const mf_font_s* font, const char* str) const {
   if (!font || !str) return 0;
   // [mishmesh] With an overlay registered, mirror mm_char so measure == render:
@@ -181,14 +189,8 @@ int Canvas::textWidth(const mf_font_s* font, const char* str) const {
   // measure 0, everything else keeps stock width (incl. the fallback width for
   // unknown glyphs). No overlay -> exactly mf_get_string_width(..., false).
   if (s_emojiFont) {
-    mf_str p = str; int w = 0; mf_char ch; uint16_t glyph;
-    while ((ch = mf_getchar(&p)) != 0) {
-      if (s_emojiZeroWidth && s_emojiZeroWidth((uint16_t)ch)) continue;
-      if (s_emojiLookup && s_emojiLookup((uint16_t)ch, glyph))
-        w += s_emojiFont->character_width(s_emojiFont, glyph) + 2 * kEmojiPadPx;
-      else
-        w += mf_character_width(font, ch);
-    }
+    mf_str p = str; int w = 0; mf_char ch;
+    while ((ch = mf_getchar(&p)) != 0) w += glyphAdvance(font, ch);
     return w;
   }
   // [/mishmesh]
@@ -243,13 +245,19 @@ void Canvas::drawTextEllipsized(const mf_font_s* font, int x, int y, int maxWidt
     return;
   }
   char buf[64];
-  int ellw = textWidth(font, "...");
-  int len = 0;
-  for (const char* p = str; *p && len < 60; ++p) {
-    buf[len] = *p;
-    buf[len + 1] = 0;
-    if (textWidth(font, buf) + ellw > maxWidth) { buf[len] = 0; break; }
-    len++;
+  int ellw = 3 * glyphAdvance(font, '.');
+  mf_str p = str;
+  int len = 0, tw = 0;
+  for (;;) {
+    mf_str at = p;
+    mf_char ch = mf_getchar(&p);
+    if (ch == 0) break;
+    int cw = glyphAdvance(font, ch);
+    int nbytes = (int)(p - at);
+    if (len + nbytes > 60 || tw + cw + ellw > maxWidth) break;
+    memcpy(buf + len, at, nbytes);
+    len += nbytes;
+    tw += cw;
   }
   buf[len] = '.'; buf[len + 1] = '.'; buf[len + 2] = '.'; buf[len + 3] = 0;
   drawText(font, x, y, buf, c, align);

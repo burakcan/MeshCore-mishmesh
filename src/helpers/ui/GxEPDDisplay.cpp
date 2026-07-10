@@ -111,8 +111,8 @@ void GxEPDDisplay::fillRect(int x, int y, int w, int h) {
   display_crc.update<int>(y);
   display_crc.update<int>(w);
   display_crc.update<int>(h);
-  int x1 = (int)(x * scale_x), y1 = (int)(y * scale_y);
-  int x2 = (int)((x + w) * scale_x), y2 = (int)((y + h) * scale_y);
+  int x1, y1, x2, y2;
+  scaleRect(x, y, w, h, x1, y1, x2, y2);
   display.fillRect(x1, y1, x2 - x1, y2 - y1, _curr_color);
 }
 
@@ -121,8 +121,8 @@ void GxEPDDisplay::drawRect(int x, int y, int w, int h) {
   display_crc.update<int>(y);
   display_crc.update<int>(w);
   display_crc.update<int>(h);
-  int x1 = (int)(x * scale_x), y1 = (int)(y * scale_y);
-  int x2 = (int)((x + w) * scale_x), y2 = (int)((y + h) * scale_y);
+  int x1, y1, x2, y2;
+  scaleRect(x, y, w, h, x1, y1, x2, y2);
   display.drawRect(x1, y1, x2 - x1, y2 - y1, _curr_color);
 }
 

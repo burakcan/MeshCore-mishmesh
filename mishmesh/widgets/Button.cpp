@@ -18,7 +18,8 @@ void Button::draw(Canvas& c, int x, int y, int w, int h) {
   int iw  = _icon ? ICON_PX : 0;
   int gap = (iw && tw) ? GAP : 0;
   int avail = w - 2 * PAD - iw - gap;
-  if (tw > avail) tw = avail;
+  bool fits = tw <= avail;
+  if (!fits) tw = avail;
 
   // Center the icon+label group; clamp to the left pad if it would overflow.
   int cx = x + (w - (iw + gap + tw)) / 2;
@@ -29,7 +30,9 @@ void Button::draw(Canvas& c, int x, int y, int w, int h) {
     cx += iw + gap;
   }
   if (tw > 0) {
-    c.drawTextEllipsized(f, cx, y + (h - c.fontHeight(f)) / 2, tw, _label, fg);
+    int ty = y + (h - c.fontHeight(f)) / 2;
+    if (fits) c.drawText(f, cx, ty, _label, fg);
+    else      c.drawTextEllipsized(f, cx, ty, tw, _label, fg);
   }
 }
 
