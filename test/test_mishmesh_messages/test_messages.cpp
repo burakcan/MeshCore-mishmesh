@@ -400,6 +400,24 @@ TEST(MessagePath, InboundResolvesNameElseHex) {
   EXPECT_STREQ("2  5B",    mishmesh::messagePathApplet().lineForTest(1));
 }
 
+TEST(MessagePath, InboundGroupsMultibytePathHashes) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  uint8_t path[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+  svc.store.appendInbound(k, "hi", 2, 1, 1, 0, path, 0x42);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messagePathApplet().setTarget(k, 0);
+  host.push(&mishmesh::messagePathApplet());
+  host.loop(0);
+  EXPECT_STREQ("Path: 2 hops", mishmesh::messagePathApplet().titleForTest());
+  EXPECT_EQ(2, mishmesh::messagePathApplet().rowCountForTest());
+  EXPECT_STREQ("1  Alice2", mishmesh::messagePathApplet().lineForTest(0));
+  EXPECT_STREQ("2  CCDD", mishmesh::messagePathApplet().lineForTest(1));
+}
+
 TEST(MessagePath, InboundDirectHasNoHops) {
   FakeMessagesService svc;
   auto k = mishmesh::directKey((const uint8_t*)"ALICE!");

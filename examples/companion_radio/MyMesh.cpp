@@ -480,11 +480,10 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   // [mishmesh]
   // Same allowlist as should_display: never store raw CLI_DATA frames as DMs.
   if (_mm_store && (txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN)) {
-    uint8_t hops = 0;
+    uint8_t pathLen = 0;
     const uint8_t* pathPtr = nullptr;
     if (pkt && pkt->isRouteFlood()) {
-      hops = pkt->getPathHashCount();
-      if (hops > mishmesh::MAX_PATH) hops = mishmesh::MAX_PATH;
+      pathLen = (uint8_t)pkt->path_len;
       pathPtr = pkt->path;
     }
     mishmesh::ConvoKey k = mishmesh::directKey(from.id.pub_key);
@@ -507,11 +506,11 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       if (m > (int)mishmesh::MAX_TEXT) m = mishmesh::MAX_TEXT;
       _mm_store->appendInbound(k, roombuf, (uint16_t)m, sender_timestamp,
                                 getRTCClock()->getCurrentTime(),
-                                pkt ? pkt->_snr : 0, pathPtr, hops);
+                                pkt ? pkt->_snr : 0, pathPtr, pathLen);
     } else {
       _mm_store->appendInbound(k, text, (uint16_t)strlen(text), sender_timestamp,
                                 getRTCClock()->getCurrentTime(),
-                                pkt ? pkt->_snr : 0, pathPtr, hops);
+                                pkt ? pkt->_snr : 0, pathPtr, pathLen);
     }
   }
   // [/mishmesh]
@@ -641,17 +640,16 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
 #endif
   // [mishmesh]
   if (_mm_store) {
-    uint8_t hops = 0;
+    uint8_t pathLen = 0;
     const uint8_t* pathPtr = nullptr;
     if (pkt && pkt->isRouteFlood()) {
-      hops = pkt->getPathHashCount();
-      if (hops > mishmesh::MAX_PATH) hops = mishmesh::MAX_PATH;
+      pathLen = (uint8_t)pkt->path_len;
       pathPtr = pkt->path;
     }
     mishmesh::ConvoKey k = mishmesh::channelKey(channel_idx);
     _mm_store->appendInbound(k, text, (uint16_t)strlen(text), timestamp,
                               getRTCClock()->getCurrentTime(),
-                              pkt ? pkt->_snr : 0, pathPtr, hops);
+                              pkt ? pkt->_snr : 0, pathPtr, pathLen);
   }
   // [/mishmesh]
 }
@@ -2893,9 +2891,8 @@ void MyMesh::logRx(mesh::Packet* pkt, int len, float score) {
     if (dl < 5) continue;  // need at minimum: 4-byte ts + type byte
     uint32_t ts;
     memcpy(&ts, data, 4);
-    uint8_t hops = pkt->getPathHashCount();
-    if (hops > mishmesh::MAX_PATH) hops = mishmesh::MAX_PATH;
-    _mm_store->addRepeat(mishmesh::channelKey(ch), ts, pkt->_snr, pkt->path, hops);
+    _mm_store->addRepeat(mishmesh::channelKey(ch), ts, pkt->_snr, pkt->path,
+                         (uint8_t)pkt->path_len);
     break;  // first matching channel wins
   }
 #endif

@@ -261,10 +261,11 @@ void MessageStore::appendInbound(const ConvoKey& key, const char* text, uint16_t
                                   uint32_t senderTime, uint32_t recvTime,
                                   int8_t snrx4, const uint8_t* path, uint8_t pathLen) {
   if (textLen > MAX_TEXT) textLen = MAX_TEXT;
-  if (pathLen > MAX_PATH) pathLen = MAX_PATH;
+  pathLen = clampPathLen(pathLen);
+  uint8_t pathBytes = pathByteLen(pathLen);
 
   if (_backend) {
-    uint32_t recLen = (uint32_t)(codec::REC_HDR + textLen + 2 + pathLen);
+    uint32_t recLen = (uint32_t)(codec::REC_HDR + textLen + 2 + pathBytes);
     if (!ensureSpace(key, recLen)) return;
   }
 
@@ -272,12 +273,12 @@ void MessageStore::appendInbound(const ConvoKey& key, const char* text, uint16_t
   if (_backend) rotateIfNeeded(key, c);
 
   if (_backend) {
-    uint8_t trailer[2 + MAX_PATH];
+    uint8_t trailer[2 + MAX_PATH_BYTES];
     trailer[0] = (uint8_t)snrx4;
     trailer[1] = pathLen;
-    if (pathLen) memcpy(trailer + 2, path, pathLen);
+    if (pathBytes && path) memcpy(trailer + 2, path, pathBytes);
     int n = codec::writeRecord(_recBuf, KIND_INBOUND, key, text, textLen,
-                               senderTime, recvTime, trailer, (uint8_t)(2 + pathLen));
+                               senderTime, recvTime, trailer, (uint8_t)(2 + pathBytes));
     char name[15]; codec::keyToName(key, name);
     if (!_backend->append(name, _recBuf, (uint32_t)n)) return;
     c.logBytes += (uint32_t)n;
@@ -427,11 +428,12 @@ void MessageStore::addRepeat(const ConvoKey& key, uint32_t senderTime,
                               int8_t snrx4, const uint8_t* path, uint8_t pathLen) {
   Tracked* t = findTracked(key, senderTime);
   if (!t || t->kind != KIND_OUT_CHAN) return;
-  if (pathLen > MAX_PATH) pathLen = MAX_PATH;
+  pathLen = clampPathLen(pathLen);
+  uint8_t pathBytes = pathByteLen(pathLen);
   if (t->rptCount < MAX_REPEATS) {
     RepeatRec& rr = t->repeats[t->rptCount];
-    rr.snrx4 = snrx4; rr.pathLen = pathLen; rr.hops = pathLen;
-    if (pathLen && path) memcpy(t->rptStore[t->rptCount], path, pathLen);
+    rr.snrx4 = snrx4; rr.pathLen = pathLen; rr.hops = pathHopCount(pathLen);
+    if (pathBytes && path) memcpy(t->rptStore[t->rptCount], path, pathBytes);
     rr.path = t->rptStore[t->rptCount];
     t->rptCount++;
   }
@@ -478,7 +480,7 @@ void MessageStore::decodeRecord(const uint8_t* r, const ConvoKey& key, MsgRecord
   out.status = ST_PENDING; out.tripTimeMs = 0; out.heardCount = 0;
   const uint8_t* t = r + codec::REC_HDR + out.textLen;
   if (out.kind == KIND_INBOUND) {
-    out.snrx4 = (int8_t)t[0]; out.pathLen = t[1]; out.hops = t[1];
+    out.snrx4 = (int8_t)t[0]; out.pathLen = t[1]; out.hops = pathHopCount(t[1]);
     out.path = t + 2;
   } else if (out.kind == KIND_OUT_DM) {
     out.status = t[0]; memcpy(&out.tripTimeMs, t + 1, 2);
