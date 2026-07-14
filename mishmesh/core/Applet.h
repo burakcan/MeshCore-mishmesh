@@ -129,6 +129,9 @@ struct AppServices {
   // it to NodePrefs and applies it live to the AppletHost.
   virtual uint8_t screenSleepIndex() const { return 1; }
   virtual void    setScreenSleepIndex(uint8_t) {}
+  virtual bool    screenBrightnessSupported() const { return false; }
+  virtual uint8_t screenBrightnessIndex() const { return 2; }
+  virtual void    setScreenBrightnessIndex(uint8_t) {}
   // Set + persist the device (advert) name. Rejects invalid/empty names
   // (isValidNodeName). Returns true if applied. Save only - no advert is sent.
   // Defaults keep the framework companion-agnostic (not settable).

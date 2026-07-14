@@ -59,6 +59,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   uint32_t _msgDirtySeq = 0;
   uint32_t _msgFlushAt  = 0;
   uint32_t _msgDirtySince = 0;   // when the store first went dirty; caps flush deferral
+  uint8_t _screenBrightness = 2; // 0..4; default Medium
 
   struct MsgSvc : public mishmesh::MessagesService {
     mishmesh::MessageStore* store = nullptr;
@@ -363,6 +364,9 @@ public:
     the_mesh.savePrefs();
     if (_host) _host->setAutoOffMillis(mishmesh::screenSleepMillis(idx));   // live
   }
+  bool screenBrightnessSupported() const override { return _display && _display->supportsBrightness(); }
+  uint8_t screenBrightnessIndex() const override { return _screenBrightness; }
+  void setScreenBrightnessIndex(uint8_t idx) override;
   bool setNodeName(const char* name) override {
     if (!mishmesh::isValidNodeName(name)) return false;
     NodePrefs* p = the_mesh.getNodePrefs();

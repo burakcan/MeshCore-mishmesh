@@ -15,6 +15,8 @@ public:
 
   virtual bool isOn() = 0;
   virtual bool isEink() { return false; } // default to non-eink, override in eink drivers
+  virtual bool supportsBrightness() const { return false; }
+  virtual void setBrightness(uint8_t value) { (void)value; }
   virtual void turnOn() = 0;
   virtual void turnOff() = 0;
   virtual void clear() = 0;

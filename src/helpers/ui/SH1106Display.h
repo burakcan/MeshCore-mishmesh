@@ -36,6 +36,8 @@ public:
   bool begin();
 
   bool isOn() override { return _isOn; }
+  bool supportsBrightness() const override { return true; }
+  void setBrightness(uint8_t value) override;
   void turnOn() override;
   void turnOff() override;
   void clear() override;
