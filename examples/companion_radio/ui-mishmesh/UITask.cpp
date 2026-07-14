@@ -62,7 +62,7 @@ static void platformHeap(uint32_t& freeBytes, uint32_t& totalBytes) {
 
 static uint8_t brightnessValue(uint8_t idx) {
   static const uint8_t LEVELS[] = { 16, 64, 128, 192, 255 };
-  return LEVELS[idx < 5 ? idx : 2];
+  return LEVELS[idx < 5 ? idx : 4];
 }
 
 uint32_t UITask::epochSeconds() const {
@@ -70,7 +70,7 @@ uint32_t UITask::epochSeconds() const {
 }
 
 void UITask::setScreenBrightnessIndex(uint8_t idx) {
-  _screenBrightness = idx < 5 ? idx : 2;
+  _screenBrightness = idx < 5 ? idx : 4;
   _theStorage.save("brgt", &_screenBrightness, 1);
   if (_display) _display->setBrightness(brightnessValue(_screenBrightness));
 }
@@ -199,7 +199,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _retryGlue.store = &_msgStore;      // auto-retry acts on the same store
   _theStorage.ds = the_mesh.getStore();
   _msgSvc.storage = &_theStorage;     // per-chat region persistence
-  uint8_t savedBrightness = 2;
+  uint8_t savedBrightness = 4;
   if (_theStorage.load("brgt", &savedBrightness, 1) == 1 && savedBrightness < 5)
     _screenBrightness = savedBrightness;
   _display->setBrightness(brightnessValue(_screenBrightness));

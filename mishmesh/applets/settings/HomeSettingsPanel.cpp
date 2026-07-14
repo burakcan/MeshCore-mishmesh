@@ -59,7 +59,7 @@ static void sleepStepLabel(int idx, char* out, uint16_t cap) {
 
 static void brightnessStepLabel(int idx, char* out, uint16_t cap) {
   static const char* const LABELS[] = { "Minimum", "Low", "Medium", "High", "Maximum" };
-  snprintf(out, cap, "%s", LABELS[idx < 5 ? idx : 2]);
+  snprintf(out, cap, "%s", LABELS[idx < 5 ? idx : 4]);
 }
 
 const char* HomeSettingsPanel::Model::label(int i) const {

@@ -29,7 +29,7 @@ void prime() {
 
 struct FakeSleepApp : AppServices {
   uint8_t idx = 1;                                  // 30s
-  uint8_t brightness = 2;                           // Medium
+  uint8_t brightness = 4;                           // Maximum
   const char* nodeName() const override { return "n"; }
   uint16_t batteryMillivolts() const override { return 0; }
   uint32_t epochSeconds() const override { return 0; }
@@ -108,7 +108,7 @@ TEST(HomeSettingsPanel, ScreenBrightnessStepperAppliesSelection) {
   for (int i = 0; i < 4; i++) EXPECT_TRUE(p.onInput(InputEvent::NavDown));
   EXPECT_TRUE(p.onInput(InputEvent::Select));
   EXPECT_TRUE(p.modalActive());
-  EXPECT_TRUE(p.onInput(InputEvent::NavRight));       // Medium -> High
+  EXPECT_TRUE(p.onInput(InputEvent::NavLeft));        // Maximum -> High
   EXPECT_TRUE(p.onInput(InputEvent::Select));
   EXPECT_FALSE(p.modalActive());
   EXPECT_EQ(3, app.brightness);

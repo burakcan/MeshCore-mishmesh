@@ -59,7 +59,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   uint32_t _msgDirtySeq = 0;
   uint32_t _msgFlushAt  = 0;
   uint32_t _msgDirtySince = 0;   // when the store first went dirty; caps flush deferral
-  uint8_t _screenBrightness = 2; // 0..4; default Medium
+  uint8_t _screenBrightness = 4; // 0..4; default Maximum (library default)
 
   struct MsgSvc : public mishmesh::MessagesService {
     mishmesh::MessageStore* store = nullptr;
