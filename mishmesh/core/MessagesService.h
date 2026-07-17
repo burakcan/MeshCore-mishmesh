@@ -51,13 +51,13 @@ struct MessageView {
   uint8_t     retryAttempt; // outbound DM still pending: current auto-retry number (0 = none)
   int8_t      snrx4;
   uint8_t     hops;
-  const uint8_t* path; uint8_t pathLen;
+  const uint8_t* path; uint8_t pathLen; // MeshCore encoded path length
 };
 struct RepeatView {
   uint8_t        hops;
   int8_t         snrx4;
-  const uint8_t* path;     // hop hash-bytes; resolve via resolveHop()
-  uint8_t        pathLen;
+  const uint8_t* path;
+  uint8_t        pathLen;   // MeshCore encoded path length
 };
 
 struct MessagesService {
@@ -80,7 +80,7 @@ struct MessagesService {
   virtual void clearActiveConvo() = 0;
   virtual int  repeatCount(const ConvoKey& k, int msgIdx) const = 0;
   virtual bool getRepeat(const ConvoKey& k, int msgIdx, int r, RepeatView& out) const = 0;
-  virtual bool resolveHop(uint8_t hashByte, const char*& name, uint8_t& knownCount) const = 0;
+  virtual bool resolveHop(const uint8_t* hash, uint8_t hashSize, const char*& name, uint8_t& knownCount) const = 0;
   virtual void deleteMessage(const ConvoKey& k, int i) = 0;
   virtual void clearConvo(const ConvoKey& k) = 0;
   virtual void deleteConvo(const ConvoKey& k) = 0;

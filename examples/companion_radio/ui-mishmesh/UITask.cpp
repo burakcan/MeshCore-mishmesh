@@ -500,7 +500,7 @@ void UITask::fillView(const ContactInfo& c, mishmesh::ContactView& out) {
   out.type = c.type;
   out.isFavourite = (c.flags & 0x01) != 0;
   out.hasPath = c.out_path_len != OUT_PATH_UNKNOWN;
-  out.hops = out.hasPath ? c.out_path_len : 0;
+  out.hops = out.hasPath ? (c.out_path_len & 63) : 0;
   out.lastAdvert = c.last_advert_timestamp;
   out.pubKey = c.id.pub_key;
   out.hasLocation = (c.gps_lat != 0 || c.gps_lon != 0);
@@ -939,14 +939,14 @@ bool UITask::MsgSvc::getRepeat(const mishmesh::ConvoKey& k, int m, int r, mishme
   return true;
 }
 
-bool UITask::MsgSvc::resolveHop(uint8_t hashByte, const char*& name, uint8_t& knownCount) const {
+bool UITask::MsgSvc::resolveHop(const uint8_t* hash, uint8_t hashSize, const char*& name, uint8_t& knownCount) const {
   static char buf[34]; knownCount = 0; name = "";
   int n = the_mesh.getNumContacts();
   bool hasFirst = false;
   ContactInfo ci;
   for (int i = 0; i < n; i++) {
     if (!the_mesh.getContactByIdx(i, ci)) continue;
-    if (ci.id.pub_key[0] == hashByte) {
+    if (memcmp(ci.id.pub_key, hash, hashSize) == 0) {
       if (!hasFirst) { snprintf(buf, sizeof(buf), "%s", ci.name); hasFirst = true; }
       knownCount++;
     }
@@ -958,7 +958,7 @@ bool UITask::MsgSvc::resolveHop(uint8_t hashByte, const char*& name, uint8_t& kn
     int d = the_mesh.uiDiscoveryCount();
     for (int i = 0; i < d; i++) {
       if (!the_mesh.uiGetDiscovery(i, ci)) continue;
-      if (ci.id.pub_key[0] == hashByte) {
+      if (memcmp(ci.id.pub_key, hash, hashSize) == 0) {
         snprintf(buf, sizeof(buf), "%s", ci.name); hasFirst = true; break;
       }
     }

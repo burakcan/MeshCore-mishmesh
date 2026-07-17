@@ -34,6 +34,16 @@ TEST_F(MSFix, InboundCreatesConvoAndMessage) {
   EXPECT_EQ(0x63, r.path[1]);
 }
 
+TEST_F(MSFix, InboundPreservesMultibytePathHashes) {
+  uint8_t path[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+  s.appendInbound(dm("ALICE!"), "hi", 2, 1000, 2000, -32, path, 0x42);
+  MsgRecord r;
+  ASSERT_TRUE(s.getMessage(dm("ALICE!"), 0, r));
+  EXPECT_EQ(0x42, r.pathLen);
+  EXPECT_EQ(2, r.hops);
+  EXPECT_EQ(0, memcmp(path, r.path, 4));
+}
+
 TEST_F(MSFix, RecencySortedNewestFirst) {
   s.appendInbound(dm("ALICE!"), "a", 1, 100, 100, 0, nullptr, 0);
   s.appendInbound(dm("BOBBBB"), "b", 1, 200, 200, 0, nullptr, 0);

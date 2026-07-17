@@ -63,8 +63,9 @@ struct FakeMessagesService : mishmesh::MessagesService {
     o.hops = rr.hops; o.snrx4 = rr.snrx4; o.path = rr.path; o.pathLen = rr.pathLen;
     return true;
   }
-  bool resolveHop(uint8_t b, const char*& name, uint8_t& kc) const override {
-    if (b == 0xAA) { name = "Alice"; kc = 1; return true; }   // everything else falls back to hex
+  bool resolveHop(const uint8_t* hash, uint8_t size, const char*& name, uint8_t& kc) const override {
+    if (size == 1 && hash[0] == 0xAA) { name = "Alice"; kc = 1; return true; }
+    if (size == 2 && hash[0] == 0xAA && hash[1] == 0xBB) { name = "Alice2"; kc = 1; return true; }
     name = ""; kc = 0; return false;
   }
   void deleteMessage(const mishmesh::ConvoKey& k, int i) override { store.deleteMessage(k, i); deletes++; }

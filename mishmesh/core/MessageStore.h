@@ -98,7 +98,7 @@ private:
   mutable uint8_t _recBuf[codec::MAX_REC]; // scratch for single-record reads (paging)
   // Word-aligned: LittleFS programs/reads this blob directly from here on a large
   // single transfer, and the nRF52840 QSPI DMA rejects a non-word-aligned RAM source.
-  // Without alignas, _recBuf[187] leaves _idxBuf on an odd offset and every index
+  // Without alignas, the odd-sized _recBuf leaves _idxBuf unaligned and every index
   // write silently fails (wrote=0) - the on-device unread-count persistence bug.
   alignas(uint32_t) uint8_t _idxBuf[4096];   // serialised ConvoIndex (MIDX blob, ~3911 bytes max)
 
@@ -109,7 +109,7 @@ private:
     uint8_t  kind;
     uint32_t expectedAck;
     RepeatRec repeats[MAX_REPEATS];
-    uint8_t  rptStore[MAX_REPEATS][MAX_PATH];
+    uint8_t  rptStore[MAX_REPEATS][MAX_PATH_BYTES];
     uint8_t  rptCount;
   };
   Tracked _tracked[MAX_TRACKED];

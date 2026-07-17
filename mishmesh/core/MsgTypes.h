@@ -13,7 +13,19 @@ static const int MAX_CONVOS   = 64;
 static const int PER_CHAT_CAP = 100;
 static const int MAX_TRACKED  = 8;
 static const int MAX_REPEATS  = 8;
-static const int MAX_PATH     = 8;
+static const int MAX_PATH     = 8;   // maximum stored/displayed hops
+static const int MAX_PATH_BYTES = MAX_PATH * 3;
+
+inline uint8_t pathHashSize(uint8_t encodedLen) { return (encodedLen >> 6) + 1; }
+inline uint8_t pathHopCount(uint8_t encodedLen) { return encodedLen & 63; }
+inline uint8_t pathByteLen(uint8_t encodedLen) { return pathHopCount(encodedLen) * pathHashSize(encodedLen); }
+inline uint8_t clampPathLen(uint8_t encodedLen) {
+  uint8_t size = pathHashSize(encodedLen);
+  uint8_t hops = pathHopCount(encodedLen);
+  if (size > 3) return 0;
+  if (hops > MAX_PATH) hops = MAX_PATH;
+  return (uint8_t)(((size - 1) << 6) | hops);
+}
 static const int MAX_TEXT     = 160;
 static const int PREVIEW_LEN  = 40;
 
@@ -38,7 +50,7 @@ struct MsgRecord {
   int8_t         snrx4;
   uint8_t        hops;
   const uint8_t* path;
-  uint8_t        pathLen;
+  uint8_t        pathLen;   // encoded: top bits hash size, low 6 bits hop count
   uint8_t        status;
   uint16_t       tripTimeMs;
   uint8_t        heardCount;
@@ -60,7 +72,7 @@ struct RepeatRec {
   int8_t         snrx4;
   uint8_t        hops;
   const uint8_t* path;
-  uint8_t        pathLen;
+  uint8_t        pathLen;   // encoded: top bits hash size, low 6 bits hop count
 };
 
 } // namespace mishmesh

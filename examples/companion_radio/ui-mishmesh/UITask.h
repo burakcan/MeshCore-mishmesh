@@ -84,7 +84,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     void clearActiveConvo() override;
     int  repeatCount(const mishmesh::ConvoKey& k, int m) const override;
     bool getRepeat(const mishmesh::ConvoKey& k, int m, int r, mishmesh::RepeatView& out) const override;
-    bool resolveHop(uint8_t hashByte, const char*& name, uint8_t& knownCount) const override;
+    bool resolveHop(const uint8_t* hash, uint8_t hashSize, const char*& name, uint8_t& knownCount) const override;
     void deleteMessage(const mishmesh::ConvoKey& k, int i) override;
     void clearConvo(const mishmesh::ConvoKey& k) override;
     void deleteConvo(const mishmesh::ConvoKey& k) override;
