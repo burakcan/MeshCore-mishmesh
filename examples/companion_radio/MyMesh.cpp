@@ -1430,6 +1430,14 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.freq = LORA_FREQ;
   _prefs.tz_city_index = -1;   // [mishmesh] default custom/fixed until a city is chosen
   _prefs.onboarding_state = 0;   // [mishmesh] not started (fresh device before wizard runs)
+  // [mishmesh] non-zero mishmesh defaults must live here too, not only in
+  // DataStore::loadPrefsInt: that path runs only when a prefs file exists, so a
+  // device flashed straight to mishmesh (no file) would otherwise bake these as 0
+  // on onboarding's first savePrefs -> muted with all sound categories off, BLE off.
+  _prefs.sound_volume = 2;          // Mid
+  _prefs.sound_mute_mask = 0x0F;    // all 4 sound categories enabled
+  _prefs.ble_enabled = 1;           // companion link on
+  _prefs.contacts_full_notify = 1;  // "contacts full" alert on
   _prefs.sf = LORA_SF;
   _prefs.bw = LORA_BW;
   _prefs.cr = LORA_CR;
@@ -1494,6 +1502,14 @@ void MyMesh::begin(bool has_display) {
   _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);
   _prefs.gps_enabled = constrain(_prefs.gps_enabled, 0, 1);  // Ensure boolean 0 or 1
   _prefs.gps_interval = constrain(_prefs.gps_interval, 0, 86400);  // Max 24 hours
+  // [mishmesh] repair devices that baked a zeroed sound block before the fix above:
+  // no UI ever writes sound_mute_mask, so mask==0 (every category muted -> nothing can
+  // ever play) is an unambiguous corrupted/never-initialized marker, safe to reset.
+  // A user who chose Mute has sound_volume==0 but mask==0x0F, so this leaves them alone.
+  if (_prefs.sound_mute_mask == 0) {
+    _prefs.sound_volume = 2;        // Mid
+    _prefs.sound_mute_mask = 0x0F;  // all 4 sound categories enabled
+  }
 
 #ifdef BLE_PIN_CODE // 123456 by default
   if (_prefs.ble_pin == 0) {
