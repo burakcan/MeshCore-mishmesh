@@ -45,13 +45,13 @@ public:
   void begin(AppletContext& ctx) override;
   int  renderBody(Canvas& c, int x, int y, int w, int h) override;
   bool onInput(InputEvent ev) override;
-  bool modalActive() const override { return _editingSleep; }
+  bool modalActive() const override { return _editingSleep || _editingBrightness; }
 
 private:
   struct Model : ListModel {
     AppServices* app = nullptr;
-    enum Row : int { BattPercent, ScreenSleep, LeftAction, RightAction, ROW_COUNT };
-    int count() const override { return ROW_COUNT; }
+    enum Row : int { BattPercent, ScreenSleep, LeftAction, RightAction, ScreenBrightness, ROW_COUNT };
+    int count() const override { return app && app->screenBrightnessSupported() ? ROW_COUNT : ROW_COUNT - 1; }
     const char* label(int i) const override;
     bool isToggle(int i) const override { return i == BattPercent; }
     bool toggleState(int i) const override;
@@ -60,8 +60,9 @@ private:
 
   AppletHost* _host = nullptr;
   ListMenu _list;
-  StepperDialog _stepper;          // in-panel modal for the sleep picker
+  StepperDialog _stepper;
   bool _editingSleep = false;
+  bool _editingBrightness = false;
 };
 
 HomeSettingsPanel& homeSettings();

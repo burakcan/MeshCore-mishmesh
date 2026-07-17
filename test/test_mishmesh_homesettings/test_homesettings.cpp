@@ -29,11 +29,15 @@ void prime() {
 
 struct FakeSleepApp : AppServices {
   uint8_t idx = 1;                                  // 30s
+  uint8_t brightness = 4;                           // Maximum
   const char* nodeName() const override { return "n"; }
   uint16_t batteryMillivolts() const override { return 0; }
   uint32_t epochSeconds() const override { return 0; }
   uint8_t screenSleepIndex() const override { return idx; }
   void setScreenSleepIndex(uint8_t i) override { idx = i; }
+  bool screenBrightnessSupported() const override { return true; }
+  uint8_t screenBrightnessIndex() const override { return brightness; }
+  void setScreenBrightnessIndex(uint8_t i) override { brightness = i; }
 };
 
 }  // namespace
@@ -91,6 +95,23 @@ TEST(HomeSettingsPanel, ScreenSleepStepperAppliesSelection) {
   EXPECT_TRUE(p.onInput(InputEvent::Select));         // confirm
   EXPECT_FALSE(p.modalActive());
   EXPECT_EQ(2, app.idx);
+}
+
+
+TEST(HomeSettingsPanel, ScreenBrightnessStepperAppliesSelection) {
+  prime();
+  FakeSleepApp app;
+  AppletContext ctx; ctx.app = &app;
+  HomeSettingsPanel& p = homeSettings();
+  p.begin(ctx);
+  // Brightness is the fifth row, after the two shortcut rows.
+  for (int i = 0; i < 4; i++) EXPECT_TRUE(p.onInput(InputEvent::NavDown));
+  EXPECT_TRUE(p.onInput(InputEvent::Select));
+  EXPECT_TRUE(p.modalActive());
+  EXPECT_TRUE(p.onInput(InputEvent::NavLeft));        // Maximum -> High
+  EXPECT_TRUE(p.onInput(InputEvent::Select));
+  EXPECT_FALSE(p.modalActive());
+  EXPECT_EQ(3, app.brightness);
 }
 
 int main(int argc, char** argv) {
