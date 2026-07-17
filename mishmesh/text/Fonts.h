@@ -56,6 +56,7 @@ enum class Icon : uint16_t {
   Globe       = 0xE024,   // world clock tab
   Grid        = 0xE025,   // 3x3 grid (2048 board)
   Coffee      = 0xE026,   // coffee cup (About / support screen)
+  Sliders     = 0xE027,   // experimental settings group
 };
 
 }  // namespace mishmesh

@@ -6,6 +6,7 @@
 #include <mishmesh/applets/settings/AdvertSettingsPanel.h>
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
 #include <mishmesh/applets/settings/RadioSettingsPanel.h>
+#include <mishmesh/applets/settings/ExperimentalSettingsPanel.h>
 #include <mishmesh/applets/settings/TimeSettingsPanel.h>
 #include <mishmesh/applets/settings/DevResetOnboardingPanel.h>
 #include <mishmesh/core/AppletHost.h>
@@ -21,6 +22,7 @@ static SettingsPanel* messagesPanelPtr()    { return &messagesSettings(); }
 static SettingsPanel* advertPanelPtr()      { return &advertSettings(); }
 static SettingsPanel* systemInfoPanelPtr()  { return &systemInfoSettings(); }
 static SettingsPanel* radioPanelPtr()       { return &radioSettings(); }
+static SettingsPanel* experimentalPanelPtr() { return &experimentalSettings(); }
 static SettingsPanel* timePanelPtr()        { return &timeSettings(); }
 static SettingsPanel* devResetPanelPtr()    { return &devResetOnboardingSettings(); }
 
@@ -40,6 +42,7 @@ const SettingsApplet::Entry SettingsApplet::ENTRIES[ENTRY_COUNT] = {
   { "Advert",      advertPanelPtr,     (uint16_t)Icon::Radio,     always    },
   { "Radio",       radioPanelPtr,      (uint16_t)Icon::Wifi,      always    },
   { "Time & date", timePanelPtr,       (uint16_t)Icon::Clock,     always    },
+  { "Experimental", experimentalPanelPtr, (uint16_t)Icon::Sliders, always   },
   { "System Info", systemInfoPanelPtr, (uint16_t)Icon::Chip,      always    },
   { "Reset onboarding", devResetPanelPtr, (uint16_t)Icon::Reload, devBuildOnly },
 };

@@ -266,7 +266,7 @@ TEST(SettingsApplet, SelectPushesDetailWithChosenPanel) {
 
   mishmesh::SettingsApplet menu;
   host.setRoot(&menu);
-  EXPECT_EQ(7, menu.entryCountForTest());  // Home, Contacts, Messages, Advert, Radio, Time, System Info
+  EXPECT_EQ(8, menu.entryCountForTest());  // Home, Contacts, Messages, Advert, Radio, Time, Experimental, System Info
 
   // Row 0 = Home: Select pushes the detail bound to homeSettings().
   host.dispatch(mishmesh::InputEvent::Select);
@@ -290,7 +290,7 @@ TEST(SettingsApplet, RendersStatusBarHeader) {
   mishmesh::Canvas c(&d);
   menu.onRender(c);
   EXPECT_GT(d.fills.size(), 0u);                 // header + list drew something
-  EXPECT_EQ(7, menu.entryCountForTest());        // Home/Contacts/Messages/Advert/Radio/Time/SystemInfo all available
+  EXPECT_EQ(8, menu.entryCountForTest());        // Home/Contacts/Messages/Advert/Radio/Time/Experimental/SystemInfo all available
 }
 
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
@@ -363,9 +363,9 @@ TEST(SettingsApplet, ListsAllSections) {
   mishmesh::AppletContext ctx;
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  // Home/Contacts/Messages/Advert/Radio/Time/System Info. Bluetooth moved to the
-  // home-screen quick toggle, so it is no longer a settings section.
-  EXPECT_EQ(7, menu.entryCountForTest());
+  // Home/Contacts/Messages/Advert/Radio/Time/Experimental/System Info. Bluetooth
+  // moved to the home-screen quick toggle, so it is no longer a settings section.
+  EXPECT_EQ(8, menu.entryCountForTest());
 }
 
 TEST(SettingsPanelLifecycle, DetailAppletCallsOnHideOnStop) {
@@ -384,6 +384,74 @@ TEST(SettingsPanelLifecycle, DetailAppletCallsOnHideOnStop) {
   EXPECT_EQ(panel.hides, 0);
   mishmesh::settingsDetailApplet().onStop();
   EXPECT_EQ(panel.hides, 1);
+}
+
+#include <mishmesh/applets/PathHashApplet.h>
+
+namespace {
+class FakePathHashApp : public mishmesh::AppServices {
+public:
+  uint8_t mode = 0;
+  const char* nodeName() const override { return "n"; }
+  uint16_t batteryMillivolts() const override { return 4000; }
+  uint32_t epochSeconds() const override { return 0; }
+  uint8_t pathHashMode() const override { return mode; }
+  void setPathHashMode(uint8_t m) override { mode = m; }
+};
+}  // namespace
+
+TEST(PathHashApplet, SelectWritesModeAndRadioReflects) {
+  FakePathHashApp app;
+  mishmesh::AppletContext ctx; ctx.app = &app;
+  mishmesh::PathHashApplet applet;
+  applet.onStart(ctx);
+
+  EXPECT_STREQ("Path hash size", applet.name());
+  EXPECT_EQ(3, applet.count());
+  EXPECT_STREQ("1 byte", applet.label(0));
+  EXPECT_STREQ("2 byte", applet.label(1));
+  EXPECT_STREQ("3 byte", applet.label(2));
+  EXPECT_TRUE(applet.radioOn(0));            // starts at mode 0
+
+  applet.onInput(mishmesh::InputEvent::NavDown);   // -> row 1
+  applet.onInput(mishmesh::InputEvent::NavDown);   // -> row 2
+  EXPECT_TRUE(applet.onInput(mishmesh::InputEvent::Select));
+  EXPECT_EQ(2, app.mode);
+  EXPECT_TRUE(applet.radioOn(2));
+  EXPECT_FALSE(applet.radioOn(0));
+
+  FakeDisplayDriver d; mishmesh::Canvas c(&d);
+  applet.onRender(c);                        // header + list draw, no crash
+  EXPECT_GT(d.fills.size(), 0u);
+}
+
+#include <mishmesh/applets/settings/ExperimentalSettingsPanel.h>
+
+TEST(ExperimentalSettingsPanel, ShowsPathHashSizeValue) {
+  FakePathHashApp app; app.mode = 1;
+  mishmesh::AppletContext ctx; ctx.app = &app;
+  mishmesh::ExperimentalSettingsPanel panel;
+  panel.begin(ctx);
+  EXPECT_STREQ("Experimental", panel.title());
+  EXPECT_STREQ("2 byte", panel.rowValueForTest(0));
+}
+
+TEST(ExperimentalSettingsPanel, SingletonIsStable) {
+  EXPECT_EQ(&mishmesh::experimentalSettings(), &mishmesh::experimentalSettings());
+}
+
+TEST(SettingsApplet, ExperimentalSectionPushesPanel) {
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx;
+  mishmesh::AppletHost host(&d, ctx);
+  mishmesh::SettingsApplet menu;
+  host.setRoot(&menu);
+  EXPECT_EQ(8, menu.entryCountForTest());
+
+  // Experimental is index 6 (after Home,Contacts,Messages,Advert,Radio,Time).
+  for (int i = 0; i < 6; i++) host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(&mishmesh::settingsDetailApplet(), host.foreground());
 }
 
 int main(int argc, char** argv) {

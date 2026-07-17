@@ -240,6 +240,16 @@ public:
     p->advert_loc_policy = on ? ADVERT_LOC_SHARE : ADVERT_LOC_NONE;
     the_mesh.savePrefs();
   }
+  uint8_t pathHashMode() const override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    return p ? p->path_hash_mode : 0;
+  }
+  void setPathHashMode(uint8_t mode) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p || mode > 2) return;               // mode 3 reserved
+    p->path_hash_mode = mode;
+    the_mesh.savePrefs();
+  }
   void setSoundVolume(uint8_t level) override {
     _sound.setVolume((mishmesh::sound::VolumeLevel)level);
     NodePrefs* p = the_mesh.getNodePrefs();

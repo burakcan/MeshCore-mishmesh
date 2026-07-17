@@ -88,6 +88,12 @@ struct AppServices {
   // Defaults keep the framework companion-agnostic (off, not settable).
   virtual bool shareLocationInAdvert() const { return false; }
   virtual void setShareLocationInAdvert(bool) {}
+  // Path-hash size this node stamps on floods it originates: 0/1/2 = 1/2/3 bytes
+  // per hop (NodePrefs.path_hash_mode). Higher sizes disambiguate nodes but are
+  // dropped by repeaters on firmware < 1.14 and cut the max flood hop count.
+  // Defaults keep the framework companion-agnostic (mode 0, not settable).
+  virtual uint8_t pathHashMode() const { return 0; }
+  virtual void    setPathHashMode(uint8_t mode) { (void)mode; }
   // Set + persist the global sound volume (0=Mute,1=Low,2=Mid,3=High). The adapter
   // applies it to the engine and writes it to NodePrefs. Default no-op.
   virtual void setSoundVolume(uint8_t level) { (void)level; }
