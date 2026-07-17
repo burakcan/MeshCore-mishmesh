@@ -54,6 +54,17 @@ void SystemInfoPanel::rebuild(uint32_t now, bool keepScroll) {
     _stats.addLine("Stats unavailable");
     return;
   }
+  // Self identity up top: the full 32-byte public key so it can be read off / shared
+  // from the device. 8 bytes (16 hex) per row so it fits the display width without
+  // ellipsis, matching the Discover detail layout. Skipped when the companion exposes
+  // no key (default AppServices writes "").
+  char key[65];
+  key[0] = 0;
+  _app->selfPublicKeyHex(key, sizeof(key), 32);
+  if (key[0]) {
+    _stats.addLine("Public key:");
+    for (int i = 0; key[i]; i += 16) _stats.addf("%.16s", key + i);
+  }
   char lines[SYSSTATS_MAX_LINES][SYSSTATS_LINE_LEN];
   int n = formatSystemStats(s, lines, SYSSTATS_MAX_LINES);
   for (int i = 0; i < n; i++) _stats.addLine(lines[i]);
