@@ -55,11 +55,27 @@ jobs:
           name: mishmesh-firmware
           path: out
 
+      # Slice the CHANGELOG section for this tag into the release body. The auto
+      # PR list is still appended below it via generate_release_notes.
+      - name: Extract changelog for this version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          awk -v ver="## ${GIT_TAG_VERSION}" '
+            $0 == ver {found=1; next}
+            found && /^## / {exit}
+            found {print}
+          ' CHANGELOG.md > RELEASE_BODY.md
+          if [ ! -s RELEASE_BODY.md ]; then
+            echo "No CHANGELOG.md section for ${GIT_TAG_VERSION}; using auto-generated notes only." >&2
+            echo "" > RELEASE_BODY.md
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           name: mishmesh Firmware ${{ env.GIT_TAG_VERSION }}
+          body_path: RELEASE_BODY.md
           generate_release_notes: true
           draft: false
           files: out/*
