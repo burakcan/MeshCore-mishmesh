@@ -248,6 +248,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     _prefs.contacts_full_notify = 1; // default on (old/shorter files keep the alert enabled)
     _prefs.tz_city_index = -1;      // old/shorter files: custom/fixed (no regression)
     _prefs.onboarding_state = 0;    // default; corrected below once we know the file's provenance
+    _prefs.screen_brightness = 0;   // 0 = unset -> High default
     // sound_volume is the first mishmesh-block field; if it's absent the file was
     // written by stock MeshCore firmware. Detect that to run onboarding for stock->mishmesh
     // upgraders (mishmesh->mishmesh files have the block and keep their stored state).
@@ -265,6 +266,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     file.read((uint8_t *)&_prefs.contacts_full_notify, sizeof(_prefs.contacts_full_notify)); // 151
     file.read((uint8_t *)&_prefs.tz_city_index, sizeof(_prefs.tz_city_index));
     file.read((uint8_t *)&_prefs.onboarding_state, sizeof(_prefs.onboarding_state));
+    file.read((uint8_t *)&_prefs.screen_brightness, sizeof(_prefs.screen_brightness));
     // Stock-firmware prefs (no mishmesh block): mark onboarding pending so the wizard
     // runs. IN_PROGRESS is the same "force onboarding on a non-fresh device" trigger the
     // dev Reset-onboarding tool uses; the first mishmesh savePrefs writes the full block.
@@ -325,6 +327,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.contacts_full_notify, sizeof(_prefs.contacts_full_notify)); // 151
     file.write((uint8_t *)&_prefs.tz_city_index, sizeof(_prefs.tz_city_index));
     file.write((uint8_t *)&_prefs.onboarding_state, sizeof(_prefs.onboarding_state));
+    file.write((uint8_t *)&_prefs.screen_brightness, sizeof(_prefs.screen_brightness));
     // [/mishmesh]
 
     file.close();

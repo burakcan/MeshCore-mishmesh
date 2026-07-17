@@ -57,9 +57,13 @@ static void sleepStepLabel(int idx, char* out, uint16_t cap) {
   snprintf(out, cap, "%s", screenSleepLabel(idx));
 }
 
+static const char* brightnessLabel(int idx) {
+  static const char* const LABELS[] = { "Low", "Medium", "High" };
+  return LABELS[idx < 3 ? idx : 2];
+}
+
 static void brightnessStepLabel(int idx, char* out, uint16_t cap) {
-  static const char* const LABELS[] = { "Minimum", "Low", "Medium", "High", "Maximum" };
-  snprintf(out, cap, "%s", LABELS[idx < 5 ? idx : 4]);
+  snprintf(out, cap, "%s", brightnessLabel(idx));
 }
 
 const char* HomeSettingsPanel::Model::label(int i) const {
@@ -76,11 +80,7 @@ const char* HomeSettingsPanel::Model::value(int i) const {
   if (i == ScreenSleep) return app ? screenSleepLabel(app->screenSleepIndex()) : "";
   if (i == LeftAction)  return uiPrefs().quickActionLabel(UiPrefs::SLOT_LEFT);
   if (i == RightAction) return uiPrefs().quickActionLabel(UiPrefs::SLOT_RIGHT);
-  if (i == ScreenBrightness && app) {
-    static char label[12];
-    brightnessStepLabel(app->screenBrightnessIndex(), label, sizeof(label));
-    return label;
-  }
+  if (i == ScreenBrightness && app) return brightnessLabel(app->screenBrightnessIndex());
   return nullptr;
 }
 
@@ -107,10 +107,21 @@ bool HomeSettingsPanel::onInput(InputEvent ev) {
   if (_editingSleep || _editingBrightness) {
     if (_stepper.onInput(ev)) {
       StepperResult r = _stepper.result();
-      if (r != StepperResult::None) {
-        if (r == StepperResult::Confirmed && _model.app) {
-          if (_editingSleep) _model.app->setScreenSleepIndex((uint8_t)_stepper.value());
-          else _model.app->setScreenBrightnessIndex((uint8_t)_stepper.value());
+      if (r == StepperResult::None) {
+        // Live preview: apply each stepped level so the user sees the actual
+        // brightness before confirming (no persist until Confirm).
+        if (_editingBrightness && _model.app)
+          _model.app->previewScreenBrightnessIndex((uint8_t)_stepper.value());
+      } else {
+        if (_model.app) {
+          if (_editingSleep) {
+            if (r == StepperResult::Confirmed)
+              _model.app->setScreenSleepIndex((uint8_t)_stepper.value());
+          } else if (r == StepperResult::Confirmed) {
+            _model.app->setScreenBrightnessIndex((uint8_t)_stepper.value());
+          } else {
+            _model.app->previewScreenBrightnessIndex(_brightnessRestore);   // revert
+          }
         }
         _editingSleep = _editingBrightness = false;
         _stepper.reset();
@@ -132,8 +143,9 @@ bool HomeSettingsPanel::onInput(InputEvent ev) {
       }
     } else if (i == Model::ScreenBrightness) {
       if (_model.app) {
-        _stepper.configure("Screen brightness", _model.app->screenBrightnessIndex(),
-                           0, 4, brightnessStepLabel);
+        _brightnessRestore = _model.app->screenBrightnessIndex();
+        _stepper.configure("Screen brightness", _brightnessRestore,
+                           0, 2, brightnessStepLabel);
         _editingBrightness = true;
       }
     } else if (_host) {

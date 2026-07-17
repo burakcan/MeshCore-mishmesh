@@ -61,8 +61,12 @@ static void platformHeap(uint32_t& freeBytes, uint32_t& totalBytes) {
 }
 
 static uint8_t brightnessValue(uint8_t idx) {
-  static const uint8_t LEVELS[] = { 16, 64, 128, 192, 255 };
-  return LEVELS[idx < 5 ? idx : 4];
+  // Low / Medium / High. This panel's visible range is top-weighted - low
+  // contrast values all look similarly dim - so Medium sits well up the range
+  // to read as distinct from Low. Floor of 1 is the dimmest the SH1106 contrast
+  // register goes while the panel is still lit.
+  static const uint8_t LEVELS[] = { 1, 96, 255 };
+  return LEVELS[idx < 3 ? idx : 2];
 }
 
 uint32_t UITask::epochSeconds() const {
@@ -70,9 +74,16 @@ uint32_t UITask::epochSeconds() const {
 }
 
 void UITask::setScreenBrightnessIndex(uint8_t idx) {
-  _screenBrightness = idx < 5 ? idx : 4;
-  _theStorage.save("brgt", &_screenBrightness, 1);
-  if (_display) _display->setBrightness(brightnessValue(_screenBrightness));
+  NodePrefs* p = the_mesh.getNodePrefs();
+  if (!p) return;
+  if (idx > 2) idx = 2;
+  p->screen_brightness = idx + 1;   // stored index+1; 0 stays reserved for "unset"
+  the_mesh.savePrefs();
+  if (_display) _display->setBrightness(brightnessValue(idx));
+}
+
+void UITask::previewScreenBrightnessIndex(uint8_t idx) {
+  if (_display) _display->setBrightness(brightnessValue(idx));
 }
 
 // [mishmesh]
@@ -199,10 +210,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _retryGlue.store = &_msgStore;      // auto-retry acts on the same store
   _theStorage.ds = the_mesh.getStore();
   _msgSvc.storage = &_theStorage;     // per-chat region persistence
-  uint8_t savedBrightness = 4;
-  if (_theStorage.load("brgt", &savedBrightness, 1) == 1 && savedBrightness < 5)
-    _screenBrightness = savedBrightness;
-  _display->setBrightness(brightnessValue(_screenBrightness));
+  if (_display && _display->supportsBrightness())
+    _display->setBrightness(brightnessValue(screenBrightnessIndex()));   // apply persisted level on boot
   the_mesh.uiSetMessageStore(&_msgStore);
   // Surface joined channels (e.g. the default Public channel) as chats even
   // before any message arrives - the store is otherwise only fed on message capture.

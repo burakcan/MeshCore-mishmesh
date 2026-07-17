@@ -63,6 +63,7 @@ private:
   StepperDialog _stepper;
   bool _editingSleep = false;
   bool _editingBrightness = false;
+  uint8_t _brightnessRestore = 4;  // saved index to revert to if the stepper is cancelled
 };
 
 HomeSettingsPanel& homeSettings();

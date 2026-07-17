@@ -15,11 +15,13 @@ bool SH1106Display::begin()
   return display.begin(DISPLAY_ADDRESS, true) && i2c_probe(Wire, DISPLAY_ADDRESS);
 }
 
+// [mishmesh]
 void SH1106Display::setBrightness(uint8_t value)
 {
   display.oled_command(SH110X_SETCONTRAST);
   display.oled_command(value);
 }
+// [/mishmesh]
 
 void SH1106Display::turnOn()
 {

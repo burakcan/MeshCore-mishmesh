@@ -58,5 +58,6 @@ struct NodePrefs {  // persisted to file
   uint8_t contacts_full_notify; // mishmesh "contacts full" alert; 0 = off, else on (default on)
   int8_t  tz_city_index;    // WorldClock city index (DST source of truth); -1 = custom/fixed (use tz_quarter_hours)
   uint8_t onboarding_state; // 0=not started, 1=in progress, 2=done (first-boot wizard)
+  uint8_t screen_brightness; // mishmesh screen brightness; 0=unset(=High), else level index+1 (Low/Med/High)
   // [/mishmesh]
 };
