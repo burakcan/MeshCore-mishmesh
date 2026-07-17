@@ -155,15 +155,21 @@ int HomeApplet::onRender(Canvas& c) {
     if (lr) hintLabel(lr->label, l4);
     if (rr) hintLabel(rr->label, r4);
     // measure the run: [<l4] [#Apps] [vTgls] [r4>]
-    const int GLYPH = 5, PAD = 2, GAP = 8;
+    const int GLYPH = 5, PAD = 2;
+    int GAP = 8;
     int wl = lr ? 3 + PAD + c.textWidth(f, l4) : 0;
     int wa = _menu ? 3 + PAD + c.textWidth(f, "Apps") : 0;
     int wt = GLYPH + PAD + c.textWidth(f, "Tgls");
     int wr = rr ? c.textWidth(f, r4) + PAD + 3 : 0;
     int total = wl + wa + wt + wr;
     int gaps = (lr ? 1 : 0) + (_menu ? 1 : 0) + (rr ? 1 : 0);
+    if (gaps > 0 && total + gaps * GAP > w) {
+      GAP = (w - total) / gaps;
+      if (GAP < 2) GAP = 2;
+    }
     total += gaps * GAP;
     int x = (w - total) / 2;
+    if (x < 0) x = 0;
     int y = h - c.fontHeight(f) - 1;
     if (lr) {
       triLeft(c, x, y);

@@ -49,7 +49,7 @@ void GridView::draw(Canvas& c, int x, int y, int w, int h) {
         const char* lbl = _model->cellLabel(r, col);
         if (lbl && lbl[0]) {
           int ty = cy + (ch - c.fontHeight(fontBody())) / 2;
-          c.drawText(fontBody(), cx + cw / 2, ty, lbl, fg, TextAlign::Center);
+          c.drawTextEllipsized(fontBody(), cx + cw / 2, ty, cw - 2, lbl, fg, TextAlign::Center);
         }
       }
     }
