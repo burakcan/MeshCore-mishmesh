@@ -118,6 +118,14 @@ disable_debug_flags() {
   fi
 }
 
+# read the string value of a `#define NAME "value"` from a header file ($1),
+# first match. sed form stays portable across BSD (macOS) and GNU (CI); grep -P
+# is unavailable on macOS. Empty output if the define isn't found.
+# $1 = header path, $2 = define name
+read_header_define() {
+  sed -n "s/.*#define[[:space:]][[:space:]]*$2[[:space:]][[:space:]]*\"\([^\"]*\)\".*/\1/p" "$1" | head -1
+}
+
 # build firmware for the provided pio env in $1
 build_firmware() {
   # get env platform for post build actions
@@ -129,22 +137,44 @@ build_firmware() {
   # set firmware build date
   FIRMWARE_BUILD_DATE=$(date '+%d-%b-%Y')
 
-  # get FIRMWARE_VERSION, which should be provided by the environment
-  if [ -z "$FIRMWARE_VERSION" ]; then
-    echo "FIRMWARE_VERSION must be set in environment"
-    exit 1
-  fi
+  case "$1" in
+    *_mishmesh)
+      # mishmesh firmwares carry two versions: the mishmesh UI version (mm) and
+      # the meshcore base it rides on (mc). Both default to the #ifndef values in
+      # the headers and can be overridden by the MISHMESH_VERSION / FIRMWARE_VERSION
+      # env vars (e.g. CI routes the release tag into MISHMESH_VERSION).
+      MM_VER="${MISHMESH_VERSION:-$(read_header_define mishmesh/Version.h MISHMESH_VERSION)}"
+      MC_VER="${FIRMWARE_VERSION:-$(read_header_define examples/companion_radio/MyMesh.h FIRMWARE_VERSION)}"
+      MM_VER="${MM_VER:-v0.0.0}"
+      MC_VER="${MC_VER:-v0.0.0}"
 
-  # set firmware version string
-  # e.g: v1.0.0-abcdef
-  FIRMWARE_VERSION_STRING="${FIRMWARE_VERSION}-${COMMIT_HASH}"
+      # compiled version shown on the About screen (mc line); keep the hash suffix
+      FIRMWARE_VERSION_STRING="${MC_VER}-${COMMIT_HASH}"
 
-  # craft filename
-  # e.g: RAK_4631_Repeater-v1.0.0-SHA
-  FIRMWARE_FILENAME="$1-${FIRMWARE_VERSION_STRING}"
+      # e.g: WioTrackerL1_companion_radio_ble_mishmesh_mm-v1.0.0_mc-v1.16.0-SHA
+      FIRMWARE_FILENAME="$1_mm-${MM_VER}_mc-${MC_VER}-${COMMIT_HASH}"
 
-  # add firmware version info to end of existing platformio build flags in environment vars
-  export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS} -DFIRMWARE_BUILD_DATE='\"${FIRMWARE_BUILD_DATE}\"' -DFIRMWARE_VERSION='\"${FIRMWARE_VERSION_STRING}\"'"
+      export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS} -DFIRMWARE_BUILD_DATE='\"${FIRMWARE_BUILD_DATE}\"' -DFIRMWARE_VERSION='\"${FIRMWARE_VERSION_STRING}\"' -DMISHMESH_VERSION='\"${MM_VER}\"'"
+      ;;
+    *)
+      # get FIRMWARE_VERSION, which should be provided by the environment
+      if [ -z "$FIRMWARE_VERSION" ]; then
+        echo "FIRMWARE_VERSION must be set in environment"
+        exit 1
+      fi
+
+      # set firmware version string
+      # e.g: v1.0.0-abcdef
+      FIRMWARE_VERSION_STRING="${FIRMWARE_VERSION}-${COMMIT_HASH}"
+
+      # craft filename
+      # e.g: RAK_4631_Repeater-v1.0.0-SHA
+      FIRMWARE_FILENAME="$1-${FIRMWARE_VERSION_STRING}"
+
+      # add firmware version info to end of existing platformio build flags in environment vars
+      export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS} -DFIRMWARE_BUILD_DATE='\"${FIRMWARE_BUILD_DATE}\"' -DFIRMWARE_VERSION='\"${FIRMWARE_VERSION_STRING}\"'"
+      ;;
+  esac
 
   # disable debug flags if requested
   disable_debug_flags

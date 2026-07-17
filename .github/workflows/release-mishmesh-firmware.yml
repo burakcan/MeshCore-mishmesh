@@ -40,8 +40,10 @@ jobs:
       - name: Build mishmesh Firmware
         env:
           # GIT_TAG_VERSION = the part after the last '-' (tag mishmesh-v0.9.0 -> v0.9.0).
-          # On workflow_dispatch (no tag) it's the branch name, so fall back to a dev stamp.
-          FIRMWARE_VERSION: ${{ env.GIT_TAG_VERSION || 'v0.0.0-dev' }}
+          # The tag names the mishmesh (mm) release; the meshcore (mc) base is left
+          # to the FIRMWARE_VERSION default in MyMesh.h. On workflow_dispatch (no
+          # tag) GIT_TAG_VERSION is the branch name, so fall back to a dev stamp.
+          MISHMESH_VERSION: ${{ env.GIT_TAG_VERSION || 'v0.0.0-dev' }}
         run: >
           /usr/bin/env bash build.sh build-firmware
           WioTrackerL1_companion_radio_ble_mishmesh
