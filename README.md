@@ -101,10 +101,14 @@ sh build.sh build-firmware WioTrackerL1_companion_radio_usb_mishmesh
 ### Emoji
 
 Emoji use the [EmojiMania](https://idanro.itch.io/emojimania) glyph set - a
-purchased license that doesn't allow redistributing the art. So the glyphs live
-outside this repository and are compiled in only for the official release builds.
-Building from source, or any fork, is fully supported and looks identical, except
-emoji render as a placeholder block instead of the glyph.
+purchased license that doesn't allow redistributing the art, so the glyphs live
+outside this repository. Official release builds compile them in. Building from
+source, or any fork, is fully supported and looks identical, except emoji render
+as a placeholder block instead of the glyph.
+
+If you own EmojiMania, you can build with emoji yourself: drop your sheet in and
+run the generator per
+[`mishmesh/text/emoji-tools/README.md`](./mishmesh/text/emoji-tools/README.md).
 
 ### How mishmesh fits
 
