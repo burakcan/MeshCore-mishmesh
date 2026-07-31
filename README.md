@@ -117,8 +117,15 @@ The framework lives under [`mishmesh/`](./mishmesh); a thin adapter in
 bridges it to the companion app without touching `main.cpp`. Screens are `Applet`
 subclasses on a fixed stack managed by `AppletHost`; all drawing goes through
 `Canvas`. Text and icons are bitmap fonts rendered with mcufont (Nokia Cellphone
-FC, Tom Thumb, Pixelarticons); the logo wordmark is set in the LastPriestess pixel
+FC, Tom Thumb, hand-edited Cyrillic, Pixelarticons); the logo wordmark is set in the
+LastPriestess pixel
 font by Christina Antoinette Neofotistou.
+
+Font sources and reproducible generators live in
+[`mishmesh/text/fonts`](./mishmesh/text/fonts). Run `build_cyrillic.py` to rebuild
+the Cyrillic ranges and `preview_fonts.py` to render review sheets. Open
+`font_editor.html` directly from disk to edit `Body.c`, `Subtitle.c`, or
+`Caption.c`; the single-file editor does not require a web server.
 
 ### AI disclosure
 
