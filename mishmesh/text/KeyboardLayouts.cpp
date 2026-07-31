@@ -4,7 +4,7 @@
 // Multi-tap letter groups follow Nokia's national-layout convention: each key
 // lists its base ASCII letters first, then that key's accented variants; case is
 // applied by the keypad's shift mode via the explicit `upper` arrays. All glyphs
-// are covered by the mishmesh bitmap fonts (Latin-1 + synthesized Latin Extended-A).
+// are covered by the mishmesh bitmap fonts (Latin-1, Latin Extended-A, and Cyrillic).
 
 namespace mishmesh {
 
@@ -58,6 +58,10 @@ static const KbdLayout LAYOUTS[] = {
   { "HU", "Magyar",
     { P, "abcá","defé","ghií","jkl","mnoóöő","pqrs","tuvúüű","wxyz" },
     { P, "ABCÁ","DEFÉ","GHIÍ","JKL","MNOÓÖŐ","PQRS","TUVÚÜŰ","WXYZ" } },
+
+  { "RU", "Русский",
+    { P, "абвг","деёжз","ийкл","мноп","рсту","фхцч","шщъы","ьэюя" },
+    { P, "АБВГ","ДЕЁЖЗ","ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪЫ","ЬЭЮЯ" } },
 };
 
 #undef P

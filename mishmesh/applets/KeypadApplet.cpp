@@ -66,12 +66,18 @@ const char* KeypadApplet::cellLabel(int r, int c) const {
   if (r < 3 && c < 3) {
     int i = r * 3 + c;
     // Symbols, digits, and the punctuation cell fit and are shown verbatim.
-    // Letter cells show only the base Latin labels (like real Nokia keypads) -
-    // the language's accented variants still cycle when typing, they just don't
-    // fit on the key and aren't drawn.
+    // Letter cells show compact labels; national variants still cycle when
+    // typing. Russian needs its own base alphabet because Latin labels would be
+    // actively misleading rather than merely omitting accents.
     if (_symPage || _mode == Mode::Num || i == 0) return groupAt(i);
     static const char* const BASE_L[9] = {"", "abc","def","ghi","jkl","mno","pqrs","tuv","wxyz"};
     static const char* const BASE_U[9] = {"", "ABC","DEF","GHI","JKL","MNO","PQRS","TUV","WXYZ"};
+    // Keep the Russian key caps compact. `ё` remains in the real "деёжз"
+    // multi-tap group, but is intentionally omitted from the visible cap.
+    static const char* const RU_L[9] = {"", "абвг","дежз","ийкл","мноп","рсту","фхцч","шщъы","ьэюя"};
+    static const char* const RU_U[9] = {"", "АБВГ","ДЕЖЗ","ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪЫ","ЬЭЮЯ"};
+    if (strcmp(kbdLayoutAt(_langIdx).code, "RU") == 0)
+      return (_mode == Mode::Upper || _mode == Mode::Shift) ? RU_U[i] : RU_L[i];
     return (_mode == Mode::Upper || _mode == Mode::Shift) ? BASE_U[i] : BASE_L[i];
   }
   if (c == 3) {
@@ -579,7 +585,7 @@ void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
     uint16_t n = _cursor - start;
     memcpy(prefix, _buf + start, n); prefix[n] = 0;
     if (line.textWidth(f, prefix) <= w - 2) break;
-    start++;
+    start = nextCodepoint(start);
   }
   line.drawText(f, 0, baseY, _buf + start, DisplayDriver::LIGHT);
 

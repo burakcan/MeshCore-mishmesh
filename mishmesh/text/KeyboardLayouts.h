@@ -7,7 +7,7 @@ namespace mishmesh {
 // Strings are UTF-8; `upper` is stored explicitly (not derived) because Turkish
 // case mapping is irregular (i<->İ, ı<->I) and future non-Latin scripts need it.
 struct KbdLayout {
-  const char* code;      // "EN","DE","TR" - top-right indicator + persisted value
+  const char* code;      // "EN","DE","TR","RU" - indicator + persisted value
   const char* name;      // picker row label ("English","Deutsch","Türkçe")
   const char* lower[9];  // multi-tap groups, cells 0..8, lowercase mode
   const char* upper[9];  // uppercase mode
