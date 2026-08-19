@@ -28,6 +28,7 @@ struct SystemStats {
   uint32_t    storageTotalKb   = 0;   // 0 = unknown
   uint32_t    uptimeSecs       = 0;
   uint16_t    batteryMv        = 0;
+  int16_t     mcuTempC10       = INT16_MIN; // MCU die temperature in 0.1C; INT16_MIN = unavailable
   const char* meshcoreVersion  = nullptr;   // upstream MeshCore release
   const char* mishmeshVersion  = nullptr;   // mishmesh UI version
 };

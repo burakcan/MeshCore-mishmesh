@@ -168,8 +168,8 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
 #endif
 
 public:
-  UITask(mesh::MainBoard* board, BaseSerialInterface* serial)
-      : AbstractUITask(board, serial),
+  UITask(mesh::MainBoard* board, MultiSerialInterface* interfaceManager)
+      : AbstractUITask(board, interfaceManager),
         _display(nullptr), _sensors(nullptr), _node_prefs(nullptr),
         _host(nullptr), _home(nullptr), _menu(nullptr), _lock(nullptr),
         _batt_mv(0), _batt_sampled_at(0) {
@@ -225,13 +225,13 @@ public:
     return false;
 #endif
   }
-  bool bleEnabled()   const override { return isSerialEnabled(); }
+  bool bleEnabled()   const override { return isBluetoothEnabled(); }
   // Gate on enabled: the USB serial's isConnected() is a hardwired `true`,
   // and even on BLE a stale connection flag must not outlive a disable.
-  bool bleConnected() const override { return isSerialEnabled() && hasConnection(); }
+  bool bleConnected() const override { return isBluetoothEnabled() && hasConnection(); }
   uint32_t blePin()   const override { return the_mesh.getBLEPin(); }
   void setBleEnabled(bool on) override {
-    if (on) enableSerial(); else disableSerial();
+    if (on) enableBluetooth(); else disableBluetooth();
     // Persist so the choice survives reboot; startInterface() re-enables the
     // link on every boot, so UITask::begin() re-applies this on startup.
     if (_node_prefs) { _node_prefs->ble_enabled = on ? 1 : 0; the_mesh.savePrefs(); }
@@ -290,7 +290,7 @@ public:
     out.sf         = _node_prefs->sf;
     out.cr         = _node_prefs->cr;
     out.txPowerDbm = _node_prefs->tx_power_dbm;
-    out.repeater   = _node_prefs->client_repeat != 0;
+    out.repeater   = _node_prefs->isRepeatEn();
     return true;
   }
   int8_t txPowerMax() const override { return the_mesh.uiTxPowerMax(); }
@@ -302,12 +302,12 @@ public:
     // Off-grid repeat only where the frequency is a permitted repeat band.
     bool allowRepeat = c.repeater &&
         the_mesh.uiIsValidRepeatFreq((uint32_t)(c.freqMhz * 1000.0f + 0.5f));
-    p->client_repeat = allowRepeat ? 1 : 0;
+    p->setRepeatEn(allowRepeat);
     the_mesh.savePrefs();
     the_mesh.uiApplyRadioParams();   // live, no reboot
   }
   bool repeaterMode() const override {
-    return _node_prefs && _node_prefs->client_repeat != 0;
+    return _node_prefs && _node_prefs->isRepeatEn();
   }
   float savedRepeatFreq() const override {
     return _node_prefs ? _node_prefs->repeat_saved_freq : 0.0f;

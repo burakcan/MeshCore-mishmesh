@@ -37,6 +37,12 @@ int formatSystemStats(const SystemStats& s, char out[][SYSSTATS_LINE_LEN], int m
   else
     SS_EMIT("Battery: %u.%02uV", (unsigned)(s.batteryMv / 1000),
             (unsigned)((s.batteryMv % 1000) / 10));
+  if (s.mcuTempC10 != INT16_MIN) {
+    int t = s.mcuTempC10;
+    const char* sign = t < 0 ? "-" : "";
+    if (t < 0) t = -t;
+    SS_EMIT("MCU temp: %s%d.%dC", sign, t / 10, t % 10);
+  }
   uint32_t mins = s.uptimeSecs / 60;
   SS_EMIT("Uptime: %uh %02um", (unsigned)(mins / 60), (unsigned)(mins % 60));
   if (s.meshcoreVersion) SS_EMIT("meshcore: %s", s.meshcoreVersion);

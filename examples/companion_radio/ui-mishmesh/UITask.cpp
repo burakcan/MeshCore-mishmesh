@@ -126,6 +126,8 @@ bool UITask::systemStats(mishmesh::SystemStats& out) const {
   out.storageTotalKb   = the_mesh.getStorageTotalKb();
   out.uptimeSecs       = millis() / 1000;
   out.batteryMv        = batteryMillivolts();
+  float mcu_temp = _board->getMCUTemperature();   // NAN on MCUs without a die sensor
+  if (!isnan(mcu_temp)) out.mcuTempC10 = (int16_t)lroundf(mcu_temp * 10.0f);
 #ifdef FIRMWARE_VERSION
   out.meshcoreVersion  = FIRMWARE_VERSION;
 #else
@@ -194,7 +196,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   applyTimeSyncGate(_node_prefs ? _node_prefs->manual_time_set == 0 : true);
   // Re-apply the persisted BLE/serial toggle: startInterface() unconditionally
   // enable()s the link on every boot, so honor a stored "off" here.
-  if (_node_prefs && _node_prefs->ble_enabled == 0) disableSerial();
+  if (_node_prefs && _node_prefs->ble_enabled == 0) disableBluetooth();
   // [/mishmesh]
 
   if (_display == nullptr) return;   // headless build

@@ -147,7 +147,7 @@ TEST(CanvasTheme, LightModeSwapsColorsAtDriverBoundary) {
   EXPECT_EQ(DisplayDriver::DARK, d.lastColor);
   c.fillRect(0, 0, 4, 4, DisplayDriver::DARK);
   EXPECT_EQ(DisplayDriver::LIGHT, d.lastColor);
-  EXPECT_EQ(DisplayDriver::DARK, mishmesh::themedColor(DisplayDriver::LIGHT));
+  EXPECT_EQ(DisplayDriver::DARK, mishmesh::themeSwapped(DisplayDriver::LIGHT));
 
   mishmesh::uiPrefs().resetForTest();               // don't leak into other tests
 }

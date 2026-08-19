@@ -98,6 +98,20 @@ TEST(FormatSystemStats, UnknownsRenderAsDashes) {
   EXPECT_EQ("Uptime: 0h 00m", lineAt(lines, 5));
 }
 
+TEST(FormatSystemStats, ShowsMcuTempWhenAvailable) {
+  SystemStats s = sampleStats();
+  s.mcuTempC10 = 275;
+  char lines[SYSSTATS_MAX_LINES][SYSSTATS_LINE_LEN];
+  int n = formatSystemStats(s, lines, SYSSTATS_MAX_LINES);
+  ASSERT_EQ(9, n);
+  EXPECT_EQ("MCU temp: 27.5C", lineAt(lines, 5));
+
+  s.mcuTempC10 = -43;
+  n = formatSystemStats(s, lines, SYSSTATS_MAX_LINES);
+  ASSERT_EQ(9, n);
+  EXPECT_EQ("MCU temp: -4.3C", lineAt(lines, 5));
+}
+
 TEST(FormatSystemStats, ShowsRamTotalWhenKnown) {
   SystemStats s = sampleStats();
   s.heapTotalBytes = 253952;   // 248.0K

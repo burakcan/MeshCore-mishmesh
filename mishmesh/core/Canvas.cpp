@@ -20,9 +20,13 @@ void Canvas::setEmojiRenderer(const mf_font_s* font, EmojiLookupFn lookup,
 }
 // [/mishmesh]
 
-DisplayDriver::Color themedColor(DisplayDriver::Color c) {
+DisplayDriver::Color themeSwapped(DisplayDriver::Color c) {
   if (uiPrefs().darkMode()) return c;
-  return c == DisplayDriver::LIGHT ? DisplayDriver::DARK : DisplayDriver::LIGHT;
+  return c == DisplayDriver::DARK ? DisplayDriver::LIGHT : DisplayDriver::DARK;
+}
+
+ColorVal themedColor(DisplayDriver::Color c) {
+  return themeSwapped(c) == DisplayDriver::DARK ? UIColor::window_bkg : UIColor::primary_txt;
 }
 
 // Intersect a local rect with the clip window [cl,cr) x [ct,cb); false if

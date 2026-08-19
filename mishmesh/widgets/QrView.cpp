@@ -30,11 +30,11 @@ void QrView::draw(Canvas& c, int x, int y, int w, int h) const {
   int side = (w < h) ? w : h;            // fill the limiting dimension (a square)
   if (side < total) return;              // can't give even 1px/module - skip
 
-  // Theme-neutral: pre-apply themedColor so fillRect's own themedColor cancels
-  // (it's an involution), leaving the panel's true light bg / dark modules
-  // regardless of the UI theme - an inverted QR won't reliably scan.
-  const DisplayDriver::Color bg = themedColor(DisplayDriver::LIGHT);
-  const DisplayDriver::Color fg = themedColor(DisplayDriver::DARK);
+  // Theme-neutral: pre-apply the swap so fillRect's own swap cancels it, leaving
+  // the panel's true light bg / dark modules regardless of the UI theme - an
+  // inverted QR won't reliably scan.
+  const DisplayDriver::Color bg = themeSwapped(DisplayDriver::LIGHT);
+  const DisplayDriver::Color fg = themeSwapped(DisplayDriver::DARK);
 
   c.fillRect(x, y, side, side, bg);      // white square incl. the quiet border
 

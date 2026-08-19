@@ -9,11 +9,16 @@ namespace mishmesh {
 
 enum class TextAlign { Left, Center, Right };
 
-// The display theme, applied centrally: in light mode (UiPrefs::darkMode()
-// false) LIGHT and DARK swap. Canvas resolves every color through this at its
-// driver boundary; AppletHost uses it for the frame-clear background. Raw
-// blits (games) intentionally bypass it.
-DisplayDriver::Color themedColor(DisplayDriver::Color c);
+// The light/dark swap on its own, still in semantic space: in light mode
+// (UiPrefs::darkMode() false) LIGHT and DARK swap. An involution, so pre-applying
+// it cancels the swap Canvas does later (QrView needs that: an inverted QR won't
+// reliably scan).
+DisplayDriver::Color themeSwapped(DisplayDriver::Color c);
+// The swap plus the mapping from mishmesh's semantic color onto the driver's
+// UIColor palette, which is what setColor() takes since meshcore v1.17. Canvas
+// resolves every color through this at its driver boundary; AppletHost uses it
+// for the frame-clear background. Raw blits (games) intentionally bypass it.
+ColorVal themedColor(DisplayDriver::Color c);
 
 // A clipped drawing surface over a DisplayDriver: a value type carrying a
 // drawing origin, a clip window, and the current frame time. The origin and the
