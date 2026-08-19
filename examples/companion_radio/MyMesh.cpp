@@ -1083,15 +1083,19 @@ bool MyMesh::uiGetRecentAdvert(int index, ContactInfo& out) {
 // [/mishmesh]
 
 bool MyMesh::uiAddDiscovery(const uint8_t* pubkey) {
+  // addContact() allocates a fresh slot without checking for an existing pubkey, so
+  // adding a node that is already a contact would append a second copy. Drop it from
+  // the pool and report success - the caller navigates to its detail page either way.
+  bool known = lookupContactByPubKey(pubkey, 6) != nullptr;
   for (int i = 0; i < _ui_discovery_count; i++) {
     if (memcmp(_ui_discoveries[i].id.pub_key, pubkey, 6) != 0) continue;
-    if (!addContact(_ui_discoveries[i])) return false;
+    if (!known && !addContact(_ui_discoveries[i])) return false;
     for (int j = i; j < _ui_discovery_count - 1; j++) _ui_discoveries[j] = _ui_discoveries[j + 1];
     _ui_discovery_count--;
-    saveContacts();
+    if (!known) saveContacts();
     return true;
   }
-  return false;
+  return known;   // already a contact, just not in the pool (e.g. heard only via active scan)
 }
 
 // [mishmesh]

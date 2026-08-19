@@ -178,8 +178,14 @@ public:
   // [mishmesh] O(1) const access to a contact record without getContactByIdx's full
   // ~190 B struct copy; lets the on-device UI resolve list rows and fingerprint the
   // table each frame cheaply. Pointer valid until the contact table next mutates.
+  //
+  // idx is LOGICAL: 0 is the first real contact, matching getNumContacts(). The first
+  // MAX_ANON_CONTACTS slots of contacts[] are reserved for anon requests and are zeroed
+  // (empty name, type ADV_TYPE_NONE), so a raw index paired with getNumContacts() reads
+  // blank records off the front and truncates the tail. getContactByIdx() takes a RAW
+  // index - never pair that one with getNumContacts().
   const ContactInfo* getContactPtrByIdx(int idx) const {
-    return (idx >= 0 && idx < num_contacts) ? &contacts[idx] : nullptr;
+    return (idx >= 0 && idx < getNumContacts()) ? &contacts[idx + MAX_ANON_CONTACTS] : nullptr;
   }
   // [/mishmesh]
   ContactsIterator startContactsIterator();

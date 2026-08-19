@@ -2,6 +2,7 @@
 #include "FakeContactsService.h"
 #include <mishmesh/applets/DiscoverApplet.h>
 #include <mishmesh/applets/DiscoverDetailApplet.h>
+#include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/text/Fonts.h>
 #include "FakeDisplayDriver.h"
@@ -105,6 +106,29 @@ TEST(DiscoverApplet, ResultSelectOpensDetail) {
   host.dispatch(InputEvent::Select);
   EXPECT_EQ(2, host.depth());
   EXPECT_EQ((Applet*)&discoverDetailApplet(), host.foreground());
+}
+
+// A responder we already hold is not a discovery: routing it to the discover detail
+// screen showed an added repeater as un-added, and its "Add to contacts" action then
+// appended a duplicate (addContact() does not dedup by pubkey).
+TEST(DiscoverApplet, ResultAlreadyAContactOpensContactDetail) {
+  FakeApp app; FakeContactsService svc;
+  FakeContactsService::Row r;
+  r.name = "Hilltop";
+  r.type = (uint8_t)ContactKind::Repeater;
+  memcpy(r.pubkey, "REPTR0", 6);
+  svc.repeaters.push_back(r);
+  svc.simulateDiscoverResult((const uint8_t*)"REPTR0", (uint8_t)ContactKind::Repeater, -20);
+
+  FakeDisplayDriver d;
+  AppletContext ctx; ctx.app = &app; ctx.contacts = &svc;
+  AppletHost host(&d, ctx);
+  DiscoverApplet applet; host.setRoot(&applet);
+  host.dispatch(InputEvent::NavDown);
+  host.dispatch(InputEvent::NavDown);   // row 2 = first result
+  host.dispatch(InputEvent::Select);
+  EXPECT_EQ(2, host.depth());
+  EXPECT_EQ((Applet*)&contactDetailApplet(), host.foreground());
 }
 
 TEST(DiscoverApplet, RendersWithoutCrashing) {

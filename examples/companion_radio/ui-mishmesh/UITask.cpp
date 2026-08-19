@@ -535,7 +535,8 @@ int UITask::countByKind(mishmesh::ContactKind k) const {
   int n = the_mesh.getNumContacts();
   int count = 0;
   for (int i = 0; i < n; i++) {
-    if (the_mesh.getContactByIdx(i, _scratch) && _scratch.type == (uint8_t)k) count++;
+    const ContactInfo* c = the_mesh.getContactPtrByIdx(i);
+    if (c && c->type == (uint8_t)k) count++;
   }
   return count;
 }
@@ -558,8 +559,9 @@ bool UITask::getByKind(mishmesh::ContactKind k, int index, mishmesh::ContactView
   int n = the_mesh.getNumContacts();
   int seen = 0;
   for (int i = 0; i < n; i++) {
-    if (the_mesh.getContactByIdx(i, _scratch) && _scratch.type == (uint8_t)k) {
-      if (seen == index) { fillView(_scratch, out); return true; }
+    const ContactInfo* c = the_mesh.getContactPtrByIdx(i);
+    if (c && c->type == (uint8_t)k) {
+      if (seen == index) { fillView(*c, out); return true; }
       seen++;
     }
   }
@@ -569,8 +571,10 @@ bool UITask::getByKind(mishmesh::ContactKind k, int index, mishmesh::ContactView
 int UITask::countFavourites() const {
   int n = the_mesh.getNumContacts();
   int count = 0;
-  for (int i = 0; i < n; i++)
-    if (the_mesh.getContactByIdx(i, _scratch) && (_scratch.flags & 0x01)) count++;
+  for (int i = 0; i < n; i++) {
+    const ContactInfo* c = the_mesh.getContactPtrByIdx(i);
+    if (c && (c->flags & 0x01)) count++;
+  }
   return count;
 }
 
@@ -578,8 +582,9 @@ bool UITask::getFavourite(int index, mishmesh::ContactView& out) const {
   int n = the_mesh.getNumContacts();
   int seen = 0;
   for (int i = 0; i < n; i++) {
-    if (the_mesh.getContactByIdx(i, _scratch) && (_scratch.flags & 0x01)) {
-      if (seen == index) { fillView(_scratch, out); return true; }
+    const ContactInfo* c = the_mesh.getContactPtrByIdx(i);
+    if (c && (c->flags & 0x01)) {
+      if (seen == index) { fillView(*c, out); return true; }
       seen++;
     }
   }
@@ -836,7 +841,9 @@ int UITask::removeNonChat() {
     found = false;
     int n = the_mesh.getNumContacts();
     for (int i = 0; i < n; i++) {
-      if (the_mesh.getContactByIdx(i, _scratch) && _scratch.type != ADV_TYPE_CHAT) {
+      const ContactInfo* p = the_mesh.getContactPtrByIdx(i);
+      if (p && p->type != ADV_TYPE_CHAT) {
+        _scratch = *p;   // removeContact() mutates the table; work from a copy
         ContactInfo* c = the_mesh.lookupContactByPubKey(_scratch.id.pub_key, 6);
         if (c && the_mesh.removeContact(*c)) { removed++; found = true; }
         break;  // array shifted; restart scan
@@ -854,7 +861,9 @@ int UITask::removeNonFavourites() {
     found = false;
     int n = the_mesh.getNumContacts();
     for (int i = 0; i < n; i++) {
-      if (the_mesh.getContactByIdx(i, _scratch) && (_scratch.flags & 0x01) == 0) {
+      const ContactInfo* p = the_mesh.getContactPtrByIdx(i);
+      if (p && (p->flags & 0x01) == 0) {
+        _scratch = *p;   // removeContact() mutates the table; work from a copy
         ContactInfo* c = the_mesh.lookupContactByPubKey(_scratch.id.pub_key, 6);
         if (c && the_mesh.removeContact(*c)) { removed++; found = true; }
         break;  // array shifted; restart scan
@@ -867,7 +876,10 @@ int UITask::removeNonFavourites() {
 int UITask::removeAll() {
   int removed = 0;
   ContactInfo tmp;
-  while (the_mesh.getNumContacts() > 0 && the_mesh.getContactByIdx(0, tmp)) {
+  while (the_mesh.getNumContacts() > 0) {
+    const ContactInfo* p = the_mesh.getContactPtrByIdx(0);
+    if (!p) break;
+    tmp = *p;   // removeContact() mutates the table; work from a copy
     ContactInfo* c = the_mesh.lookupContactByPubKey(tmp.id.pub_key, 6);
     if (c && the_mesh.removeContact(*c)) removed++; else break;
   }
@@ -1005,11 +1017,11 @@ bool UITask::MsgSvc::resolveHop(const uint8_t* hash, uint8_t hashSize, const cha
   static char buf[34]; knownCount = 0; name = "";
   int n = the_mesh.getNumContacts();
   bool hasFirst = false;
-  ContactInfo ci;
   for (int i = 0; i < n; i++) {
-    if (!the_mesh.getContactByIdx(i, ci)) continue;
-    if (memcmp(ci.id.pub_key, hash, hashSize) == 0) {
-      if (!hasFirst) { snprintf(buf, sizeof(buf), "%s", ci.name); hasFirst = true; }
+    const ContactInfo* ci = the_mesh.getContactPtrByIdx(i);
+    if (!ci) continue;
+    if (memcmp(ci->id.pub_key, hash, hashSize) == 0) {
+      if (!hasFirst) { snprintf(buf, sizeof(buf), "%s", ci->name); hasFirst = true; }
       knownCount++;
     }
   }
@@ -1017,6 +1029,7 @@ bool UITask::MsgSvc::resolveHop(const uint8_t* hash, uint8_t hashSize, const cha
   // repeater we've seen advertise still resolves to a name instead of a bare hex
   // hash. Contacts win; discoveries don't bump knownCount (it counts contacts).
   if (!hasFirst) {
+    ContactInfo ci;
     int d = the_mesh.uiDiscoveryCount();
     for (int i = 0; i < d; i++) {
       if (!the_mesh.uiGetDiscovery(i, ci)) continue;

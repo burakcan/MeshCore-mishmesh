@@ -1,5 +1,6 @@
 #include <mishmesh/applets/DiscoverApplet.h>
-#include <mishmesh/applets/DiscoverDetailApplet.h>   // discoverDetailApplet()
+#include <mishmesh/applets/DiscoverDetailApplet.h>
+#include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/ContactFormat.h>              // kindIcon
@@ -82,6 +83,13 @@ bool DiscoverApplet::onInput(InputEvent ev) {
     if (_svc) {
       ContactsService::DiscoverResultView r;
       if (_svc->getDiscoverResult(sel - 2, r)) {
+        // A responder we already hold belongs on its contact page; the discover detail
+        // screen only offers "Add to contacts", which would read as un-added.
+        if (_svc->isContact(r.pubKey)) {
+          contactDetailApplet().setTarget(r.pubKey);
+          if (_host) _host->push(&contactDetailApplet());
+          return true;
+        }
         ContactView v{};
         v.name = "";
         v.type = r.type;
