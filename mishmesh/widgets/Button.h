@@ -19,6 +19,7 @@ public:
   Button() : _label(""), _icon(0), _focused(false) {}
   void set(const char* label, uint16_t icon) { _label = label ? label : ""; _icon = icon; }
   void setFocused(bool f) { _focused = f; }
+  int  preferredWidth(Canvas& c) const;   // icon + label + padding, unclamped
   void draw(Canvas& c, int x, int y, int w, int h) override;
 };
 
