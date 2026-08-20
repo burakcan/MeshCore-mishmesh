@@ -124,7 +124,7 @@ public:
   // boot logo) positioned within the visible area.
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h);
 
-  // [mishmesh] Optional inline glyph-overlay hook: a secondary bitmap font whose
+  // Optional inline glyph-overlay hook: a secondary bitmap font whose
   // glyphs replace mapped codepoints in body text (used for a small emoji atlas).
   // Registered once at startup; when unset, all text rendering/measuring is
   // byte-identical to upstream. Static because the mcufont callbacks are shared.
@@ -134,7 +134,6 @@ public:
   typedef bool (*EmojiZeroWidthFn)(uint16_t key);
   static void setEmojiRenderer(const mf_font_s* font, EmojiLookupFn lookup,
                                EmojiZeroWidthFn zeroWidth);
-  // [/mishmesh]
 };
 
 }  // namespace mishmesh

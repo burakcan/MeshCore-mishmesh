@@ -74,6 +74,7 @@ const description =
       <p>Your messages are boxed; incoming ones are labelled with the sender. Two compose buttons sit at the bottom: <b>Write</b> opens the keypad, <b>Quick</b> inserts a canned reply. Long-press any message for Reply, Resend, Delete, and View path.</p>
       <Screenshot src="assets/img/chat.png" alt="chat thread with delivery status" caption="Delivery status sits under each sent message." />
       <p>Under each message you send you'll see its state: <b>Sent</b>, <b>Retrying N/5</b>, <b>Delivered</b> with the round-trip time, <b>Failed</b>, or <b>Heard N</b> for channel messages that were repeated.</p>
+      <Tip label="Repeat alert"><p>If the node lives in a pocket or a backpack, one chirp is easy to miss. Messages &gt; Settings &gt; Repeat alert re-plays the chat's notification tone every few minutes while something is unread - <b>Every</b> sets the gap (off by default), <b>Stop after</b> the point where it gives up so a forgotten node doesn't chirp all day. Any button press stops the current round; the next message starts a new one. Muted chats and channels set to mentions-only never repeat, and a muted device stays silent.</p></Tip>
       <Tip label="Auto-retry"><p>Direct messages retry on their own - up to five times, every eight seconds. On the second retry mishmesh can drop the learned route and flood instead, so a stale path repairs itself. Both behaviours are toggles in Messages &gt; Settings (Auto retry DMs, Auto reset DM paths). Retrying only covers messages sent since the radio last started - a message still undelivered when you reboot is shown as Failed rather than picked up again.</p></Tip>
 
       <h3>Sharing a channel</h3>
@@ -163,7 +164,7 @@ const description =
         <li><b>Home</b> - screen sleep, the Left / Right home shortcuts, and brightness (previewed live as you step it).</li>
         <li><b>Battery</b> - the indicator style (gauge, percentage, or voltage) and an ADC calibration trim that corrects the reading against a multimeter, with a live voltage preview as you step it.</li>
         <li><b>Contacts</b> - auto-add rules, overwrite-oldest, notify-when-full, max hops, and bulk clean-up.</li>
-        <li><b>Messages</b> - auto-retry and auto-path-reset, direct-message acks, per-channel and direct sounds, quick replies.</li>
+        <li><b>Messages</b> - auto-retry and auto-path-reset, direct-message acks, wake-on-message, the repeat alert, per-channel and direct sounds, quick replies.</li>
         <li><b>Advert</b> - your node name and whether adverts share your location.</li>
         <li><b>Radio</b> - preset, frequency, bandwidth, spreading factor, coding rate, TX power, repeater mode. Changes are staged and applied when you leave.</li>
         <li><b>Time &amp; date</b> - timezone by city (DST-aware), 12 / 24h, date format with a live example, auto time-sync, and manual set.</li>

@@ -5,7 +5,7 @@
 
 namespace mishmesh {
 
-// [mishmesh] glyph-overlay hook state (set via Canvas::setEmojiRenderer). Null
+// glyph-overlay hook state (set via Canvas::setEmojiRenderer). Null
 // until an overlay registers, so unregistered rendering/measuring is unchanged.
 static const mf_font_s* s_emojiFont = nullptr;
 static Canvas::EmojiLookupFn s_emojiLookup = nullptr;
@@ -18,7 +18,6 @@ void Canvas::setEmojiRenderer(const mf_font_s* font, EmojiLookupFn lookup,
                               EmojiZeroWidthFn zeroWidth) {
   s_emojiFont = font; s_emojiLookup = lookup; s_emojiZeroWidth = zeroWidth;
 }
-// [/mishmesh]
 
 DisplayDriver::Color themeSwapped(DisplayDriver::Color c) {
   if (uiPrefs().darkMode()) return c;
@@ -133,7 +132,7 @@ void mm_pixel(int16_t x, int16_t y, uint8_t count, uint8_t alpha, void* state) {
 
 uint8_t mm_char(int16_t x, int16_t y, mf_char ch, void* state) {
   TextState* s = (TextState*)state;
-  // [mishmesh] Glyph overlay: zero-width modifiers (VS16/ZWJ/skin tones) draw
+  // Glyph overlay: zero-width modifiers (VS16/ZWJ/skin tones) draw
   // nothing; mapped codepoints come from the registered overlay atlas, drawn
   // centered on the body line and advancing by the atlas glyph's width (mcufont
   // advances by our return - mf_justify.c). Unregistered -> unchanged path below.
@@ -147,7 +146,6 @@ uint8_t mm_char(int16_t x, int16_t y, mf_char ch, void* state) {
       return (uint8_t)(s_emojiFont->character_width(s_emojiFont, glyph) + 2 * kEmojiPadPx);
     }
   }
-  // [/mishmesh]
   // Glyphs the font can't render (emoji, other non-BMP/out-of-range codepoints)
   // would otherwise be drawn as mcufont's '?' fallback. Show a solid block
   // instead, advancing by the fallback width so layout/wrapping is unchanged.
@@ -181,7 +179,7 @@ bool mm_measure_line(mf_str line, uint16_t count, void* state) {
 
 int Canvas::textWidth(const mf_font_s* font, const char* str) const {
   if (!font || !str) return 0;
-  // [mishmesh] With an overlay registered, mirror mm_char so measure == render:
+  // With an overlay registered, mirror mm_char so measure == render:
   // mapped codepoints measure at the overlay glyph's advance, zero-width modifiers
   // measure 0, everything else keeps stock width (incl. the fallback width for
   // unknown glyphs). No overlay -> exactly mf_get_string_width(..., false).
@@ -196,7 +194,6 @@ int Canvas::textWidth(const mf_font_s* font, const char* str) const {
     }
     return w;
   }
-  // [/mishmesh]
   return mf_get_string_width(font, str, 0, false);
 }
 

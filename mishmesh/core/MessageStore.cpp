@@ -1,7 +1,7 @@
 // mishmesh/core/MessageStore.cpp
 #include "MessageStore.h"
 #include "MsgCodec.h"
-#include "PersistDebug.h"   // [mishmesh] TEMP: unread-persistence instrumentation
+#include "PersistDebug.h"   // TEMP: unread-persistence instrumentation
 namespace mishmesh {
 
 ConvoKey directKey(const uint8_t* p)   { ConvoKey k; k.type = 0; memcpy(k.id, p, 6); return k; }

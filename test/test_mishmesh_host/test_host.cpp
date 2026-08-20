@@ -524,6 +524,25 @@ TEST(AppletHost, ExclusiveFlushIsRateCappedButRenderIsNot) {
   EXPECT_EQ(4, endFrames);
 }
 
+TEST(AppletHost, LastInputMsTracksTheMostRecentDispatch) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setRoot(&root);
+  QueueSource src;
+  host.addSource(&src);
+
+  host.loop(1000);
+  EXPECT_EQ(0u, host.lastInputMs());     // nothing pressed yet
+
+  src.queue.push_back(InputEvent::NavDown);
+  host.loop(2500);
+  EXPECT_EQ(2500u, host.lastInputMs());
+
+  host.loop(4000);                        // no new input: stamp stays put
+  EXPECT_EQ(2500u, host.lastInputMs());
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

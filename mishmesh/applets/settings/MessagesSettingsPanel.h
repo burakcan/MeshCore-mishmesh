@@ -12,7 +12,8 @@ class AppletHost;
 // Global Messages settings: AutoRetry + AutoResetPath toggles, the DM-acks value
 // (1/2) picked via a stepper modal, per-type notification sounds (push the
 // shared sound picker), and a "Quick replies" row that drills into the
-// canned-message manager. Source of truth: MessagesService + AppServices +
+// canned-message manager, and a "Repeat alert" row that drills into the
+// unread re-chirp settings. Source of truth: MessagesService + AppServices +
 // quickReplyStore().
 class MessagesSettingsPanel : public SettingsPanel {
 public:
@@ -24,18 +25,20 @@ public:
 
   const char* rowValueForTest(int i) const { return _model.value(i); }
 
-private:
   struct Model : ListModel {
     MessagesService* svc = nullptr;
     AppServices*     app = nullptr;
-    enum Row : int { AutoRetry, AutoResetPath, DirectAcks, WakeOnMessage, ChannelSound,
-                     DirectSound, QuickReplies, ROW_COUNT };
+    enum Row : int { AutoRetry, AutoResetPath, DirectAcks, WakeOnMessage, RepeatAlert,
+                     ChannelSound, DirectSound, QuickReplies, ROW_COUNT };
     int count() const override { return ROW_COUNT; }
     const char* label(int i) const override;
     bool isToggle(int i) const override { return i == AutoRetry || i == AutoResetPath || i == WakeOnMessage; }
     bool toggleState(int i) const override;
     const char* value(int i) const override;   // acks "1"/"2", tone names, reply count
-  } _model;
+  };
+
+private:
+  Model _model;
 
   MessagesService* _svc  = nullptr;
   AppServices*     _app  = nullptr;

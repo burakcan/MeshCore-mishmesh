@@ -7,9 +7,9 @@ enum class SoundId : uint8_t {
   BootJingle = 0, ShutdownJingle,
   MsgChime, MsgKerplop, MsgAck,     // named, selectable notification ringtones
   UiTick, UiConfirm, UiError,
-  MsgTritone, MsgDing, MsgChirp, MsgSms, MsgKnock,   // [mishmesh] added notification tones
-  TimerDone, AlarmRing,                              // [mishmesh] clock applet rings
-  NokiaTune, BigBen, FurElise, OdeToJoy, Reveille,   // [mishmesh] classic ring tunes
+  MsgTritone, MsgDing, MsgChirp, MsgSms, MsgKnock,   // added notification tones
+  TimerDone, AlarmRing,                              // clock applet rings
+  NokiaTune, BigBen, FurElise, OdeToJoy, Reveille,   // classic ring tunes
   COUNT
 };
 

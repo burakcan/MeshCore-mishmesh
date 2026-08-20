@@ -1,6 +1,6 @@
 #pragma once
 
-// [mishmesh] lets main.cpp swap the generic "Loading..." boot text for our splash
+// lets main.cpp swap the generic "Loading..." boot text for our splash
 #define MISHMESH_UI 1
 
 #include <MeshCore.h>
@@ -19,12 +19,12 @@
 #include <mishmesh/applets/HomeApplet.h>
 #include <mishmesh/applets/AppMenuApplet.h>
 #include <mishmesh/applets/LockApplet.h>
-// [mishmesh]
 #include <mishmesh/core/WorldClock.h>
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/core/AppletStorage.h>
 #include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/core/RetryEngine.h>
+#include <mishmesh/core/UnreadReminder.h>
 #include <mishmesh/core/ScreenSleep.h>
 #include <mishmesh/core/NameValidation.h>
 #include <mishmesh/sound/SoundEngine.h>
@@ -34,7 +34,6 @@
 #include <mishmesh/applets/ContactsFullApplet.h>
 #include <mishmesh/core/ExtraFsMsgBackend.h>
 #include <mishmesh/applets/OnboardingApplet.h>
-// [/mishmesh]
 
 extern float mishmeshBatteryCalFactor;   // defined in WioTrackerL1Board.cpp
 
@@ -46,7 +45,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   mishmesh::HomeApplet* _home;
   mishmesh::AppMenuApplet* _menu;
   mishmesh::LockApplet* _lock;
-  mishmesh::OnboardingApplet* _onboard = nullptr;   // [mishmesh] first-boot wizard (null after)
+  mishmesh::OnboardingApplet* _onboard = nullptr;   // first-boot wizard (null after)
 
   mutable uint16_t _batt_mv;        // smoothed; raw ADC reads are noisy
   mutable uint32_t _batt_sampled_at;
@@ -57,7 +56,6 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
 
   static void fillView(const ContactInfo& c, mishmesh::ContactView& out);
 
-  // [mishmesh]
   mishmesh::ExtraFsMsgBackend _backend;  // flash backend; wired to store in begin()
   mishmesh::MessageStore _msgStore;
   uint32_t _msgDirtySeq = 0;
@@ -73,6 +71,9 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
     // written through on set.
     mutable uint8_t _msgFlags = 0;
     mutable bool    _msgFlagsLoaded = false;
+    // Repeat-alert minutes, same lazy-load / write-through deal ("rmndr").
+    mutable uint8_t _repeat[2] = { 0, 30 };
+    mutable bool    _repeatLoaded = false;
 
     const char* nameFor(const mishmesh::ConvoKey& k) const;
     int  convoCount() const override;
@@ -138,6 +139,13 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
 
   mishmesh::sound::SoundEngine _sound;
 
+  // Repeating chirp for unread messages (Settings > Messages > Repeat alert).
+  // Armed by the notification router, which also records the chat whose tone the
+  // repeat replays.
+  mishmesh::UnreadReminder _reminder;
+  mishmesh::ConvoKey _reminderKey{};
+  uint32_t _reminderCheckAt = 0;   // throttles the per-loop tick to ~4 Hz
+
   // Per-minute airtime history for the Airtime applet. Sampled in loop() from the
   // Dispatcher's cumulative counters so it accrues even while the screen is off.
   mishmesh::AirtimeHistory _airtime;
@@ -153,12 +161,12 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   bool        _notifyPending = false;
   UIEventType _notifyEvent = UIEventType::none;
   void dispatchNotification(UIEventType t);
+  void tickUnreadReminder();
   bool wakeAllowedFor(const mishmesh::ConvoKey& c) const;
   void applyTimeSyncGate(bool on);
-  // [mishmesh] per-minute memo for the DST-aware tz resolver (see tzOffsetMinutes)
+  // per-minute memo for the DST-aware tz resolver (see tzOffsetMinutes)
   mutable uint32_t _tzCacheMin = 0xFFFFFFFFu;
   mutable int16_t  _tzCacheOff = 0;
-  // [/mishmesh]
 
 #ifdef UI_HAS_JOYSTICK
   mishmesh::DirectionalSource* _joystick;
@@ -182,9 +190,9 @@ public:
   }
 
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
-  void finishOnboardingToHome();   // [mishmesh] called by onboardingDone callback
+  void finishOnboardingToHome();   // called by onboardingDone callback
 
-  // [mishmesh] one-shot boot splash drawn from setup() before any applet exists;
+  // one-shot boot splash drawn from setup() before any applet exists;
   // touches only the passed display, so it runs before begin().
   static void drawBootSplash(DisplayDriver* disp);
 
@@ -194,10 +202,7 @@ public:
   uint32_t epochSeconds() const override;
   bool systemStats(mishmesh::SystemStats& out) const override;
   bool airtimeStats(mishmesh::AirtimeStats& out) const override;
-  // [mishmesh]
   void factoryReset(bool keepIdentity) override { the_mesh.uiFactoryReset(keepIdentity); }
-  // [/mishmesh]
-  // [mishmesh]
   void selfPublicKeyHex(char* out, size_t cap, int bytes) const override {
     if (!out || !cap) return;
     if (bytes < 1) bytes = 1;
@@ -213,8 +218,6 @@ public:
     if (p) { p->onboarding_state = 1; the_mesh.savePrefs(); }   // IN_PROGRESS: gate re-shows the wizard
     _board->reboot();   // does not return
   }
-  // [/mishmesh]
-  // [mishmesh]
   // BLE capability is a build-time fact: deriving it from runtime state
   // (pin/enable) made the Bluetooth settings entry vanish when BLE was
   // toggled off. Serial/USB builds have no BLE at all, so tile/entry hide.
@@ -429,14 +432,13 @@ public:
     LocationProvider* lp = _sensors ? _sensors->getLocationProvider() : nullptr;
     return (lp && gpsEnabled()) ? (int)lp->satellitesCount() : 0;
   }
-  // [/mishmesh]
 
   // mishmesh::ContactsService
   int  countByKind(mishmesh::ContactKind k) const override;
   bool getByKind(mishmesh::ContactKind k, int index, mishmesh::ContactView& out) const override;
   int  countFavourites() const override;
   bool getFavourite(int index, mishmesh::ContactView& out) const override;
-  // [mishmesh] O(1) raw access + change token backing the contacts list row cache.
+  // O(1) raw access + change token backing the contacts list row cache.
   int      contactCount() const override;
   bool     contactAt(int rawIndex, mishmesh::ContactView& out) const override;
   uint32_t contactsSeq() const override;
@@ -454,11 +456,9 @@ public:
   bool     discoverScanning() const override;
   int      discoverResultCount() const override;
   bool     getDiscoverResult(int i, mishmesh::ContactsService::DiscoverResultView& out) const override;
-  // [mishmesh]
   int  countRecentAdverts() const override;
   bool getRecentAdvert(int index, mishmesh::ContactView& out) const override;
   bool isContact(const uint8_t* pubKey) const override;
-  // [/mishmesh]
   bool selfLocation(int32_t& lat1e6, int32_t& lon1e6) const override;
   bool requestTelemetry(const uint8_t* pubKey) override;
   bool resetPath(const uint8_t* pubKey) override;
@@ -469,30 +469,26 @@ public:
   bool ping(const uint8_t* pubKey) override;
   uint32_t pingSeq() const override;
   bool latestPing(const uint8_t* pubKey, mishmesh::PingView& out) const override;
-  // [mishmesh] room-server login (delegates to the_mesh; result via onRoomLogin)
+  // room-server login (delegates to the_mesh; result via onRoomLogin)
   bool login(const uint8_t* pubKey, const char* password) override;
   uint32_t loginSeq() const override { return _loginSeq; }
   bool loginResult(const uint8_t* pubKey, bool& ok, bool& isAdmin, uint8_t& perms) const override;
   bool isLoggedIn(const uint8_t* pubKey) const override;
-  // [mishmesh] admin CLI command channel (delegates to the_mesh; reply latched in MyMesh)
+  // admin CLI command channel (delegates to the_mesh; reply latched in MyMesh)
   bool     sendCliCommand(const uint8_t* pubKey, const char* cmd) override;
   uint32_t cliSeq() const override;
   bool     cliResult(const uint8_t* pubKey, uint32_t afterSeq, bool& ok, const char*& response) const override;
-  // [/mishmesh]
-  // [mishmesh] repeater status (binary) + login clock
+  // repeater status (binary) + login clock
   bool     requestStatus(const uint8_t* pubKey) override;
   uint32_t statusSeq() const override;
   bool     latestStatus(const uint8_t* pubKey, mishmesh::RepeaterStatusView& out) const override;
   uint32_t loginClock(const uint8_t* pubKey) const override;
-  // [/mishmesh]
-  // [mishmesh] repeater ACL (binary GET_ACCESS_LIST)
+  // repeater ACL (binary GET_ACCESS_LIST)
   bool     requestAccessList(const uint8_t* pubKey) override;
   uint32_t accessListSeq() const override;
   bool     latestAccessList(const uint8_t* pubKey, mishmesh::AccessListView& out) const override;
-  // [/mishmesh]
-  // [mishmesh] Ed25519 keygen: delegates to MyMesh::uiMakeIdentityHex (firmware-only).
+  // Ed25519 keygen: delegates to MyMesh::uiMakeIdentityHex (firmware-only).
   bool makeIdentityHex(const char* seedHex, char* out, int outCap) override;
-  // [/mishmesh]
   mishmesh::AutoAddConfig getAutoAdd() const override;
   void setAutoAdd(const mishmesh::AutoAddConfig& cfg) override;
   int removeNonChat() override;
@@ -503,11 +499,11 @@ public:
   void msgRead(int msgcount) override;
   void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) override;
   void notify(UIEventType t = UIEventType::none) override;
-  void onRoomLogin(const uint8_t* pubkey, bool success, bool is_admin, uint8_t perms) override;   // [mishmesh]
+  void onRoomLogin(const uint8_t* pubkey, bool success, bool is_admin, uint8_t perms) override;
   void loop() override;
 
 private:
-  // [mishmesh] Latest room-login outcome + this-power-cycle logged-in set.
+  // Latest room-login outcome + this-power-cycle logged-in set.
   static const int MM_MAX_LOGINS = 8;
   uint32_t _loginSeq = 0;
   uint8_t  _loginPub[6] = {0};
@@ -516,5 +512,4 @@ private:
   uint8_t  _loginPerms = 0;
   uint8_t  _loggedIn[MM_MAX_LOGINS][6] = {{0}};
   int      _loggedInCount = 0;
-  // [/mishmesh]
 };

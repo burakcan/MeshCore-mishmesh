@@ -10,10 +10,8 @@ namespace mishmesh {
 class Canvas;
 class AppletHost;
 struct ContactsService;   // mishmesh/core/ContactsService.h
-// [mishmesh]
 namespace sound { class SoundEngine; }
 class AirtimeHistory;     // mishmesh/core/AirtimeHistory.h
-// [/mishmesh]
 
 // Snapshot of device health for the System stats screen. Plain integers so the
 // framework stays free of companion/platform types. 0 (or nullptr) means
@@ -33,7 +31,6 @@ struct SystemStats {
   const char* mishmeshVersion  = nullptr;   // mishmesh UI version
 };
 
-// [mishmesh]
 // Radio airtime / duty-cycle usage for the Airtime applet. Totals are lifetime
 // (since boot) in ms; the budget fields describe the duty-cycle token bucket the
 // Dispatcher enforces. `history` (may be null) is the loop-fed per-minute ring
@@ -50,7 +47,6 @@ struct AirtimeStats {
   uint32_t recvDirect   = 0;
   const AirtimeHistory* history = nullptr;
 };
-// [/mishmesh]
 
 // LoRa radio configuration surfaced to the on-device UI. Units match NodePrefs:
 // freq in MHz, bw in kHz.
@@ -73,7 +69,6 @@ struct AppServices {
   virtual uint32_t    epochSeconds() const = 0;   // UNIX seconds; 0 if unknown
   // Fill device-health stats; return false if unavailable. Default: no stats.
   virtual bool systemStats(SystemStats& out) const { (void)out; return false; }
-  // [mishmesh]
   // BLE/companion link state. Defaults keep the framework companion-agnostic;
   // the adapter (UITask) overrides these on BLE builds.
   virtual bool     bleSupported() const { return false; }
@@ -182,7 +177,6 @@ struct AppServices {
   virtual void     previewBatteryCalibration(int pct) { (void)pct; }
   virtual void     setBatteryCalibration(int pct) { (void)pct; }
   virtual uint16_t batteryMillivoltsLive() const { return 0; }
-  // [/mishmesh]
 };
 
 // Handle through which an applet reaches host/app services. Grows as features land.
@@ -190,7 +184,6 @@ struct AppletContext {
   AppletHost*      host = nullptr;
   AppServices*     app = nullptr;
   ContactsService* contacts = nullptr;   // [new] contacts/mesh seam
-  // [mishmesh]
   struct MessagesService* messages = nullptr;
   const InputState* inputState = nullptr;   // host-owned; updated once per loop
   AppletStorage* storage = nullptr;   // generic key->blob persistence (may be null)
@@ -201,7 +194,6 @@ struct AppletContext {
     static const InputState kEmpty;
     return inputState ? *inputState : kEmpty;
   }
-  // [/mishmesh]
 };
 
 class Applet {

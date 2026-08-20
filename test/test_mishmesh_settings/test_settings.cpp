@@ -177,6 +177,92 @@ TEST(MessagesSettingsPanel, TogglesAndAcksStepper) {
   EXPECT_EQ(2, svc.getMessagesConfig().directAcks);
 }
 
+TEST(MessagesSettingsPanel, RepeatAlertRowShowsTheInterval) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::MessagesSettingsPanel panel;
+  panel.begin(ctx);
+  EXPECT_STREQ("Off", panel.rowValueForTest(mishmesh::MessagesSettingsPanel::Model::RepeatAlert));
+
+  mishmesh::MessagesConfig cfg = svc.getMessagesConfig();
+  cfg.repeatMins = 5;
+  svc.setMessagesConfig(cfg);
+  EXPECT_STREQ("5 min", panel.rowValueForTest(mishmesh::MessagesSettingsPanel::Model::RepeatAlert));
+}
+
+#include <mishmesh/applets/settings/RepeatAlertPanel.h>
+
+TEST(RepeatAlertPanel, DefaultsToOffAndThirtyMinuteRingOut) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+  EXPECT_STREQ("Repeat alert", panel.title());
+  EXPECT_STREQ("Off", panel.rowValueForTest(0));
+  EXPECT_STREQ("30 min", panel.rowValueForTest(1));
+}
+
+TEST(RepeatAlertPanel, EveryStepperWritesTheInterval) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));   // row 0 = Every
+  EXPECT_TRUE(panel.modalActive());
+  panel.onInput(mishmesh::InputEvent::NavRight);              // Off -> 1 min
+  panel.onInput(mishmesh::InputEvent::Select);
+  EXPECT_FALSE(panel.modalActive());
+  EXPECT_EQ(1, svc.getMessagesConfig().repeatMins);
+  EXPECT_STREQ("1 min", panel.rowValueForTest(0));
+}
+
+TEST(RepeatAlertPanel, StopAfterStepperWritesTheRingOut) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::NavDown));  // row 1 = Stop after
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  panel.onInput(mishmesh::InputEvent::NavRight);              // 30 min -> 1 hour
+  panel.onInput(mishmesh::InputEvent::Select);
+  EXPECT_EQ(60, svc.getMessagesConfig().repeatStopMins);
+  EXPECT_STREQ("1 hour", panel.rowValueForTest(1));
+}
+
+TEST(RepeatAlertPanel, StopAfterCanBeSetToNever) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::NavDown));
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  panel.onInput(mishmesh::InputEvent::NavRight);              // 1 hour
+  panel.onInput(mishmesh::InputEvent::NavRight);              // Never
+  panel.onInput(mishmesh::InputEvent::Select);
+  EXPECT_EQ(0, svc.getMessagesConfig().repeatStopMins);
+  EXPECT_STREQ("Never", panel.rowValueForTest(1));
+}
+
+TEST(RepeatAlertPanel, BackCancelsTheStepperWithoutWriting) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  panel.onInput(mishmesh::InputEvent::NavRight);
+  panel.onInput(mishmesh::InputEvent::Back);
+  EXPECT_FALSE(panel.modalActive());
+  EXPECT_EQ(0, svc.getMessagesConfig().repeatMins);
+}
+
+TEST(RepeatAlertPanel, SingletonIsStable) {
+  EXPECT_EQ(&mishmesh::repeatAlertSettings(), &mishmesh::repeatAlertSettings());
+}
+
 #include <mishmesh/applets/settings/ContactsSettingsPanel.h>
 #include "FakeContactsService.h"
 
@@ -354,10 +440,10 @@ TEST(MessagesSettingsPanel, ShowsPerTypeSoundRows) {
   mishmesh::AppletContext ctx; ctx.app = &app; ctx.messages = &svc;
   mishmesh::MessagesSettingsPanel panel;
   panel.begin(ctx);
-  // Rows 4/5 = Channel/Direct sound, showing the resolved tone names.
-  // (Row 3 is now Wake on message.)
-  EXPECT_STREQ("Silent", panel.rowValueForTest(4));
-  EXPECT_STREQ("Droplet", panel.rowValueForTest(5));
+  // The two sound rows show the resolved tone names.
+  using Row = mishmesh::MessagesSettingsPanel::Model;
+  EXPECT_STREQ("Silent", panel.rowValueForTest(Row::ChannelSound));
+  EXPECT_STREQ("Droplet", panel.rowValueForTest(Row::DirectSound));
 }
 
 TEST(SettingsApplet, ListsAllSections) {

@@ -32,6 +32,8 @@ struct MessagesConfig {
   bool    autoResetPath = false;
   uint8_t directAcks    = 1;   // 1 or 2
   bool    wakeOnMessage = true;   // false = incoming messages don't wake a sleeping screen
+  uint8_t repeatMins    = 0;      // re-alert every N minutes while unread; 0 = off
+  uint8_t repeatStopMins = 30;    // give up re-alerting after N minutes; 0 = never
 };
 
 struct ConvoView {
