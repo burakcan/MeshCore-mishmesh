@@ -143,7 +143,7 @@ private:
       def("tone_dm", _parent->notify_tone_dm);
       def("tz_q", _parent->tz_quarter_hours);
       def("tz_city", _parent->tz_city_index);
-      def("t12h", _parent->time_fmt_12h);
+      def("t_ampm", _parent->time_fmt_12h);   // no digits: ConfigSerializer keys are [A-Za-z_] only
       def("t_manual", _parent->manual_time_set);
       def("datefmt", _parent->date_format);
       def("sleep", _parent->screen_sleep);
