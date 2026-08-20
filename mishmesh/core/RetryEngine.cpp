@@ -15,13 +15,9 @@ int RetryEngine::find(const ConvoKey& key, uint32_t senderTime) const {
   return -1;
 }
 
-void RetryEngine::beginScan() {
-  for (int i = 0; i < MAX_PENDING; i++) _e[i].seen = false;
-}
-
-void RetryEngine::see(const ConvoKey& key, uint32_t senderTime, uint32_t now) {
-  int i = find(key, senderTime);
-  if (i >= 0) { _e[i].seen = true; return; }
+void RetryEngine::track(const ConvoKey& key, uint32_t senderTime, uint32_t now) {
+  if (key.type != 0) return;                  // direct messages only
+  if (find(key, senderTime) >= 0) return;
   for (int j = 0; j < MAX_PENDING; j++) {
     if (!_e[j].used) {
       _e[j].used = true; _e[j].seen = true;
@@ -30,7 +26,24 @@ void RetryEngine::see(const ConvoKey& key, uint32_t senderTime, uint32_t now) {
       return;
     }
   }
-  // table full: ignore (best effort - older pending messages still get retried)
+}
+
+void RetryEngine::beginScan() {
+  for (int i = 0; i < MAX_PENDING; i++) _e[i].seen = false;
+}
+
+int RetryEngine::snapshot(ConvoKey* outKeys, uint32_t* outTimes) const {
+  int n = 0;
+  for (int i = 0; i < MAX_PENDING; i++) {
+    if (!_e[i].used) continue;
+    outKeys[n] = _e[i].key; outTimes[n] = _e[i].senderTime; n++;
+  }
+  return n;
+}
+
+void RetryEngine::see(const ConvoKey& key, uint32_t senderTime) {
+  int i = find(key, senderTime);
+  if (i >= 0) _e[i].seen = true;
 }
 
 void RetryEngine::endScan(uint32_t now, RetryActions& actions) {

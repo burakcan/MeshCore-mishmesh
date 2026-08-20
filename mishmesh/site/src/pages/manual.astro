@@ -74,7 +74,7 @@ const description =
       <p>Your messages are boxed; incoming ones are labelled with the sender. Two compose buttons sit at the bottom: <b>Write</b> opens the keypad, <b>Quick</b> inserts a canned reply. Long-press any message for Reply, Resend, Delete, and View path.</p>
       <Screenshot src="assets/img/chat.png" alt="chat thread with delivery status" caption="Delivery status sits under each sent message." />
       <p>Under each message you send you'll see its state: <b>Sent</b>, <b>Retrying N/5</b>, <b>Delivered</b> with the round-trip time, <b>Failed</b>, or <b>Heard N</b> for channel messages that were repeated.</p>
-      <Tip label="Auto-retry"><p>Direct messages retry on their own - up to five times, every eight seconds. On the second retry mishmesh can drop the learned route and flood instead, so a stale path repairs itself. Both behaviours are toggles in Messages &gt; Settings (Auto retry DMs, Auto reset DM paths).</p></Tip>
+      <Tip label="Auto-retry"><p>Direct messages retry on their own - up to five times, every eight seconds. On the second retry mishmesh can drop the learned route and flood instead, so a stale path repairs itself. Both behaviours are toggles in Messages &gt; Settings (Auto retry DMs, Auto reset DM paths). Retrying only covers messages sent since the radio last started - a message still undelivered when you reboot is shown as Failed rather than picked up again.</p></Tip>
 
       <h3>Sharing a channel</h3>
       <p>Long-press a channel chat and choose Share to render it as a QR code (a <code class="inl">meshcore:channel/add</code> link). Another device scans it to join. Select toggles between the QR and the raw hex key.</p>

@@ -229,8 +229,10 @@ public:
   // Same, but applies a per-chat flood-scope override for this one send (mishmesh
   // per-chat region): scope_key16 = 16-byte TransportKey, or null to fall back to
   // the node default scope. Any session scope set by the companion is saved and
-  // restored around the send.
-  bool mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16);
+  // restored around the send. senderTimeOut (optional, DMs only) receives the
+  // message timestamp the send used - the id auto-retry tracks the message by.
+  bool mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16,
+                        uint32_t* senderTimeOut = nullptr);
   // Seed an (empty) chat for every joined channel (e.g. the default Public
   // channel) so it shows on a fresh device before any message arrives.
   void uiSeedChannels();
@@ -425,7 +427,8 @@ private:
   void markContactsDirty();
   mishmesh::MessageStore* _mm_store = nullptr;
   void logRx(mesh::Packet* pkt, int len, float score) override;
-  bool mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text);  // send body, scope-agnostic
+  bool mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text,
+                            uint32_t* senderTimeOut);  // send body, scope-agnostic
   // [/mishmesh]
 
   TransportKey send_scope;

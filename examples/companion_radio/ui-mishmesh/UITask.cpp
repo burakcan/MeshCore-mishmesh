@@ -207,6 +207,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     if (ds && ds->extraFs()) _backend.begin(*ds->extraFs());
   }
   _msgStore.begin(&_backend);
+  // A DM left pending by the previous session can never be ACK-matched (the ack
+  // tables are RAM-only), so settle it now instead of showing "sending" forever.
+  _msgStore.failStalePendingDMs();
   _msgSvc.store = &_msgStore;
   _msgSvc.retry = &_retry;            // expose live retry counts to the thread view
   _retryGlue.store = &_msgStore;      // auto-retry acts on the same store
@@ -461,32 +464,32 @@ void UITask::loop() {
     dispatchNotification(_notifyEvent);
   }
 
-  // Auto-retry of undelivered direct messages: every ~2s, re-feed the still-
-  // pending DMs to the engine and let it re-transmit / fail the due ones. The
-  // store is the pending list, so this survives reboots for free.
-  // Interval matches the retry cadence (RetryEngine::RETRY_INTERVAL_MS); scanning
-  // faster only re-reads flash for no benefit. The scan walks every chat log, and
-  // each backend read is a full file open on device, so it must stay cheap: one
-  // pass collecting the pending DMs (the engine only tracks MAX_PENDING anyway),
-  // not the O(n^2) count()+get() pattern. Deferred one interval so it never runs
-  // during the boot jingle (a long blocking scan there would freeze the loop and
-  // leave the tone stuck on).
+  // Auto-retry of undelivered direct messages: every ~6s, ask the store which of
+  // the DMs the engine is watching are still pending, then let it re-transmit /
+  // fail the due ones. Entries only ever enter the engine from the send path, so
+  // nothing is retried across a reboot and a tracked message's attempt count is
+  // never reset by whatever else the store holds. The scan runs a little under
+  // RETRY_INTERVAL_MS so a due retry never waits a whole extra interval. Deferred
+  // one interval so it never runs during the boot jingle (a long blocking scan
+  // there would freeze the loop and leave the tone stuck on).
   static const uint32_t RETRY_SCAN_MS = 6000;
   if (_retryScanAt == 0) _retryScanAt = millis() + RETRY_SCAN_MS;
   if (millis() >= _retryScanAt) {
     _retryScanAt = millis() + RETRY_SCAN_MS;
     mishmesh::MessagesConfig mc = _msgSvc.getMessagesConfig();
     _retry.configure(mc.autoRetry, mc.autoResetPath);
-    if (mc.autoRetry) {
+    if (!mc.autoRetry) {
+      _retry.reset();
+    } else if (_retry.trackedCount() > 0) {   // nothing in flight = no flash walk
       uint32_t now = millis();
-      _retry.beginScan();
       mishmesh::ConvoKey pk[mishmesh::RetryEngine::MAX_PENDING];
       uint32_t pt[mishmesh::RetryEngine::MAX_PENDING];
-      int pn = _msgStore.collectPendingDMs(pk, pt, mishmesh::RetryEngine::MAX_PENDING);
-      for (int i = 0; i < pn; i++) _retry.see(pk[i], pt[i], now);
+      bool     pending[mishmesh::RetryEngine::MAX_PENDING];
+      int pn = _retry.snapshot(pk, pt);
+      _msgStore.checkPendingDMs(pk, pt, pending, pn);
+      _retry.beginScan();
+      for (int i = 0; i < pn; i++) if (pending[i]) _retry.see(pk[i], pt[i]);
       _retry.endScan(now, _retryGlue);
-    } else {
-      _retry.reset();
     }
   }
   // [/mishmesh]
@@ -1218,7 +1221,12 @@ static bool resolveRegionScope(const mishmesh::MessagesService& svc,
 bool UITask::MsgSvc::sendText(const mishmesh::ConvoKey& k, const char* text) {
   uint8_t scope[16];
   bool scoped = resolveRegionScope(*this, k, scope);
-  return the_mesh.mishmeshSendText(k, text, scoped ? scope : nullptr);
+  uint32_t senderTime = 0;
+  if (!the_mesh.mishmeshSendText(k, text, scoped ? scope : nullptr, &senderTime)) return false;
+  // Auto-retry watches only what this session sent: registering here (and never
+  // from a sweep of the logs) is what keeps old undelivered records settled.
+  if (retry && k.type == 0 && senderTime) retry->track(k, senderTime, millis());
+  return true;
 }
 
 const uint8_t* UITask::MsgSvc::publicPsk() {

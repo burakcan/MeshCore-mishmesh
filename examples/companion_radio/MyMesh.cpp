@@ -1131,7 +1131,8 @@ bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text) {
   return mishmeshSendText(k, text, nullptr);
 }
 
-bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16) {
+bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16,
+                              uint32_t* senderTimeOut) {
   // Apply the per-chat region as a one-send scope override, saving/restoring any
   // session scope the companion app may have set via CMD_SET_FLOOD_SCOPE_KEY.
   // A null key clears the override -> falls back to the node default scope.
@@ -1141,7 +1142,7 @@ bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, con
   if (scope_key16) memcpy(send_scope.key, scope_key16, sizeof(send_scope.key));
   else memset(send_scope.key, 0, sizeof(send_scope.key));
 
-  bool ok = mishmeshSendTextImpl(k, text);
+  bool ok = mishmeshSendTextImpl(k, text, senderTimeOut);
 
   send_scope = prev_scope;
   send_unscoped = prev_unscoped;
@@ -1236,7 +1237,8 @@ bool MyMesh::mishmeshIsRoomConvo(const mishmesh::ConvoKey& k) {
   return c && c->type == ADV_TYPE_ROOM;
 }
 
-bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text) {
+bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text,
+                                  uint32_t* senderTimeOut) {
   if (!text || !text[0]) return false;
   uint16_t tlen = (uint16_t)strlen(text);
 
@@ -1258,6 +1260,7 @@ bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text)
                                   getRTCClock()->getCurrentTime(),
                                   expected_ack, _ms->getMillis());
     }
+    if (senderTimeOut) *senderTimeOut = msg_timestamp;
     return true;
   }
 

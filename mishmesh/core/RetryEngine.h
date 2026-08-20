@@ -20,12 +20,17 @@ struct RetryActions {
 };
 
 // Tracks on-device-sent direct messages that are still awaiting delivery and
-// drives automatic re-transmission. The message store is the source of truth
-// for "still pending"; each tick the host scans it and reports every pending
-// DM via see(), then endScan() retransmits the ones whose deadline has passed
-// and drops the ones that have since been delivered/failed/deleted.
+// drives automatic re-transmission.
 //
-// No heap: a fixed table of in-flight messages, populated only in see().
+// Entries are created only by track(), from the send path, so the tracked set is
+// exactly the DMs this session sent and is still waiting on: a reboot starts
+// empty and old store records are never resurrected. Each tick the host takes a
+// snapshot(), asks the store which of those are still pending, reports them with
+// see(), and endScan() re-transmits the due ones and drops the rest. see() never
+// creates - a tracked message missing from a scan is delivered, failed or
+// deleted, so an attempt count can never be reset behind an entry's back.
+//
+// No heap: a fixed table of in-flight messages, populated only in track().
 class RetryEngine {
 public:
   static const int     MAX_PENDING       = 8;     // messages tracked at once
@@ -41,10 +46,16 @@ public:
   }
   bool enabled() const { return _enabled; }
 
+  // Start watching a DM the device just sent. Ignored when the table is full -
+  // with MAX_PENDING re-transmissions already in flight, a further send simply
+  // gets no auto-retry rather than displacing one that does.
+  void track(const ConvoKey& key, uint32_t senderTime, uint32_t now);
+
   // --- scan protocol: call once per tick ---
-  void beginScan();                                          // mark all entries unseen
-  void see(const ConvoKey& key, uint32_t senderTime, uint32_t now);  // a still-pending DM
-  void endScan(uint32_t now, RetryActions& actions);         // reap + fire due retries
+  void beginScan();                                    // mark all entries unseen
+  int  snapshot(ConvoKey* outKeys, uint32_t* outTimes) const;  // entries to ask the store about
+  void see(const ConvoKey& key, uint32_t senderTime);  // still pending per the store
+  void endScan(uint32_t now, RetryActions& actions);   // reap + fire due retries
 
   // --- introspection (tests) ---
   int  trackedCount() const;

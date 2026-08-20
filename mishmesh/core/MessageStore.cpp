@@ -656,16 +656,24 @@ bool MessageStore::getPendingDM(int index, ConvoKey& outKey, uint32_t& outSender
   return false;
 }
 
-int MessageStore::collectPendingDMs(ConvoKey* outKeys, uint32_t* outTimes, int cap) const {
-  if (!_backend || cap <= 0) return 0;
-  int out = 0, count = _index.count();
-  for (int ci = 0; ci < count && out < cap; ci++) {
-    ConvoSummary cs; if (!_index.get(ci, cs)) continue;
-    if (cs.key.type != 0) continue;   // only DM logs hold KIND_OUT_DM; skip channels
-    char name[15]; codec::keyToName(cs.key, name);
+// Report which of the given outbound DMs are still awaiting delivery. One pass
+// per distinct chat log, so the auto-retry tick costs the same as the old
+// collect-all sweep without its cap: the caller asks about the messages IT is
+// tracking, and no message can be silently omitted (an omission would read as
+// "delivered" and reset the retry state).
+void MessageStore::checkPendingDMs(const ConvoKey* keys, const uint32_t* times,
+                                   bool* stillPending, int n) const {
+  for (int i = 0; i < n; i++) stillPending[i] = false;
+  if (!_backend) return;
+  for (int i = 0; i < n; i++) {
+    if (keys[i].type != 0) continue;             // only DM logs hold KIND_OUT_DM
+    bool walked = false;
+    for (int p = 0; p < i; p++) if (keys[p].equals(keys[i])) { walked = true; break; }
+    if (walked) continue;                        // this log was covered by an earlier entry
+    char name[15]; codec::keyToName(keys[i], name);
     uint32_t fileSize = _backend->size(name);
     uint32_t pos = 0;
-    while (pos < fileSize && out < cap) {
+    while (pos < fileSize) {
       uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
       if (got < (uint32_t)codec::REC_HDR) break;
       uint32_t sz = (uint32_t)codec::recSize(_recBuf);
@@ -674,15 +682,53 @@ int MessageStore::collectPendingDMs(ConvoKey* outKeys, uint32_t* outTimes, int c
       if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
         const uint8_t* trailer = _recBuf + codec::REC_HDR + codec::recTextLen(_recBuf);
         if (trailer[0] == ST_PENDING) {
-          codec::rdKey(_recBuf, outKeys[out]);
-          outTimes[out] = codec::rd32(_recBuf + 8);
-          out++;
+          ConvoKey rk; codec::rdKey(_recBuf, rk);
+          uint32_t st = codec::rd32(_recBuf + 8);
+          for (int j = i; j < n; j++)
+            if (times[j] == st && keys[j].equals(rk)) stillPending[j] = true;
         }
       }
       pos += sz;
     }
   }
-  return out;
+}
+
+// Boot-time reconciliation: an outbound DM left ST_PENDING by a previous session
+// can never resolve - the ACK match table (_tracked, and MyMesh's expected-ack
+// ring) lives in RAM only, so a late ACK has nothing to match against. Settle
+// them as failed once at startup, otherwise they sit "sending" forever and any
+// future pending sweep would treat them as live traffic.
+int MessageStore::failStalePendingDMs() {
+  if (!_backend) return 0;
+  int changed = 0, count = _index.count();
+  for (int ci = 0; ci < count; ci++) {
+    ConvoSummary cs; if (!_index.get(ci, cs)) continue;
+    if (cs.key.type != 0) continue;
+    char name[15]; codec::keyToName(cs.key, name);
+    uint32_t fileSize = _backend->size(name);
+    uint32_t pos = 0;
+    bool touched = false;
+    while (pos < fileSize) {
+      uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+      if (got < (uint32_t)codec::REC_HDR) break;
+      uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+      if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+      if (pos + sz > fileSize) break;
+      if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
+        uint16_t textLen = codec::recTextLen(_recBuf);
+        const uint8_t* trailerInBuf = _recBuf + codec::REC_HDR + textLen;
+        if (trailerInBuf[0] == ST_PENDING) {
+          uint8_t patch[1] = { ST_FAILED };
+          _backend->patch(name, pos + (uint32_t)codec::REC_HDR + textLen, patch, 1);
+          changed++; touched = true;
+        }
+      }
+      pos += sz;
+    }
+    if (touched) invalidateWindow(cs.key);
+  }
+  if (changed) _seq++;
+  return changed;
 }
 
 int MessageStore::getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const {
