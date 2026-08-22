@@ -2,6 +2,7 @@
 #include <mishmesh/core/UiPrefs.h>
 #include <mcufont.h>
 #include <math.h>
+#include <string.h>
 
 namespace mishmesh {
 
@@ -247,11 +248,16 @@ void Canvas::drawTextEllipsized(const mf_font_s* font, int x, int y, int maxWidt
   char buf[64];
   int ellw = textWidth(font, "...");
   int len = 0;
-  for (const char* p = str; *p && len < 60; ++p) {
-    buf[len] = *p;
-    buf[len + 1] = 0;
-    if (textWidth(font, buf) + ellw > maxWidth) { buf[len] = 0; break; }
-    len++;
+  for (mf_str p = str; *p && len < 60;) {
+    mf_str next = p;
+    mf_getchar(&next);
+    int bytes = (int)(next - p);
+    if (bytes <= 0 || len + bytes > 60) break;
+    memcpy(buf + len, p, (size_t)bytes);
+    buf[len + bytes] = 0;
+    if (textWidth(font, buf) + ellw > maxWidth) break;
+    len += bytes;
+    p = next;
   }
   buf[len] = '.'; buf[len + 1] = '.'; buf[len + 2] = '.'; buf[len + 3] = 0;
   drawText(font, x, y, buf, c, align);

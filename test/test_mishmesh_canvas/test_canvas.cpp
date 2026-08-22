@@ -3,6 +3,7 @@
 #include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/text/Fonts.h>
 #include "FakeDisplayDriver.h"
+#include <algorithm>
 #include <cmath>
 
 using namespace mishmesh;
@@ -133,6 +134,91 @@ TEST(CanvasFallback, UnrenderableGlyphDrawsBlockNotQuestionMark) {
     }
   }
   EXPECT_EQ(1, blocks);
+}
+
+TEST(CanvasEllipsis, CyrillicIsNeverSplitMidCodepoint) {
+  FakeDisplayDriver d;
+  mishmesh::Canvas c(&d);
+  const mf_font_s* f = mishmesh::fontBody();
+  int maxw = c.textWidth(f, "П...");
+
+  c.drawTextEllipsized(f, 0, 0, maxw, "Привет", DisplayDriver::LIGHT);
+
+  ASSERT_FALSE(d.fills.empty());
+  for (const auto& run : d.fills) EXPECT_EQ(1, run.h);
+}
+
+TEST(CanvasCyrillic, RussianTextUsesBitmapGlyphs) {
+  FakeDisplayDriver d(128, 64);
+  mishmesh::Canvas c(&d);
+  const Font* f = fontBody();
+
+  c.drawText(f, 0, 0, "Привет", DisplayDriver::LIGHT);
+
+  EXPECT_EQ(36, c.textWidth(f, "Привет"));
+  ASSERT_FALSE(d.fills.empty());
+  for (const auto& run : d.fills) EXPECT_EQ(1, run.h);
+}
+
+TEST(CanvasCyrillic, BodyStrokeWeightMatchesNokiaLatin) {
+  FakeDisplayDriver latinDisplay(128, 64);
+  FakeDisplayDriver cyrillicDisplay(128, 64);
+  mishmesh::Canvas latin(&latinDisplay);
+  mishmesh::Canvas cyrillic(&cyrillicDisplay);
+
+  latin.drawText(fontBody(), 0, 0, "B", DisplayDriver::LIGHT);
+  cyrillic.drawText(fontBody(), 0, 0, "Б", DisplayDriver::LIGHT);
+
+  int latinPixels = 0;
+  int cyrillicPixels = 0;
+  for (const auto& run : latinDisplay.fills) latinPixels += run.w;
+  for (const auto& run : cyrillicDisplay.fills) cyrillicPixels += run.w;
+  EXPECT_GE(cyrillicPixels, latinPixels * 3 / 4);
+}
+
+TEST(CanvasCyrillic, SharesLatinBaseline) {
+  FakeDisplayDriver latinDisplay(128, 64);
+  FakeDisplayDriver cyrillicDisplay(128, 64);
+  mishmesh::Canvas latin(&latinDisplay);
+  mishmesh::Canvas cyrillic(&cyrillicDisplay);
+
+  latin.drawText(fontBody(), 0, 0, "A", DisplayDriver::LIGHT);
+  cyrillic.drawText(fontBody(), 0, 0, "А", DisplayDriver::LIGHT);
+
+  ASSERT_FALSE(latinDisplay.fills.empty());
+  ASSERT_FALSE(cyrillicDisplay.fills.empty());
+  int latinTop = latinDisplay.fills.front().y;
+  int cyrillicTop = cyrillicDisplay.fills.front().y;
+  for (const auto& run : latinDisplay.fills) latinTop = std::min(latinTop, (int)run.y);
+  for (const auto& run : cyrillicDisplay.fills) cyrillicTop = std::min(cyrillicTop, (int)run.y);
+  EXPECT_EQ(latinTop, cyrillicTop);
+}
+
+TEST(CanvasCyrillic, DescenderUsesBottomRowWithoutClipping) {
+  FakeDisplayDriver d(128, 64);
+  mishmesh::Canvas c(&d);
+
+  c.drawText(fontBody(), 0, 0, "у", DisplayDriver::LIGHT);
+
+  int bottomPixels = 0;
+  for (const auto& run : d.fills) {
+    if (run.y == c.fontHeight(fontBody())) bottomPixels += run.w;
+  }
+  EXPECT_GE(bottomPixels, 2);
+}
+
+TEST(CanvasCyrillic, BodyLinesKeepTwoBlankRowsApart) {
+  FakeDisplayDriver d(128, 64);
+  mishmesh::Canvas c(&d);
+  const Font* font = fontBody();
+
+  c.drawText(font, 0, 0, "ЁЩ", DisplayDriver::LIGHT);
+  c.drawText(font, 0, c.lineHeight(font), "ЙЦ", DisplayDriver::LIGHT);
+
+  for (const auto& run : d.fills) {
+    EXPECT_NE(10, run.y);
+    EXPECT_NE(11, run.y);
+  }
 }
 
 TEST(CanvasTheme, LightModeSwapsColorsAtDriverBoundary) {

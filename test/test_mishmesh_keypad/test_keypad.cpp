@@ -616,6 +616,41 @@ TEST(KbdLayouts, TurkishUppercaseHasDottedI) {
   EXPECT_STREQ("GHIİĞ", kbdLayoutAt(tr).upper[3]);
 }
 
+TEST(KbdLayouts, RussianLayoutContainsCyrillicAndYo) {
+  int ru = kbdLayoutIndexByCode("RU");
+  ASSERT_GE(ru, 0);
+  EXPECT_STREQ("Русский", kbdLayoutAt(ru).name);
+  EXPECT_STREQ("абвг", kbdLayoutAt(ru).lower[1]);
+  EXPECT_STREQ("деёжз", kbdLayoutAt(ru).lower[2]);
+  EXPECT_STREQ("ЬЭЮЯ", kbdLayoutAt(ru).upper[8]);
+}
+
+TEST(Keypad, RussianLabelsAndMultitapUseUtf8) {
+  KeypadApplet k;
+  ASSERT_TRUE(k.setLanguageByCode("RU"));
+  EXPECT_STREQ("абвг", k.cellLabel(0, 1));
+  EXPECT_STREQ("дежз", k.cellLabel(0, 2));  // ё stays hidden on the compact key cap
+  k.setFocusForTest(0, 1);
+  k.onInput(InputEvent::Select); // а
+  k.onInput(InputEvent::Select); // б
+  EXPECT_STREQ("б", k.text());
+  EXPECT_EQ(2u, k.length());
+  EXPECT_EQ(2, k.cursor());
+}
+
+TEST(Keypad, RussianHiddenYoRemainsInMultitapCycle) {
+  KeypadApplet k;
+  ASSERT_TRUE(k.setLanguageByCode("RU"));
+  EXPECT_STREQ("дежз", k.cellLabel(0, 2));
+  EXPECT_STREQ("деёжз", kbdLayoutAt(k.langIndex()).lower[2]);
+
+  k.setFocusForTest(0, 2);
+  k.onInput(InputEvent::Select);  // д
+  k.onInput(InputEvent::Select);  // е
+  k.onInput(InputEvent::Select);  // ё
+  EXPECT_STREQ("ё", k.text());
+}
+
 TEST(Keypad, LanguageSwitchKeepsBaseLabelsButChangesLayout) {
   KeypadApplet k;
   EXPECT_EQ(0, k.langIndex());

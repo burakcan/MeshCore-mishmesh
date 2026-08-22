@@ -26,3 +26,6 @@ mishmesh/text/emoji-local/*
 
 # Local-only mishmesh screenshot tool (uncommitted dev tooling)
 tools/mishmesh-shots/
+# Python bytecode and generated font review sheets
+__pycache__/
+mishmesh/text/fonts/*preview*.png
