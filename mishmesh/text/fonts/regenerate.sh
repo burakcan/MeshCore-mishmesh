@@ -30,8 +30,12 @@ gen_text Num      16 0x20 0x2E-0x3A   # clock/stopwatch: space . / 0-9 :
 python3 build_exta.py Body.c     --emit
 python3 build_exta.py Subtitle.c --emit
 
-# --- Cyrillic. The complete atlases are hand-edited and stored as explicit
-# overrides so regeneration cannot silently alter any reviewed glyph. ---
+# --- Cyrillic (U+0400-U+045F plus the pair Ukrainian needs at U+0490). Stored
+#     as explicit overrides in cyrillic_overrides.py so regeneration cannot
+#     silently alter a reviewed glyph. The Russian letters are hand-edited; the
+#     rest were composed from shapes already in the font - Latin twins (S I J),
+#     mirrored E-forms, soft-sign ligatures, and diacritics taken off the
+#     accented Latin - so weight and baseline match by construction. ---
 python3 build_cyrillic.py Body.c
 python3 build_cyrillic.py Subtitle.c
 

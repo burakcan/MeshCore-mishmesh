@@ -137,15 +137,24 @@ TEST(CanvasFallback, UnrenderableGlyphDrawsBlockNotQuestionMark) {
 }
 
 TEST(CanvasEllipsis, CyrillicIsNeverSplitMidCodepoint) {
-  FakeDisplayDriver d;
-  mishmesh::Canvas c(&d);
   const mf_font_s* f = mishmesh::fontBody();
-  int maxw = c.textWidth(f, "П...");
+  FakeDisplayDriver truncated, expected;
+  mishmesh::Canvas tc(&truncated), ec(&expected);
+  int maxw = ec.textWidth(f, "П...");
 
-  c.drawTextEllipsized(f, 0, 0, maxw, "Привет", DisplayDriver::LIGHT);
+  tc.drawTextEllipsized(f, 0, 0, maxw, "Привет", DisplayDriver::LIGHT);
+  ec.drawText(f, 0, 0, "П...", DisplayDriver::LIGHT);
 
-  ASSERT_FALSE(d.fills.empty());
-  for (const auto& run : d.fills) EXPECT_EQ(1, run.h);
+  // Cutting between П's two UTF-8 bytes would leave a stray lead byte, which
+  // renders as the block placeholder rather than the letter.
+  ASSERT_FALSE(truncated.fills.empty());
+  ASSERT_EQ(expected.fills.size(), truncated.fills.size());
+  for (size_t i = 0; i < expected.fills.size(); i++) {
+    EXPECT_EQ(expected.fills[i].x, truncated.fills[i].x) << "run " << i;
+    EXPECT_EQ(expected.fills[i].y, truncated.fills[i].y) << "run " << i;
+    EXPECT_EQ(expected.fills[i].w, truncated.fills[i].w) << "run " << i;
+    EXPECT_EQ(expected.fills[i].h, truncated.fills[i].h) << "run " << i;
+  }
 }
 
 TEST(CanvasCyrillic, RussianTextUsesBitmapGlyphs) {

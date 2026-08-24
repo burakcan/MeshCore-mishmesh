@@ -251,17 +251,23 @@
   "use strict";
 
   const ROLE = {
-    Body: { height: 9, asciiHeight: 8, lineHeight: 11, offsetY: { latin: 1, cyrillic: 1 } },
-    Subtitle: { height: 14, asciiHeight: 13, lineHeight: 17, offsetY: { latin: 1, cyrillic: 1 } },
+    Body: { height: 10, asciiHeight: 8, lineHeight: 11, offsetY: { latin: 1, cyrillic: 0 } },
+    Subtitle: { height: 15, asciiHeight: 13, lineHeight: 17, offsetY: { latin: 1, cyrillic: 0 } },
     Caption: { height: 6, asciiHeight: 6, lineHeight: 6, offsetY: { latin: 0, cyrillic: 0 } }
   };
-  const RU_UPPER = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
-  const RU_LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+  const RU_UPPER = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯЂЃЄЅІЇЈЉЊЋЌЎЏҐ";
+  const RU_LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяђѓєѕіїјљњћќўџґ";
   const EN = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?-+/:;()[]_@#%&*=";
   const SETS = {
-    latin: { suffix: "0", first: 0x20, count: 95, chars: EN },
-    cyrillic: { suffix: "cyr", first: 0x400, count: 96, chars: RU_UPPER + RU_LOWER }
+    latin: { banks: [{ suffix: "0", first: 0x20, count: 95 }], chars: EN },
+    cyrillic: {
+      banks: [{ suffix: "cyr0", first: 0x400, count: 96 }, { suffix: "cyr1", first: 0x490, count: 2 }],
+      chars: RU_UPPER + RU_LOWER
+    }
   };
+
+  const inBank = (bank, cp) => cp >= bank.first && cp < bank.first + bank.count;
+  const bankFor = (charset, cp) => SETS[charset].banks.find(bank => inBank(bank, cp));
 
   const $ = id => document.getElementById(id);
   const state = {
@@ -290,25 +296,26 @@
   }
 
   function decodeSet(source, role, charset) {
-    const cfg = SETS[charset];
     const prefix = `mf_bwfont_${role}`;
-    const data = parseArray(source, `${prefix}_glyph_data_${cfg.suffix}`);
-    const offsets = parseArray(source, `${prefix}_glyph_offsets_${cfg.suffix}`);
-    const advances = parseArray(source, `${prefix}_glyph_widths_${cfg.suffix}`);
     const storedHeight = charset === "latin" ? ROLE[role].asciiHeight : ROLE[role].height;
     const height = ROLE[role].height;
     const heightBytes = Math.ceil(storedHeight / 8);
     const glyphs = new Map();
-    for (let index = 0; index < cfg.count; index++) {
-      const columns = [];
-      for (let column = offsets[index]; column < offsets[index + 1]; column++) {
-        const pixels = [];
-        for (let y = 0; y < height; y++) {
-          pixels.push(y < storedHeight && Boolean(data[column * heightBytes + Math.floor(y / 8)] & (1 << (y % 8))));
+    for (const bank of SETS[charset].banks) {
+      const data = parseArray(source, `${prefix}_glyph_data_${bank.suffix}`);
+      const offsets = parseArray(source, `${prefix}_glyph_offsets_${bank.suffix}`);
+      const advances = parseArray(source, `${prefix}_glyph_widths_${bank.suffix}`);
+      for (let index = 0; index < bank.count; index++) {
+        const columns = [];
+        for (let column = offsets[index]; column < offsets[index + 1]; column++) {
+          const pixels = [];
+          for (let y = 0; y < height; y++) {
+            pixels.push(y < storedHeight && Boolean(data[column * heightBytes + Math.floor(y / 8)] & (1 << (y % 8))));
+          }
+          columns.push(pixels);
         }
-        columns.push(pixels);
+        glyphs.set(bank.first + index, { pixels: columns, advance: advances[index] });
       }
-      glyphs.set(cfg.first + index, { pixels: columns, advance: advances[index] });
     }
     const originals = new Map([...glyphs].map(([cp, glyph]) => [cp, cloneGlyph(glyph)]));
     return { glyphs, originals, edited: new Set(), storedHeight, offsetY: ROLE[role].offsetY[charset] };
@@ -537,8 +544,9 @@
   }
 
   function glyphForCodePoint(cp) {
-    if (cp >= SETS.latin.first && cp < SETS.latin.first + SETS.latin.count) return { glyph: state.sets.latin.glyphs.get(cp), charset: "latin" };
-    if (cp >= SETS.cyrillic.first && cp < SETS.cyrillic.first + SETS.cyrillic.count) return { glyph: state.sets.cyrillic.glyphs.get(cp), charset: "cyrillic" };
+    for (const charset of ["latin", "cyrillic"]) {
+      if (bankFor(charset, cp)) return { glyph: state.sets[charset].glyphs.get(cp), charset };
+    }
     return { glyph: state.sets.latin.glyphs.get("?".codePointAt(0)), charset: "latin" };
   }
 
@@ -564,12 +572,11 @@
     }
   }
 
-  function encodeSet(charset) {
-    const cfg = SETS[charset];
+  function encodeBank(charset, bank) {
     const set = state.sets[charset];
     const heightBytes = Math.ceil(set.storedHeight / 8);
     const data = [], offsets = [0], widths = [];
-    for (let cp = cfg.first; cp < cfg.first + cfg.count; cp++) {
+    for (let cp = bank.first; cp < bank.first + bank.count; cp++) {
       const glyph = set.glyphs.get(cp);
       for (const column of glyph.pixels) {
         for (let byteIndex = 0; byteIndex < heightBytes; byteIndex++) {
@@ -606,11 +613,12 @@
     const prefix = `mf_bwfont_${state.role}`;
     for (const charset of ["latin", "cyrillic"]) {
       if (!state.sets[charset].edited.size) continue;
-      const cfg = SETS[charset];
-      const encoded = encodeSet(charset);
-      source = replaceArray(source, `${prefix}_glyph_data_${cfg.suffix}`, formatArray(`${prefix}_glyph_data_${cfg.suffix}`, encoded.data, "uint8_t", 16));
-      source = replaceArray(source, `${prefix}_glyph_offsets_${cfg.suffix}`, formatArray(`${prefix}_glyph_offsets_${cfg.suffix}`, encoded.offsets, "uint16_t", 10));
-      source = replaceArray(source, `${prefix}_glyph_widths_${cfg.suffix}`, formatArray(`${prefix}_glyph_widths_${cfg.suffix}`, encoded.widths, "uint8_t", 16));
+      for (const bank of SETS[charset].banks) {
+        const encoded = encodeBank(charset, bank);
+        source = replaceArray(source, `${prefix}_glyph_data_${bank.suffix}`, formatArray(`${prefix}_glyph_data_${bank.suffix}`, encoded.data, "uint8_t", 16));
+        source = replaceArray(source, `${prefix}_glyph_offsets_${bank.suffix}`, formatArray(`${prefix}_glyph_offsets_${bank.suffix}`, encoded.offsets, "uint16_t", 10));
+        source = replaceArray(source, `${prefix}_glyph_widths_${bank.suffix}`, formatArray(`${prefix}_glyph_widths_${bank.suffix}`, encoded.widths, "uint8_t", 16));
+      }
     }
     return source;
   }

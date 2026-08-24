@@ -8,15 +8,15 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
-FIRST = 0x0400
-UPPER = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
-LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
-ROLE_HEIGHTS = {"Body": 9, "Subtitle": 14, "Caption": 6}
+CYRILLIC_RANGES = ((0x0400, 0x045F), (0x0490, 0x0491))
+UPPER = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯЂЃЄЅІЇЈЉЊЋЌЎЏҐ"
+LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяђѓєѕіїјљњћќўџґ"
+ROLE_HEIGHTS = {"Body": 10, "Subtitle": 15, "Caption": 6}
 ROLE_ASCII_HEIGHTS = {"Body": 8, "Subtitle": 13, "Caption": 6}
 ROLE_LINE_HEIGHTS = {"Body": 11, "Subtitle": 17, "Caption": 6}
 ROLE_OFFSETS = {
-    "Body": {"latin": 1, "cyrillic": 1},
-    "Subtitle": {"latin": 1, "cyrillic": 1},
+    "Body": {"latin": 1, "cyrillic": 0},
+    "Subtitle": {"latin": 1, "cyrillic": 0},
     "Caption": {"latin": 0, "cyrillic": 0},
 }
 ROLE_SCALES = {"Body": 6, "Subtitle": 4, "Caption": 9}
@@ -40,17 +40,36 @@ def parse_array(source, name):
 def load_atlas(path, role, charset):
     source = path.read_text(encoding="ascii")
     prefix = f"mf_bwfont_{role}"
-    suffix = "cyr" if charset == "cyrillic" else "0"
-    first = FIRST if charset == "cyrillic" else 0x20
     stored_height = ROLE_HEIGHTS[role] if charset == "cyrillic" else ROLE_ASCII_HEIGHTS[role]
     line_height = ROLE_LINE_HEIGHTS[role]
     offset_y = ROLE_OFFSETS[role][charset]
-    data = parse_array(source, f"{prefix}_glyph_data_{suffix}")
-    offsets = parse_array(source, f"{prefix}_glyph_offsets_{suffix}")
-    advances = parse_array(source, f"{prefix}_glyph_widths_{suffix}")
     height_bytes = (stored_height + 7) // 8
 
+    # Cyrillic lives in one array per contiguous range; Latin is a single block.
+    banks = []
+    if charset == "cyrillic":
+        spans = CYRILLIC_RANGES
+        suffixes = [f"cyr{i}" for i in range(len(spans))]
+    else:
+        spans = ((0x20, 0x7E),)
+        suffixes = ["0"]
+    for (lo, _hi), suffix in zip(spans, suffixes):
+        banks.append((
+            lo,
+            parse_array(source, f"{prefix}_glyph_data_{suffix}"),
+            parse_array(source, f"{prefix}_glyph_offsets_{suffix}"),
+            parse_array(source, f"{prefix}_glyph_widths_{suffix}"),
+        ))
+
+    def bank_for(char):
+        for lo, data, offsets, advances in banks:
+            index = ord(char) - lo
+            if 0 <= index < len(advances):
+                return lo, data, offsets, advances
+        raise KeyError(char)
+
     def glyph(char):
+        first, data, offsets, advances = bank_for(char)
         index = ord(char) - first
         first_column, last_column = offsets[index:index + 2]
         columns = []
@@ -90,8 +109,9 @@ def draw_glyph(draw, origin, columns, advance, height, scale):
 
 def render(fonts_dir, output, roles, charset):
     title_height = 68
-    rows_per_role = 6
-    section_height = title_height + rows_per_role * CELL_HEIGHT
+    alphabets = ALPHABETS[charset]
+    rows_per_case = max(-(-len(a) // COLS) for a in alphabets)
+    section_height = title_height + rows_per_case * len(alphabets) * CELL_HEIGHT
     width = MARGIN * 2 + COLS * CELL_WIDTH
     height = MARGIN * 2 + len(roles) * section_height
     image = Image.new("RGB", (width, height), "#071019")
@@ -113,9 +133,9 @@ def render(fonts_dir, output, roles, charset):
         draw.text((MARGIN + 220, section_y + 7), source.name, font=small, fill="#7f9bad")
 
         grid_y = section_y + 38
-        for case_index, alphabet in enumerate(ALPHABETS[charset]):
+        for case_index, alphabet in enumerate(alphabets):
             for index, char in enumerate(alphabet):
-                row = case_index * 3 + index // COLS
+                row = case_index * rows_per_case + index // COLS
                 column = index % COLS
                 cell_x = MARGIN + column * CELL_WIDTH
                 cell_y = grid_y + row * CELL_HEIGHT

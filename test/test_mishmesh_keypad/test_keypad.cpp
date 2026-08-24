@@ -651,6 +651,99 @@ TEST(Keypad, RussianHiddenYoRemainsInMultitapCycle) {
   EXPECT_STREQ("ё", k.text());
 }
 
+static std::vector<std::string> utf8Split(const char* s) {
+  std::vector<std::string> out;
+  for (const char* p = s; *p; ) {
+    unsigned char b = (unsigned char)*p;
+    int n = b < 0x80 ? 1 : (b >> 5) == 0x6 ? 2 : (b >> 4) == 0xE ? 3 : 4;
+    out.push_back(std::string(p, n));
+    p += n;
+  }
+  return out;
+}
+
+// A layout is only usable if every letter of its alphabet is reachable: exactly
+// once across the eight letter cells, with `upper` cycling in lockstep so a tap
+// count lands on the same letter in either case.
+static void expectCoversAlphabet(const char* code, const char* name, const char* alphabet) {
+  int idx = kbdLayoutIndexByCode(code);
+  ASSERT_GE(idx, 0) << code << " missing from LAYOUTS";
+  const KbdLayout& L = kbdLayoutAt(idx);
+  EXPECT_STREQ(name, L.name);
+
+  std::map<std::string, int> seen;
+  for (int i = 1; i <= 8; i++) {
+    for (const std::string& ch : utf8Split(L.lower[i])) seen[ch]++;
+    EXPECT_EQ(utf8Split(L.lower[i]).size(), utf8Split(L.upper[i]).size())
+        << code << " cell " << i << ": lower/upper group lengths differ";
+  }
+  for (const std::string& ch : utf8Split(alphabet)) {
+    EXPECT_EQ(1, seen[ch]) << code << " letter " << ch;
+    seen.erase(ch);
+  }
+  for (const auto& kv : seen) ADD_FAILURE() << code << " has stray letter " << kv.first;
+}
+
+TEST(KbdLayouts, RussianCoversAlphabet) {
+  expectCoversAlphabet("RU", "Русский", "абвгдеёжзийклмнопрстуфхцчшщъыьэюя");
+}
+
+TEST(KbdLayouts, UkrainianCoversAlphabet) {
+  expectCoversAlphabet("UK", "Українська", "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя");
+}
+
+TEST(KbdLayouts, BelarusianCoversAlphabet) {
+  expectCoversAlphabet("BE", "Беларуская", "абвгдеёжзійклмнопрстуўфхцчшыьэюя");
+}
+
+TEST(KbdLayouts, BulgarianCoversAlphabet) {
+  expectCoversAlphabet("BG", "Български", "абвгдежзийклмнопрстуфхцчшщъьюя");
+}
+
+TEST(KbdLayouts, SerbianCoversAlphabet) {
+  expectCoversAlphabet("SR", "Српски", "абвгдђежзијклљмнњопрстћуфхцчџш");
+}
+
+TEST(KbdLayouts, MacedonianCoversAlphabet) {
+  expectCoversAlphabet("MK", "Македонски", "абвгдѓежзѕијклљмнњопрстќуфхцчџш");
+}
+
+TEST(Keypad, LatinLayoutsFallBackToBaseLabels) {
+  int en = kbdLayoutIndexByCode("EN");
+  ASSERT_GE(en, 0);
+  EXPECT_EQ(nullptr, kbdLayoutAt(en).capsLower[1]);
+  EXPECT_EQ(nullptr, kbdLayoutAt(en).capsUpper[1]);
+
+  KeypadApplet k;
+  ASSERT_TRUE(k.setLanguageByCode("EN"));
+  EXPECT_STREQ("abc", k.cellLabel(0, 1));
+  EXPECT_STREQ("wxyz", k.cellLabel(2, 2));
+  k.cycleMode();
+  EXPECT_STREQ("ABC", k.cellLabel(0, 1));
+}
+
+TEST(Keypad, UkrainianCapHidesTheFifthLetter) {
+  KeypadApplet k;
+  ASSERT_TRUE(k.setLanguageByCode("UK"));
+  EXPECT_STREQ("абвг", k.cellLabel(0, 1));   // ґ would overflow the 32px key
+  EXPECT_STREQ("абвгґ", kbdLayoutAt(k.langIndex()).lower[1]);
+
+  k.setFocusForTest(0, 1);
+  for (int i = 0; i < 5; i++) k.onInput(InputEvent::Select);
+  EXPECT_STREQ("ґ", k.text());
+}
+
+TEST(Keypad, CyrillicCapsComeFromTheirOwnLayout) {
+  KeypadApplet k;
+  ASSERT_TRUE(k.setLanguageByCode("MK"));
+  EXPECT_STREQ("дѓеж", k.cellLabel(0, 2));
+  k.cycleMode();
+  EXPECT_STREQ("ДЃЕЖ", k.cellLabel(0, 2));
+
+  ASSERT_TRUE(k.setLanguageByCode("SR"));   // still in Shift mode
+  EXPECT_STREQ("ЛЉМН", k.cellLabel(1, 1));  // cell index 4
+}
+
 TEST(Keypad, LanguageSwitchKeepsBaseLabelsButChangesLayout) {
   KeypadApplet k;
   EXPECT_EQ(0, k.langIndex());

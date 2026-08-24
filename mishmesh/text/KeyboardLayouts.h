@@ -11,6 +11,12 @@ struct KbdLayout {
   const char* name;      // picker row label ("English","Deutsch","Türkçe")
   const char* lower[9];  // multi-tap groups, cells 0..8, lowercase mode
   const char* upper[9];  // uppercase mode
+  // Visible key caps. A null cell means "use the Latin base label" - what every
+  // Latin layout does, since its accented variants cycle but don't fit on a key.
+  // Non-Latin layouts must fill these in; a cap may drop trailing letters of its
+  // group (a key is 32px, so 4 Cyrillic glyphs is the practical maximum).
+  const char* capsLower[9];
+  const char* capsUpper[9];
 };
 
 int              kbdLayoutCount();
