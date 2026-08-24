@@ -1166,6 +1166,7 @@ void UITask::MsgSvc::setChatWake(const mishmesh::ConvoKey& k, mishmesh::WakeOver
 #define MSGCFG_AUTO_RETRY      0x01
 #define MSGCFG_AUTO_RESET_PATH 0x02
 #define MSGCFG_SUPPRESS_WAKE   0x04
+#define MSGCFG_OPEN_AT_UNREAD  0x08
 
 mishmesh::MessagesConfig UITask::MsgSvc::getMessagesConfig() const {
   if (!_msgFlagsLoaded) {                 // load the file once, then serve from RAM
@@ -1183,6 +1184,7 @@ mishmesh::MessagesConfig UITask::MsgSvc::getMessagesConfig() const {
   NodePrefs* p = the_mesh.getNodePrefs();
   c.directAcks = (p && p->multi_acks >= 1) ? 2 : 1;
   c.wakeOnMessage = (_msgFlags & MSGCFG_SUPPRESS_WAKE) == 0;   // absent bit = wake on (default)
+  c.openAtUnread  = (_msgFlags & MSGCFG_OPEN_AT_UNREAD) != 0;
   c.repeatMins     = _repeat[0];
   c.repeatStopMins = _repeat[1];
   return c;
@@ -1193,6 +1195,7 @@ void UITask::MsgSvc::setMessagesConfig(const mishmesh::MessagesConfig& c) {
   if (c.autoRetry)     flags |= MSGCFG_AUTO_RETRY;
   if (c.autoResetPath) flags |= MSGCFG_AUTO_RESET_PATH;
   if (!c.wakeOnMessage) flags |= MSGCFG_SUPPRESS_WAKE;
+  if (c.openAtUnread)   flags |= MSGCFG_OPEN_AT_UNREAD;
   if (storage) storage->save("msgcfg", &flags, 1);
   _msgFlags = flags; _msgFlagsLoaded = true;   // keep the cache hot
   uint8_t rep[2] = { c.repeatMins, c.repeatStopMins };

@@ -34,6 +34,7 @@ struct MessagesConfig {
   bool    wakeOnMessage = true;   // false = incoming messages don't wake a sleeping screen
   uint8_t repeatMins    = 0;      // re-alert every N minutes while unread; 0 = off
   uint8_t repeatStopMins = 30;    // give up re-alerting after N minutes; 0 = never
+  bool    openAtUnread  = false;  // true = a chat opens at its first unread message, not the newest
 };
 
 struct ConvoView {

@@ -18,8 +18,8 @@ static void acksLabel(int v, char* out, uint16_t cap) {
 const char* MessagesSettingsPanel::Model::label(int i) const {
   static const char* LABELS[ROW_COUNT] = { "Auto retry DMs", "Auto reset DM paths",
                                            "Direct msg acks", "Wake screen on message",
-                                           "Repeat alert", "Channel sound",
-                                           "Direct sound", "Quick replies" };
+                                           "Open at unread", "Repeat alert",
+                                           "Channel sound", "Direct sound", "Quick replies" };
   return (i >= 0 && i < ROW_COUNT) ? LABELS[i] : "";
 }
 
@@ -29,6 +29,7 @@ bool MessagesSettingsPanel::Model::toggleState(int i) const {
   if (i == AutoRetry)     return c.autoRetry;
   if (i == AutoResetPath) return c.autoResetPath;
   if (i == WakeOnMessage) return c.wakeOnMessage;
+  if (i == OpenAtUnread)  return c.openAtUnread;
   return false;
 }
 
@@ -97,6 +98,7 @@ bool MessagesSettingsPanel::onInput(InputEvent ev) {
       if (i == Model::AutoRetry)          cfg.autoRetry = !cfg.autoRetry;
       else if (i == Model::AutoResetPath) cfg.autoResetPath = !cfg.autoResetPath;
       else if (i == Model::WakeOnMessage) cfg.wakeOnMessage = !cfg.wakeOnMessage;
+      else if (i == Model::OpenAtUnread)  cfg.openAtUnread = !cfg.openAtUnread;
       _svc->setMessagesConfig(cfg);
     } else if (i == Model::DirectAcks && _svc) {
       _acks.configure("DM acks", cfg.directAcks, 1, 2, acksLabel);

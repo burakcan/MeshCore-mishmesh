@@ -177,6 +177,20 @@ TEST(MessagesSettingsPanel, TogglesAndAcksStepper) {
   EXPECT_EQ(2, svc.getMessagesConfig().directAcks);
 }
 
+TEST(MessagesSettingsPanel, OpenAtUnreadToggles) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::MessagesSettingsPanel panel;
+  panel.begin(ctx);
+  EXPECT_FALSE(svc.getMessagesConfig().openAtUnread);   // default: open at the newest message
+  using Row = mishmesh::MessagesSettingsPanel::Model;
+  for (int i = 0; i < Row::OpenAtUnread; i++) panel.onInput(mishmesh::InputEvent::NavDown);
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  EXPECT_TRUE(svc.getMessagesConfig().openAtUnread);
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  EXPECT_FALSE(svc.getMessagesConfig().openAtUnread);
+}
+
 TEST(MessagesSettingsPanel, RepeatAlertRowShowsTheInterval) {
   FakeMessagesService svc;
   mishmesh::AppletContext ctx; ctx.messages = &svc;

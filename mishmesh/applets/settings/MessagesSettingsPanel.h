@@ -28,11 +28,13 @@ public:
   struct Model : ListModel {
     MessagesService* svc = nullptr;
     AppServices*     app = nullptr;
-    enum Row : int { AutoRetry, AutoResetPath, DirectAcks, WakeOnMessage, RepeatAlert,
-                     ChannelSound, DirectSound, QuickReplies, ROW_COUNT };
+    enum Row : int { AutoRetry, AutoResetPath, DirectAcks, WakeOnMessage, OpenAtUnread,
+                     RepeatAlert, ChannelSound, DirectSound, QuickReplies, ROW_COUNT };
     int count() const override { return ROW_COUNT; }
     const char* label(int i) const override;
-    bool isToggle(int i) const override { return i == AutoRetry || i == AutoResetPath || i == WakeOnMessage; }
+    bool isToggle(int i) const override {
+      return i == AutoRetry || i == AutoResetPath || i == WakeOnMessage || i == OpenAtUnread;
+    }
     bool toggleState(int i) const override;
     const char* value(int i) const override;   // acks "1"/"2", tone names, reply count
   };

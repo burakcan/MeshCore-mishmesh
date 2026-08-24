@@ -102,6 +102,11 @@ void MessageThreadApplet::onStart(AppletContext& ctx) {
   _scrollY = _scrollTarget = 0;
   _animReady = false;   // snap (no slide-in) on the opening frame
   _pinBottom = true;    // first render scrolls to the newest message
+  _pinFocusTop = false;
+  if (_svc && n > 0 && _svc->getMessagesConfig().openAtUnread) {
+    int first = firstUnreadIndex(n);
+    if (first >= 0) { _focus = first; _pinBottom = false; _pinFocusTop = true; }
+  }
   // Guess "has scrollbar" for the first layout. Any chat tall enough to be slow
   // to open overflows, so reserving the gutter up front makes that first measure
   // final - without this the stale state from the previous chat can force a
@@ -155,6 +160,29 @@ const char* MessageThreadApplet::resolveTitle() const {
     if (_svc->getConvo(i, cv) && cv.key.equals(_key)) return cv.name;
   }
   return _fallbackName;
+}
+
+int MessageThreadApplet::unreadCount() const {
+  ConvoView cv;
+  for (int i = 0; _svc && i < _svc->convoCount(); i++) {
+    if (_svc->getConvo(i, cv) && cv.key.equals(_key)) return cv.unread;
+  }
+  return 0;
+}
+
+// Only inbound messages raise the unread count, so the unread run is the last
+// `unread` INBOUND messages - counting back `unread` entries would land too late
+// on any chat with replies mixed in.
+int MessageThreadApplet::firstUnreadIndex(int n) const {
+  int remaining = unreadCount();
+  if (remaining <= 0 || !_svc) return -1;
+  int i = n - 1;
+  MessageView mv;
+  for (; i >= 0; i--) {
+    if (!_svc->getMessage(_key, i, mv) || mv.outbound) continue;
+    if (--remaining == 0) break;
+  }
+  return i < 0 ? 0 : i;   // more unread claimed than inbound present -> oldest
 }
 
 int MessageThreadApplet::blockHeight(Canvas& body, const MessageView& m) const {
@@ -376,6 +404,12 @@ int MessageThreadApplet::onRender(Canvas& c) {
     _scrollTarget = (_contentH > _bodyH) ? _contentH - _bodyH : 0;
     _animReady = false;          // snap to the bottom on open, no slide-in
     _pinBottom = false;
+  } else if (_pinFocusTop) {
+    int maxScroll = (_contentH > _bodyH) ? _contentH - _bodyH : 0;
+    _scrollTarget = _focusTop > maxScroll ? maxScroll : _focusTop;
+    _animReady = false;
+    _pinFocusTop = false;
+    _unseenBelow = (_contentH - BTN_H) > _scrollTarget + _bodyH;
   }
   adjustScroll();
 

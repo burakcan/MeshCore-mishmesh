@@ -25,6 +25,8 @@ public:
   // An open conversation stays put on wake - don't reset to home mid-chat.
   bool keepOnWake() const override { return true; }
   int  focusedIndexForTest() const { return _focus; }
+  int  focusTopForTest() const { return _focusTop; }
+  int  scrollForTest() const { return _scrollY; }
   const char* headerTitleForTest() const { return _titleBuf; }
   int  selectedTabForTest() const { return _tabs.selected(); }
   int  barRowForTest() const { return _barRow; }
@@ -34,6 +36,8 @@ public:
   const char* msgMenuLabelForTest(int i) const { return _msgMenu.label(i); }
 private:
   const char* resolveTitle() const;
+  int  unreadCount() const;                 // this chat's badge count, 0 if none
+  int  firstUnreadIndex(int n) const;       // -1 when nothing is unread
   bool onConversationInput(InputEvent ev);   // tab 0: message nav / per-message menu
   int  blockHeight(Canvas& body, const MessageView& m) const;
   void layoutFocus(Canvas& body, int n);   // sets _focusTop/_focusBot/_contentH
@@ -82,6 +86,7 @@ private:
   ConvoKey         _layKey{};              // chat the cache belongs to
   bool             _layValid = false;
   bool             _pinBottom = false;// on next render, scroll to the newest message
+  bool             _pinFocusTop = false; // on next render, park the focused message at the viewport top
   bool             _unseenBelow = false; // a message arrived below the fold -> show a chevron
   int              _prevCount = 0;    // message count last frame, to detect new arrivals
   uint32_t         _lastMsgTime = 0;  // newest message's time; detects arrivals even at the cap
