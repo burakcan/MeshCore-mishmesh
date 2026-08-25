@@ -9,6 +9,11 @@ its heading with `## v<version>`.
 
 ## Unreleased
 
+## v1.4.0
+
+- Cyrillic rendering and keyboard support for Ukrainian, Russian, Belarussian, Bulgarian, Serbian and Macedonian languages. Thanks to @nxstd for the base of this work.
+- Option to open chats from the oldest unread message
+
 ## v1.3.0
 
 **Now built on meshcore v1.17.1** (was v1.16.0)

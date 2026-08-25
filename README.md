@@ -56,6 +56,10 @@ below.
 
 - **Messaging** - direct messages, channels, and room servers, with delivery
   status, auto-retry, and path reset when a route goes stale.
+- **Text entry** - Nokia-style multi-tap keypad with symbols and emoji, in 18
+  keyboard layouts. Latin (English, German, French, Spanish, Italian,
+  Portuguese, Swedish, Norwegian, Turkish, Polish, Czech, Hungarian) and
+  Cyrillic (Russian, Ukrainian, Belarusian, Bulgarian, Serbian, Macedonian).
 - **Contacts** - favourites and per-kind tabs (people, repeaters, rooms),
   rename, ping, telemetry requests, and path management.
 - **Repeater management** - log in to a repeater and configure it from the
