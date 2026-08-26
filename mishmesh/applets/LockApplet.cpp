@@ -1,4 +1,5 @@
 #include <mishmesh/applets/LockApplet.h>
+#include <mishmesh/core/Anim.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/text/Fonts.h>
@@ -123,11 +124,14 @@ int LockApplet::onRender(Canvas& c) {
     _mode = Resting; _pips = 0; _flash = 0;
     return 1000;
   }
-  if (_mode == Locking && now - _animAt > LOCK_ANIM_MS) {
+  // The lock confirmation still has to be seen, so hold it - it is the ease that
+  // goes, not the frame. Unlocking is the opposite: home reappearing is itself the
+  // feedback, so skip straight to the pop rather than spend a flush on a flourish.
+  if (_mode == Locking && now - _animAt > lockHold()) {
     _mode = Resting;
     return 1000;
   }
-  if (_mode == Unlocking && now - _animAt > UNLOCK_ANIM_MS) {
+  if (_mode == Unlocking && (reducedMotion() || now - _animAt > UNLOCK_ANIM_MS)) {
     if (_host) _host->pop();             // remove the lock -> home revealed
     return 0;
   }
@@ -144,7 +148,8 @@ int LockApplet::onRender(Canvas& c) {
   const int bodyTop = pipY - 6 - 20;        // padlock (body h=20) clears the pips
   float open01 = 0.0f;
   if (_mode == Unlocking) open01 = easeOut((float)(now - _animAt) / UNLOCK_ANIM_MS);
-  else if (_mode == Locking) open01 = 1.0f - easeOut((float)(now - _animAt) / LOCK_ANIM_MS);
+  else if (_mode == Locking) open01 = reducedMotion() ? 0.0f
+                                    : 1.0f - easeOut((float)(now - _animAt) / LOCK_ANIM_MS);
   drawPadlock(c, w / 2, bodyTop, open01);
 
   if (_mode == Challenge || _mode == Unlocking) {
@@ -167,6 +172,15 @@ int LockApplet::onRender(Canvas& c) {
   c.drawText(f, w / 2, textY, hint, DisplayDriver::LIGHT, TextAlign::Center);
 
   if (_flash) _flash--;
+  if (reducedMotion()) {
+    // One still frame, then a single wake to clear it. No 33ms ticking: each of
+    // those would be a full panel refresh.
+    if (_mode == Locking) {
+      const uint32_t elapsed = now - _animAt;
+      return elapsed >= lockHold() ? 0 : (int)(lockHold() - elapsed);
+    }
+    return 400;
+  }
   if (_mode == Locking || _mode == Unlocking || _flash) return 33;   // animate
   return 400;                                                         // idle-timeout wake
 }

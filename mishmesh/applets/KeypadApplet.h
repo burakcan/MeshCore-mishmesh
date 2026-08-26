@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mishmesh/core/Anim.h>
+
 #include <stdint.h>
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/core/EmojiCatalog.h>
@@ -20,6 +22,10 @@ class KeypadApplet : public Applet, public GridModel {
 public:
   static const uint16_t KP_MAX = 160;          // matches message char limit
   static const uint32_t TAP_TIMEOUT_MS = 800;  // multi-tap commit timeout
+  // A tap only becomes visible when the frame reaches the panel, which on e-ink is
+  // a few hundred ms after the press. Cycling to 'c' needs a window wide enough to
+  // cover three of those, or the letter commits while you are still tapping.
+  static uint32_t tapTimeout() { return reducedMotion() ? TAP_TIMEOUT_MS * 2 : TAP_TIMEOUT_MS; }
 
   // Shift = "Abc": one-shot capitalize - the next letter is upper, then it
   // reverts to Lower automatically once that letter is committed.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mishmesh/core/Anim.h>
+
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/widgets/BatteryIndicator.h>
 #include <mishmesh/widgets/QuickDrawer.h>
@@ -23,6 +25,11 @@ class HomeApplet : public Applet {
 
   // Triple-Back (three presses in quick succession) locks the screen.
   static const uint32_t LOCK_TAP_WINDOW_MS = 700;   // max gap between the taps
+  // A pip only appears once the frame reaches the panel, so on e-ink the taps are
+  // paced by the flush, not by the user. Same reasoning as KeypadApplet::tapTimeout.
+  static uint32_t lockTapWindow() {
+    return reducedMotion() ? LOCK_TAP_WINDOW_MS * 2 : LOCK_TAP_WINDOW_MS;
+  }
   uint8_t  _backTaps = 0;
   uint32_t _lastBackMs = 0;
 public:

@@ -3,6 +3,7 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/applets/HomeApplet.h>
 #include <mishmesh/applets/LockApplet.h>
+#include <mishmesh/core/Anim.h>
 #include "FakeDisplayDriver.h"
 
 #include <vector>
@@ -176,4 +177,22 @@ TEST(ScreenLock, SurvivesLongSleep) {
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
+}
+
+// With motion reduced the padlock ease is dropped, but the "Locked" confirmation
+// itself must survive - skipping the frame outright left the screen locking with
+// no feedback at all on e-ink.
+TEST(ScreenLock, ReducedMotionStillHoldsTheLockedFrame) {
+  LockFixture f;
+  setReducedMotion(true);
+  f.press(InputEvent::Back, 1000);
+  f.press(InputEvent::Back, 1100);
+  f.press(InputEvent::Back, 1200);          // triple-Back engages the lock
+  const bool shown = f.lock.lockingShownForTest();
+  f.host.loop(1200 + 2000);                 // past the 1200ms hold
+  const bool cleared = !f.lock.lockingShownForTest();
+  setReducedMotion(false);
+
+  EXPECT_TRUE(shown);     // the confirmation is drawn, not skipped
+  EXPECT_TRUE(cleared);   // and it does retire on its own
 }

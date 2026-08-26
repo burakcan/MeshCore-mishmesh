@@ -113,6 +113,27 @@ void GxEPDDisplay::print(const char* str) {
   display.print(str);
 }
 
+// [mishmesh] Installing a busy callback makes GxEPD2 skip the delay(1) it would
+// otherwise run between BUSY polls (GxEPD2_EPD::_waitWhileBusy), and the yield()
+// next to it is #ifdef'd to ESP8266/ESP32 - so on nRF52 a refresh becomes a hard
+// spin for its whole duration: no scheduler yield, no CPU idle, for hundreds of ms
+// several times a second. Pace it ourselves. 1ms still samples buttons far finer
+// than the normal loop does.
+static void (*s_busy_poll)(const void*) = nullptr;
+static const void* s_busy_ctx = nullptr;
+
+static void pacedBusyPoll(const void*) {
+  if (s_busy_poll) s_busy_poll(s_busy_ctx);
+  delay(1);
+}
+
+void GxEPDDisplay::setBusyPoll(void (*cb)(const void*), const void* ctx) {
+  s_busy_poll = cb;
+  s_busy_ctx = ctx;
+  display.epd2.setBusyCallback(cb ? pacedBusyPoll : nullptr, nullptr);
+}
+// [/mishmesh]
+
 // [mishmesh] both rect paths go through scaleRect() to avoid double truncation
 void GxEPDDisplay::fillRect(int x, int y, int w, int h) {
   display_crc.update<int>(x);

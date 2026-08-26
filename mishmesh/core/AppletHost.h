@@ -99,8 +99,11 @@ private:
   // Drain every input source once, dispatching (and bounce-coalescing) what they
   // report. Called both before and after rendering each loop so a slow frame can't
   // open an input-blind gap - see loop().
-  void pumpInput(uint32_t now_ms);
-  void handleReport(const InputReport& rep, uint32_t now_ms);
+  // bypass_bounce drops the 60ms coalescing for one drain: see the post-render
+  // call in loop(), where every report is separated from the previous one by a
+  // whole panel flush and now_ms is the pre-render stamp, not the arrival time.
+  void pumpInput(uint32_t now_ms, bool bypass_bounce = false);
+  void handleReport(const InputReport& rep, uint32_t now_ms, bool bypass_bounce);
   void refreshInputState();   // OR every source's heldMask() into _input_state
   static void busyPollThunk(const void* self);
   void pollDuringBusy();
@@ -114,6 +117,8 @@ private:
 
   InputSource* _sources[MAX_SOURCES];
   int _nsources;
+
+  bool _flushed_this_loop = false;   // a frame actually reached the panel
 
   static const int BUSY_QUEUE = 8;
   InputReport _busyQueue[BUSY_QUEUE];

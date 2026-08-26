@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mishmesh/core/Anim.h>
+
 #include <mishmesh/core/Applet.h>
 
 namespace mishmesh {
@@ -37,6 +39,10 @@ private:
   static const uint32_t CHALLENGE_TIMEOUT_MS = 4000;
   static const uint32_t LOCK_ANIM_MS         = 420;
   static const uint32_t UNLOCK_ANIM_MS       = 520;
+  // With motion reduced the shut padlock is one still frame, not an ease, so it
+  // has to be held long enough to actually reach the panel and be read.
+  static const uint32_t LOCK_HOLD_MS         = 1200;
+  static uint32_t lockHold() { return reducedMotion() ? LOCK_HOLD_MS : LOCK_ANIM_MS; }
 
   // Padlock centered at cx with its body top at bodyTop. open01 in [0,1] swings
   // the shackle from shut (0) to fully open (1).

@@ -82,9 +82,7 @@ public:
   bool isEink() override { return true; }
   // [mishmesh] a panel refresh blocks for hundreds of ms; hand GxEPD2's busy
   // callback through so the UI can keep sampling buttons meanwhile.
-  void setBusyPoll(void (*cb)(const void*), const void* ctx) override {
-    display.epd2.setBusyCallback(cb, ctx);
-  }
+  void setBusyPoll(void (*cb)(const void*), const void* ctx) override;
   // [/mishmesh]
   void turnOn() override;
   void turnOff() override;

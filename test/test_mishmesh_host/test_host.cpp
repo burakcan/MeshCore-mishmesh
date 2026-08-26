@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <mishmesh/core/AppletHost.h>
+#include <mishmesh/core/Anim.h>
 #include <mishmesh/core/Canvas.h>
 #include "FakeDisplayDriver.h"
 
@@ -15,6 +16,7 @@ public:
   int renderDelay = 1000;
   bool consume = false;            // if true, onInput consumes everything
   InputEvent lastInput = InputEvent::None;
+  int inputs = 0;                  // dispatches that reached the applet
 
   bool overlay = false;            // if true, host composites the applet beneath
 
@@ -32,7 +34,7 @@ public:
   void onBackground() override { background++; }
   void onStop() override { stopped++; }
   int onRender(Canvas&) override { rendered++; return renderDelay; }
-  bool onInput(InputEvent ev) override { lastInput = ev; return consume; }
+  bool onInput(InputEvent ev) override { lastInput = ev; inputs++; return consume; }
 };
 
 class QueueSource : public InputSource {
@@ -442,6 +444,93 @@ TEST(AppletHost, InputIsPolledAgainAfterRender) {
   // Delivered in the post-render poll of this same loop(), not deferred to the next.
   EXPECT_EQ(InputEvent::Select, root.lastInput);
   EXPECT_GE(src.polls, 2);
+}
+
+// A repeated tap where the first press is caught by the pre-render poll and the
+// second by the post-render one. Both carry the same pre-render now_ms, so on a
+// panel whose flush takes hundreds of ms the 60ms coalescing used to swallow the
+// second press - what made keypad multi-tap and list nav drop presses on e-ink.
+class TapTwiceSource : public InputSource {
+public:
+  int polls = 0;
+  InputEvent ev;
+  explicit TapTwiceSource(InputEvent e) : ev(e) {}
+  bool poll(InputReport& out) override {
+    polls++;
+    if (polls == 1 || polls == 3) { out.event = ev; return true; }
+    return false;
+  }
+};
+
+TEST(AppletHost, RepeatedTapSurvivesASlowFlush) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setRoot(&root);
+  TapTwiceSource src(InputEvent::Select);
+  host.addSource(&src);
+
+  setReducedMotion(true);   // what an e-ink driver turns on via isEink()
+  host.loop(10);
+  setReducedMotion(false);
+
+  EXPECT_EQ(2, root.inputs);
+}
+
+TEST(AppletHost, RepeatedTapIsStillCoalescedOnAFastPanel) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setRoot(&root);
+  TapTwiceSource src(InputEvent::Select);
+  host.addSource(&src);
+
+  host.loop(10);
+
+  EXPECT_EQ(1, root.inputs);   // same event inside the debounce window
+}
+
+// A repaint nothing asked for is held to the minimum flush spacing; one the user
+// triggered is not. Getting this backwards is what made the panel refresh back to
+// back and swallow presses.
+TEST(AppletHost, ReducedMotionRateLimitsTimerRepaints) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  root.renderDelay = 250;                  // a typical idle re-poll
+  host.setRoot(&root);
+
+  setReducedMotion(true);
+  host.loop(0);
+  const int base = root.rendered;
+  host.loop(300);                          // applet says due, spacing says wait
+  const int held = root.rendered - base;
+  host.loop(1200);                         // spacing elapsed
+  const int released = root.rendered - base;
+  setReducedMotion(false);
+
+  EXPECT_EQ(0, held);
+  EXPECT_EQ(1, released);   // deferred, not dropped
+}
+
+TEST(AppletHost, ReducedMotionNeverDelaysInputRepaints) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  root.renderDelay = 250;
+  host.setRoot(&root);
+  QueueSource src;
+  host.addSource(&src);
+
+  setReducedMotion(true);
+  host.loop(0);
+  const int base = root.rendered;
+  src.queue.push_back(InputEvent::NavDown);
+  host.loop(50);                           // well inside the spacing window
+  const int after = root.rendered - base;
+  setReducedMotion(false);
+
+  EXPECT_EQ(1, after);   // a press repaints now, spacing or not
 }
 
 TEST(InputState, IsDownReflectsHeldBits) {

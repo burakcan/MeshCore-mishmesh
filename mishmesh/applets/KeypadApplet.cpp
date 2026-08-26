@@ -1,4 +1,5 @@
 #include <mishmesh/applets/KeypadApplet.h>
+#include <mishmesh/core/Anim.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/AppletHost.h>
@@ -410,7 +411,7 @@ int KeypadApplet::onRender(Canvas& c) {
   if (_tapStampPending) {
     _lastTapMs = _now;
     _tapStampPending = false;
-  } else if (_pending && (_now - _lastTapMs) >= TAP_TIMEOUT_MS) {
+  } else if (_pending && (_now - _lastTapMs) >= tapTimeout()) {
     commitPending();
   }
 

@@ -211,7 +211,7 @@ bool HomeApplet::onInput(InputEvent ev) {
   // consuming it here changes nothing for single/double presses.
   if (ev == InputEvent::Back) {
     uint32_t now = _host ? _host->nowMs() : 0;
-    if (_backTaps > 0 && now - _lastBackMs > LOCK_TAP_WINDOW_MS) _backTaps = 0;
+    if (_backTaps > 0 && now - _lastBackMs > lockTapWindow()) _backTaps = 0;
     _backTaps++;
     _lastBackMs = now;
     if (_backTaps >= 3 && _lock && _host) {

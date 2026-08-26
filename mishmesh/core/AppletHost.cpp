@@ -19,6 +19,14 @@ static const uint32_t BUBBLE_MS      = 2200;
 static const uint32_t BUBBLE_SLIDE_MS = 160;
 static const uint32_t BUBBLE_TICK_MS  = 40;   // animation cadence while sliding
 
+// Minimum spacing between timer-driven flushes on a panel where a flush costs
+// hundreds of ms. Applets ask to be re-rendered every 250-1000ms as an idle
+// re-poll, which on e-ink means refreshing back to back forever - so a press
+// lands mid-flush instead of on an idle panel. Input-driven repaints (_dirty)
+// are never held back, and a deferred render is only late, never skipped: the
+// applet's own deadline stays in the past until it runs.
+static const uint32_t EINK_MIN_FLUSH_GAP_MS = 1000;
+
 AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
     : _display(display), _canvas(display), _ctx(ctx),
       _depth(0), _nsources(0),
@@ -162,7 +170,7 @@ void AppletHost::dispatch(InputEvent ev, bool repeat) {
   _dirty = true;
 }
 
-void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms) {
+void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms, bool bypass_bounce) {
   _last_activity = now_ms;
 #ifdef MISHMESH_INPUT_PROFILE
   if (!rep.repeat) _prof.recordPolled();   // a discrete press edge was sampled
@@ -178,7 +186,7 @@ void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms) {
     _display->turnOn();   // first press only wakes; it isn't delivered
     _dirty = true;
   } else {
-    bool bounce = _input_seen && rep.event == _last_input_event &&
+    bool bounce = !bypass_bounce && _input_seen && rep.event == _last_input_event &&
                   now_ms - _last_input_ms < INPUT_DEBOUNCE_MS;
     _last_input_event = rep.event; _last_input_ms = now_ms; _input_seen = true;
     if (!bounce) {
@@ -190,15 +198,15 @@ void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms) {
   }
 }
 
-void AppletHost::pumpInput(uint32_t now_ms) {
+void AppletHost::pumpInput(uint32_t now_ms, bool bypass_bounce) {
   uint8_t queued = _busy_count;
   _busy_count = 0;
-  for (uint8_t i = 0; i < queued; i++) handleReport(_busyQueue[i], now_ms);
+  for (uint8_t i = 0; i < queued; i++) handleReport(_busyQueue[i], now_ms, bypass_bounce);
   for (int i = 0; i < _nsources; i++) {
     if (_sources[i] == nullptr) continue;
     InputReport rep;                       // fresh each poll: `repeat` defaults false
     while ((rep = InputReport(), _sources[i]->poll(rep))) {
-      handleReport(rep, now_ms);
+      handleReport(rep, now_ms, bypass_bounce);
     }
   }
 }
@@ -225,6 +233,7 @@ void AppletHost::loop(uint32_t now_ms) {
   if (now_ms - _prof_last_paint >= 300) { _prof_last_paint = now_ms; _dirty = true; }
 #endif
 
+  _flushed_this_loop = false;
   pumpInput(now_ms);
 
   refreshInputState();   // [add] live held-button snapshot for real-time applets
@@ -264,7 +273,14 @@ void AppletHost::loop(uint32_t now_ms) {
   // framework-wide: any applet/modal, however heavy its draw, stays responsive
   // without needing per-screen tuning. Idle cost is nil - sources just report no
   // change. Events caught here paint on the next loop (_dirty), one frame later.
-  pumpInput(now_ms);
+  //
+  // On a panel where the flush itself takes hundreds of ms (e-ink), now_ms is the
+  // pre-render stamp, so every report drained here looks simultaneous with the one
+  // dispatched before the frame and the 60ms coalescing eats it - a repeated tap
+  // (multi-tap keypad, list nav) silently vanishes. Sources debounce in hardware
+  // already, and a whole flush separates these from the last dispatch, so drop the
+  // second layer for this drain only. Fast panels keep it: nothing changes there.
+  pumpInput(now_ms, _flushed_this_loop && reducedMotion());
 }
 
 void AppletHost::renderIfDue(uint32_t now_ms) {
@@ -274,6 +290,11 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
   bool exclusive = fg->wantsExclusive();
   bool due = exclusive || _dirty || !_has_rendered || now_ms >= _next_render_at;
   if (!due) return;
+  // A repaint nothing asked for, on a panel that costs hundreds of ms to flush:
+  // hold it to the minimum spacing. Anything the user or the mesh triggered is
+  // _dirty and goes straight through, so this only slows the idle re-polling.
+  if (!exclusive && _dirty == false && _has_rendered && reducedMotion() &&
+      (uint32_t)(now_ms - _last_flush_ms) < EINK_MIN_FLUSH_GAP_MS) return;
 
 #ifdef MISHMESH_INPUT_PROFILE
   uint32_t _pt0 = millis();   // frame compose+flush cost, measured around the whole draw
@@ -330,6 +351,8 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
     drawProfileOverlay();
 #endif
     _display->endFrame();
+    _flushed_this_loop = true;
+    _last_flush_ms = now_ms;
 #ifdef MISHMESH_INPUT_PROFILE
     _prof.recordRender(millis() - _pt0);
 #endif
