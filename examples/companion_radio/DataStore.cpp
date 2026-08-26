@@ -206,6 +206,12 @@ void DataStore::loadPrefs(NodePrefs& prefs) {
     if (savePrefs(prefs) ) {                // save to new format
       //_fs->remove("/new_prefs"); // remove old
     }
+  } else {
+    // [mishmesh] no prefs file at all: either a virgin device, or one that booted stock
+    // MeshCore without ever being configured (stock only writes prefs on a config change,
+    // but always saves an identity, so identityFresh alone would miss this one).
+    prefs.onboarding_state = 1;
+    // [/mishmesh]
   }
 }
 
