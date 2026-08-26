@@ -36,12 +36,16 @@ public:
   bool begin();
 
   bool isOn() override { return _isOn; }
+  // [mishmesh] SH1106 contrast register maps to panel brightness
+  bool supportsBrightness() const override { return true; }
+  void setBrightness(uint8_t value) override;
+  // [/mishmesh]
   void turnOn() override;
   void turnOff() override;
   void clear() override;
-  void startFrame(Color bkg = DARK) override;
+  void startFrame(ColorVal bkg = UIColor::window_bkg) override;
   void setTextSize(int sz) override;
-  void setColor(Color c) override;
+  void setColor(ColorVal c) override;
   void setCursor(int x, int y) override;
   void print(const char *str) override;
   void fillRect(int x, int y, int w, int h) override;

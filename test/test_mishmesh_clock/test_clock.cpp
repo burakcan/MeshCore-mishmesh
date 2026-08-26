@@ -5,6 +5,7 @@
 #include <mishmesh/core/AppletStorage.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/applets/ClockApplet.h>
+#include <mishmesh/applets/ClockAlertApplet.h>
 #include <mishmesh/applets/SoundPickerApplet.h>
 #include <mishmesh/sound/Sounds.h>
 #include "FakeDisplayDriver.h"
@@ -129,6 +130,151 @@ TEST(Timer, DurationClampsAndIsIdleOnly) {
   s.tmToggle(0);
   s.tmSetDurationSecs(120);              // ignored while running
   EXPECT_EQ(60u, s.tmDurationSecs());
+}
+
+// ---- pomodoro -----------------------------------------------------------------
+
+TEST(Pomodoro, DefaultsAndStart) {
+  ClockService svc;
+  svc.resetForTest();
+  EXPECT_EQ(25, svc.pmFocusMin());
+  EXPECT_EQ(5,  svc.pmShortMin());
+  EXPECT_EQ(15, svc.pmLongMin());
+  EXPECT_EQ(4,  svc.pmSetCount());
+  EXPECT_TRUE(svc.pmAutoAdvance());
+  EXPECT_EQ(PomoPhase::Idle, svc.pmPhase());
+  EXPECT_FALSE(svc.pmActive());
+
+  svc.pmStart(1000);
+  EXPECT_EQ(PomoPhase::Focus, svc.pmPhase());
+  EXPECT_EQ(1, svc.pmBlock());
+  EXPECT_TRUE(svc.pmRunning());
+  EXPECT_EQ(25u * 60u * 1000u, svc.pmRemainingMs(1000));
+  EXPECT_EQ(0, svc.pmElapsedPct(1000));
+  EXPECT_EQ(50, svc.pmElapsedPct(1000 + 25u*60u*1000u/2));   // halfway
+}
+
+TEST(Pomodoro, PauseResume) {
+  ClockService svc;
+  svc.resetForTest();
+  svc.pmStart(0);
+  svc.pmToggle(60000);              // pause 1 min in
+  EXPECT_FALSE(svc.pmRunning());
+  EXPECT_TRUE(svc.pmPaused());
+  uint32_t rem = svc.pmRemainingMs(999999);   // frozen while paused
+  EXPECT_EQ(25u*60u*1000u - 60000u, rem);
+  svc.pmToggle(200000);            // resume; remaining unchanged, deadline re-based
+  EXPECT_TRUE(svc.pmRunning());
+  EXPECT_EQ(rem, svc.pmRemainingMs(200000));
+}
+
+TEST(Pomodoro, ResetGoesIdle) {
+  ClockService svc;
+  svc.resetForTest();
+  svc.pmStart(0);
+  svc.pmReset();
+  EXPECT_EQ(PomoPhase::Idle, svc.pmPhase());
+  EXPECT_EQ(0, svc.pmBlock());
+  EXPECT_FALSE(svc.pmActive());
+}
+
+TEST(Pomodoro, ConfigValidatesAndPersists) {
+  FakeStorage st;
+  { ClockService svc; svc.begin(&st);
+    svc.setPmFocusMin(50);
+    svc.setPmShortMin(0);          // below min -> clamped to 1
+    svc.setPmSetCount(99);         // above max -> clamped to 8
+    svc.setPmAutoAdvance(false);
+  }
+  ClockService svc2; svc2.begin(&st);
+  EXPECT_EQ(50, svc2.pmFocusMin());
+  EXPECT_EQ(1,  svc2.pmShortMin());
+  EXPECT_EQ(8,  svc2.pmSetCount());
+  EXPECT_FALSE(svc2.pmAutoAdvance());
+}
+
+// tick() with no time clock (epoch 0) so only the pomodoro/timer branches run.
+// Focus/long-break minutes floor-clamp to 5 (setPmFocusMin/setPmLongMin), so
+// phases use 5-min focus/long and a 1-min short break instead of a uniform 1 min.
+TEST(Pomodoro, AutoAdvanceRunsFullSet) {
+  ClockService svc;
+  svc.resetForTest();
+  svc.setPmFocusMin(5); svc.setPmShortMin(1); svc.setPmLongMin(5); svc.setPmSetCount(2);
+  svc.pmStart(0);
+  const uint32_t MIN = 60u * 1000u;
+  const uint32_t FOCUS = 5 * MIN;
+  const uint32_t SHORT = 1 * MIN;
+  const uint32_t LONG  = 5 * MIN;
+
+  // Focus 1 ends -> short break begins, auto-running.
+  EXPECT_EQ(ClockEvent::None, svc.tick(FOCUS - 10, 0, 0));
+  EXPECT_EQ(ClockEvent::PomodoroBreak, svc.tick(FOCUS, 0, 0));
+  EXPECT_EQ(PomoPhase::ShortBreak, svc.pmPhase());
+  EXPECT_TRUE(svc.pmRunning());
+  EXPECT_EQ(1, svc.pmBlock());
+
+  // Short break ends -> focus 2 begins.
+  uint32_t t2 = FOCUS + SHORT;
+  EXPECT_EQ(ClockEvent::PomodoroFocus, svc.tick(t2, 0, 0));
+  EXPECT_EQ(PomoPhase::Focus, svc.pmPhase());
+  EXPECT_EQ(2, svc.pmBlock());
+
+  // Focus 2 is the last block -> long break.
+  uint32_t t3 = t2 + FOCUS;
+  EXPECT_EQ(ClockEvent::PomodoroBreak, svc.tick(t3, 0, 0));
+  EXPECT_EQ(PomoPhase::LongBreak, svc.pmPhase());
+
+  // Long break ends -> set done, back to Idle.
+  uint32_t t4 = t3 + LONG;
+  EXPECT_EQ(ClockEvent::PomodoroSetDone, svc.tick(t4, 0, 0));
+  EXPECT_EQ(PomoPhase::Idle, svc.pmPhase());
+  EXPECT_FALSE(svc.pmActive());
+}
+
+// AutoAdvanceRunsFullSet only ever uses SetN=2, so pmBlock() never advances past
+// the LongBreak edge. Use SetN=3 to exercise a mid-set focus->break->focus hop
+// and confirm pmBlock() lands on 3 (not just 1 or 2).
+TEST(Pomodoro, AutoAdvanceReachesBlockThree) {
+  ClockService svc;
+  svc.resetForTest();
+  svc.setPmFocusMin(5); svc.setPmShortMin(1); svc.setPmLongMin(5); svc.setPmSetCount(3);
+  svc.pmStart(0);
+  const uint32_t MIN = 60u * 1000u;
+  const uint32_t FOCUS = 5 * MIN;
+  const uint32_t SHORT = 1 * MIN;
+
+  svc.tick(FOCUS, 0, 0);                        // focus 1 -> break
+  EXPECT_EQ(1, svc.pmBlock());
+  uint32_t t2 = FOCUS + SHORT;
+  svc.tick(t2, 0, 0);                           // break -> focus 2
+  EXPECT_EQ(2, svc.pmBlock());
+  uint32_t t3 = t2 + FOCUS;
+  svc.tick(t3, 0, 0);                           // focus 2 -> break (not last block yet)
+  EXPECT_EQ(PomoPhase::ShortBreak, svc.pmPhase());
+  EXPECT_EQ(2, svc.pmBlock());
+  uint32_t t4 = t3 + SHORT;
+  EXPECT_EQ(ClockEvent::PomodoroFocus, svc.tick(t4, 0, 0));   // break -> focus 3
+  EXPECT_EQ(PomoPhase::Focus, svc.pmPhase());
+  EXPECT_EQ(3, svc.pmBlock());
+}
+
+TEST(Pomodoro, ManualAdvanceArmsPaused) {
+  ClockService svc;
+  svc.resetForTest();
+  svc.setPmFocusMin(5); svc.setPmShortMin(1); svc.setPmSetCount(4);
+  svc.setPmAutoAdvance(false);
+  svc.pmStart(0);
+  const uint32_t MIN = 60u * 1000u;
+  const uint32_t FOCUS = 5 * MIN;
+
+  EXPECT_EQ(ClockEvent::PomodoroBreak, svc.tick(FOCUS, 0, 0));
+  EXPECT_EQ(PomoPhase::ShortBreak, svc.pmPhase());
+  EXPECT_FALSE(svc.pmRunning());          // armed, waiting for the user
+  EXPECT_TRUE(svc.pmPaused());
+  EXPECT_EQ(1u * MIN, svc.pmRemainingMs(FOCUS));   // full break, not counting yet
+
+  svc.pmToggle(FOCUS);                    // user starts the break
+  EXPECT_TRUE(svc.pmRunning());
 }
 
 // ---- alarm ------------------------------------------------------------------
@@ -314,6 +460,48 @@ TEST(ClockTones, DefaultsMatchOriginalRingsAndClampOutOfRange) {
   }
 }
 
+// ---- alert: pomodoro kinds ring like Timer, not Alarm ------------------------
+
+// ClockAlertApplet picks tone+volume with "is this the alarm?" - every other
+// kind (TimerDone and all three Pomodoro kinds) follows the Timer settings.
+// Exercise the real branch end-to-end via a FakeToneOutput rather than just
+// asserting the ClockEvent values differ.
+TEST(Pomodoro, AlertRingsAtTimerVolumeNotAlarmForPhaseChanges) {
+  clockService().resetForTest();
+  clockService().setAlarmVolume((uint8_t)sound::VolumeLevel::High);
+  clockService().setTimerVolume((uint8_t)sound::VolumeLevel::Low);
+
+  auto& alert = clockAlertApplet();
+  FakeDisplayDriver d;
+
+  {
+    FakeToneOutput out;
+    sound::SoundEngine eng;
+    eng.begin(&out);
+    AppletContext ctx; ctx.sound = &eng;
+    alert.onStart(ctx);
+    alert.raise(ClockEvent::PomodoroBreak);
+    Canvas c(&d, 1000);
+    alert.onRender(c);
+    eng.tick(1000);
+    ASSERT_FALSE(out.calls.empty());
+    EXPECT_EQ(sound::VolumeLevel::Low, out.calls[0].vol);   // timer volume, not alarm's High
+  }
+  {
+    FakeToneOutput out;
+    sound::SoundEngine eng;
+    eng.begin(&out);
+    AppletContext ctx; ctx.sound = &eng;
+    alert.onStart(ctx);
+    alert.raise(ClockEvent::AlarmDue);
+    Canvas c(&d, 1000);
+    alert.onRender(c);
+    eng.tick(1000);
+    ASSERT_FALSE(out.calls.empty());
+    EXPECT_EQ(sound::VolumeLevel::High, out.calls[0].vol);  // alarm volume, unchanged
+  }
+}
+
 // ---- applet -----------------------------------------------------------------
 
 namespace {
@@ -339,9 +527,9 @@ struct ClockAppletFixture : ::testing::Test {
 };
 }
 
-TEST_F(ClockAppletFixture, NavRightWalksAllFiveTabs) {
+TEST_F(ClockAppletFixture, NavRightWalksAllSixTabs) {
   EXPECT_EQ(0, app.selectedTabForTest());
-  for (int i = 1; i <= 4; i++) {
+  for (int i = 1; i <= 5; i++) {
     app.onInput(InputEvent::NavRight);
     EXPECT_EQ(i, app.selectedTabForTest());
   }
@@ -386,6 +574,7 @@ TEST_F(ClockAppletFixture, TimerEditorCancelKeepsDuration) {
 
 TEST_F(ClockAppletFixture, AlarmEditorSavesAndEnables) {
   app.onInput(InputEvent::NavRight);
+  app.onInput(InputEvent::NavRight);
   app.onInput(InputEvent::NavRight);     // Alarm tab
   app.onInput(InputEvent::Select);       // open editor on the Time row
   EXPECT_TRUE(app.editingAlarmForTest());
@@ -401,6 +590,7 @@ TEST_F(ClockAppletFixture, AlarmEditorSavesAndEnables) {
 
 TEST_F(ClockAppletFixture, AlarmEditorUsesAmPmIn12hMode) {
   svc.fmt12 = true;
+  app.onInput(InputEvent::NavRight);
   app.onInput(InputEvent::NavRight);
   app.onInput(InputEvent::NavRight);     // Alarm tab
   app.onInput(InputEvent::Select);       // editor seeded 7:00 AM, cursor on hour
@@ -424,7 +614,7 @@ TEST_F(ClockAppletFixture, AlarmEditorUsesAmPmIn12hMode) {
 }
 
 TEST_F(ClockAppletFixture, WorldTabAddsCityViaPicker) {
-  for (int i = 0; i < 3; i++) app.onInput(InputEvent::NavRight);   // World tab
+  for (int i = 0; i < 4; i++) app.onInput(InputEvent::NavRight);   // World tab
   app.onInput(InputEvent::Select);       // "Add city" row
   EXPECT_TRUE(app.pickingCityForTest());
   app.onInput(InputEvent::NavDown);
@@ -435,6 +625,56 @@ TEST_F(ClockAppletFixture, WorldTabAddsCityViaPicker) {
   EXPECT_EQ(2, clockService().cityAt(0));
   app.onInput(InputEvent::SelectLong);   // remove it again
   EXPECT_EQ(0, clockService().cityCount());
+}
+
+TEST_F(ClockAppletFixture, PomodoroTabExistsBetweenTimerAndAlarm) {
+  app.onInput(InputEvent::NavRight);     // Timer tab
+  EXPECT_EQ(1, app.selectedTabForTest());
+  app.onInput(InputEvent::NavRight);     // Pomodoro tab
+  EXPECT_EQ(2, app.selectedTabForTest());
+}
+
+TEST_F(ClockAppletFixture, PomodoroSelectStartsSession) {
+  app.onInput(InputEvent::NavRight);
+  app.onInput(InputEvent::NavRight);     // Pomodoro tab
+  app.onInput(InputEvent::Select);       // idle: start a session
+  EXPECT_TRUE(clockService().pmActive());
+  EXPECT_EQ(PomoPhase::Focus, clockService().pmPhase());
+}
+
+TEST_F(ClockAppletFixture, PomodoroLongPressOpensSetupAndStepperEditsFocus) {
+  app.onInput(InputEvent::NavRight);
+  app.onInput(InputEvent::NavRight);     // Pomodoro tab
+  app.onInput(InputEvent::SelectLong);   // idle: open Setup
+  EXPECT_TRUE(app.pomodoroSetupOpenForTest());
+
+  uint8_t before = clockService().pmFocusMin();
+  app.onInput(InputEvent::Select);       // Setup opens on the Focus row: open its stepper
+  app.onInput(InputEvent::NavRight);     // step the value up
+  app.onInput(InputEvent::Select);       // confirm
+  EXPECT_EQ(before + 1, clockService().pmFocusMin());
+}
+
+TEST_F(ClockAppletFixture, PomodoroRunningSelectPausesAndResumes) {
+  app.onInput(InputEvent::NavRight);
+  app.onInput(InputEvent::NavRight);     // Pomodoro tab
+  app.onInput(InputEvent::Select);       // idle: start
+  EXPECT_TRUE(clockService().pmRunning());
+  app.onInput(InputEvent::Select);       // running: pause
+  EXPECT_FALSE(clockService().pmRunning());
+  app.onInput(InputEvent::Select);       // paused: resume
+  EXPECT_TRUE(clockService().pmRunning());
+  app.onInput(InputEvent::SelectLong);   // reset back to idle
+  EXPECT_FALSE(clockService().pmActive());
+}
+
+TEST_F(ClockAppletFixture, PomodoroRunningDoesNotBlockSleepButKeepsOnWake) {
+  app.onInput(InputEvent::NavRight);
+  app.onInput(InputEvent::NavRight);     // Pomodoro tab
+  app.onInput(InputEvent::Select);       // start a session
+  EXPECT_TRUE(clockService().pmActive());
+  EXPECT_FALSE(app.blocksSleep());       // focus with the screen off, like the timer
+  EXPECT_TRUE(app.keepOnWake());         // but stay on this tab when woken
 }
 
 TEST_F(ClockAppletFixture, SoundPickerClockModeSetsAlarmTone) {
@@ -452,7 +692,7 @@ TEST_F(ClockAppletFixture, SoundPickerClockModeSetsAlarmTone) {
 }
 
 TEST_F(ClockAppletFixture, RendersEveryTabWithoutServices) {
-  for (int t = 0; t < 5; t++) {
+  for (int t = 0; t < 6; t++) {
     render();
     app.onInput(InputEvent::NavRight);
   }

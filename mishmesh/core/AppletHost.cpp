@@ -283,8 +283,8 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
   // theme and expect the panel cleared dark. Drivers may ignore startFrame's
   // bkg (SH1106 clears black unconditionally), so in light mode paint the
   // background ourselves through the themed canvas.
-  _display->startFrame(exclusive ? DisplayDriver::DARK : themedColor(DisplayDriver::DARK));
-  if (!exclusive && themedColor(DisplayDriver::DARK) == DisplayDriver::LIGHT)
+  _display->startFrame(exclusive ? UIColor::window_bkg : themedColor(DisplayDriver::DARK));
+  if (!exclusive && themeSwapped(DisplayDriver::DARK) == DisplayDriver::LIGHT)
     _canvas.fillRect(0, 0, _canvas.width(), _canvas.height(), DisplayDriver::DARK);
   // Composite an overlay over the applet beneath it. Merge the delays so the
   // underlay keeps animating (clock etc.) behind the overlay's card.

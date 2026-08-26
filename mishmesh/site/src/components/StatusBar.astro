@@ -1,0 +1,38 @@
+---
+// The page-wide device status bar. Two variants: the landing nav, and the
+// manual's "back to index" bar. Both carry the theme toggle and battery glyph.
+interface Props {
+  variant: "landing" | "manual";
+}
+const { variant } = Astro.props;
+---
+{
+  variant === "landing" ? (
+    <header class="bar">
+      <div class="in">
+        <span class="name">mishmesh</span>
+        <nav>
+          <a href="#what">What</a>
+          <a href="#apps">Apps</a>
+          <a href="#screens">Screens</a>
+          <a href="#install">Install</a>
+          <a href="#" data-manual>Manual</a>
+        </nav>
+        <button class="themebtn" id="theme" aria-label="Toggle light and dark">[ dark ]</button>
+        <span class="batt" aria-hidden="true"><i /></span>
+      </div>
+    </header>
+  ) : (
+    <header class="bar">
+      <div class="in">
+        <span class="name">
+          <a href="#" data-index>mishmesh</a>&nbsp;<span class="sub">/ manual</span>
+        </span>
+        <span class="right">
+          <a class="home" href="#" data-index>&lt; back to index</a>
+          <button class="themebtn" id="theme" aria-label="Toggle light and dark">[ dark ]</button>
+        </span>
+      </div>
+    </header>
+  )
+}

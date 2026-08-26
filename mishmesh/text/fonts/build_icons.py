@@ -52,6 +52,8 @@ ICONS = [
     ("Globe",      "globe",       0xE024),   # world clock
     ("Grid",       "grid-3x3-sharp", 0xE025),   # 3x3 grid = 2048 board
     ("Coffee",     "coffee",      0xE026),   # coffee cup = support / About screen
+    ("Sliders",    "sliders",     0xE027),   # experimental settings group
+    ("Tomato",     "tomato",      0xE028),   # pomodoro tab + focus-phase mark (vendored: hand-drawn)
 ]
 
 # Iconify-sourced compound paths whose inner subpaths are holes (even-odd),

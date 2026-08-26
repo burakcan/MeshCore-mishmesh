@@ -49,8 +49,14 @@ int ListMenu::firstVisibleRow(int box_height) const {
 // on top of everything and never inverted by the row highlight bar.
 void ListMenu::drawButtonRow(Canvas& view, int i, int ry, int cw) {
   int bh = _rowH - 2;   // 1px margin top and bottom
-  int bw = cw / 2; if (bw < 32) bw = 32; if (bw > cw - 4) bw = cw - 4;
   _button.set(_model->label(i), _model->icon(i));
+  // Half the row is the floor (so short labels like "Save" keep a button-sized hit
+  // target), but grow to whatever the icon + label needs, capped at the row width.
+  int bw = cw / 2;
+  int fit = _button.preferredWidth(view);
+  if (bw < fit) bw = fit;
+  if (bw < 32) bw = 32;
+  if (bw > cw - 4) bw = cw - 4;
   _button.setFocused(_drawSelection && i == _selected);
   _button.draw(view, (cw - bw) / 2, ry + 1, bw, bh);
 }

@@ -60,11 +60,14 @@ public:
 
   int  pendingDMCount() const;
   bool getPendingDM(int index, ConvoKey& outKey, uint32_t& outSenderTime) const;
-  // Single-pass collection of up to `cap` still-pending outbound DMs (key +
-  // senderTime), returning the count written. One walk over all logs - unlike
-  // pendingDMCount()+getPendingDM() which re-walk every file per index (O(n^2)
-  // flash opens). Used by the auto-retry scan, which runs every few seconds.
-  int  collectPendingDMs(ConvoKey* outKeys, uint32_t* outTimes, int cap) const;
+  // Answers "is each of these outbound DMs still pending?" for the n (key,
+  // senderTime) pairs, in one walk per distinct chat log. Drives the auto-retry
+  // scan, which runs every few seconds.
+  void checkPendingDMs(const ConvoKey* keys, const uint32_t* times,
+                       bool* stillPending, int n) const;
+  // Settle outbound DMs left pending by an earlier session as failed; returns
+  // how many were flipped. Call once after begin().
+  int  failStalePendingDMs();
   int  getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const;
 
   void deleteMessage(const ConvoKey& key, int index);
@@ -98,7 +101,7 @@ private:
   mutable uint8_t _recBuf[codec::MAX_REC]; // scratch for single-record reads (paging)
   // Word-aligned: LittleFS programs/reads this blob directly from here on a large
   // single transfer, and the nRF52840 QSPI DMA rejects a non-word-aligned RAM source.
-  // Without alignas, _recBuf[187] leaves _idxBuf on an odd offset and every index
+  // Without alignas, the odd-sized _recBuf leaves _idxBuf unaligned and every index
   // write silently fails (wrote=0) - the on-device unread-count persistence bug.
   alignas(uint32_t) uint8_t _idxBuf[4096];   // serialised ConvoIndex (MIDX blob, ~3911 bytes max)
 
@@ -109,7 +112,7 @@ private:
     uint8_t  kind;
     uint32_t expectedAck;
     RepeatRec repeats[MAX_REPEATS];
-    uint8_t  rptStore[MAX_REPEATS][MAX_PATH];
+    uint8_t  rptStore[MAX_REPEATS][MAX_PATH_BYTES];
     uint8_t  rptCount;
   };
   Tracked _tracked[MAX_TRACKED];

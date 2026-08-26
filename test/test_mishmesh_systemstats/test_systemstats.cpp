@@ -26,6 +26,14 @@ public:
   int  resetCalls = 0;
   bool lastKeep   = false;
   void factoryReset(bool keepIdentity) override { resetCalls++; lastKeep = keepIdentity; }
+
+  std::string pubKeyHex;   // "" => writes empty, matching the default AppServices
+  void selfPublicKeyHex(char* out, size_t cap, int bytes) const override {
+    (void)bytes;
+    if (!out || !cap) return;
+    strncpy(out, pubKeyHex.c_str(), cap - 1);
+    out[cap - 1] = 0;
+  }
 };
 
 SystemStats sampleStats() {
@@ -90,6 +98,20 @@ TEST(FormatSystemStats, UnknownsRenderAsDashes) {
   EXPECT_EQ("Uptime: 0h 00m", lineAt(lines, 5));
 }
 
+TEST(FormatSystemStats, ShowsMcuTempWhenAvailable) {
+  SystemStats s = sampleStats();
+  s.mcuTempC10 = 275;
+  char lines[SYSSTATS_MAX_LINES][SYSSTATS_LINE_LEN];
+  int n = formatSystemStats(s, lines, SYSSTATS_MAX_LINES);
+  ASSERT_EQ(9, n);
+  EXPECT_EQ("MCU temp: 27.5C", lineAt(lines, 5));
+
+  s.mcuTempC10 = -43;
+  n = formatSystemStats(s, lines, SYSSTATS_MAX_LINES);
+  ASSERT_EQ(9, n);
+  EXPECT_EQ("MCU temp: -4.3C", lineAt(lines, 5));
+}
+
 TEST(FormatSystemStats, ShowsRamTotalWhenKnown) {
   SystemStats s = sampleStats();
   s.heapTotalBytes = 253952;   // 248.0K
@@ -125,6 +147,29 @@ TEST(SystemInfoPanel, UnavailableWhenServiceReturnsFalse) {
   FakeDisplayDriver d; Canvas c(&d);
   panel.renderBody(c, 0, 0, 128, 64);
   EXPECT_STREQ("Stats unavailable", panel.lineForTest(0));   // test seam added in Step 3 header
+}
+
+TEST(SystemInfoPanel, ShowsSelfPublicKeyWhenAvailable) {
+  FakeApp app; app.stats = sampleStats();
+  app.pubKeyHex = "00112233445566778899aabbccddeeffAABBCCDDEEFF00112233445566778899";  // 32 bytes
+  AppletContext ctx; ctx.app = &app;
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  panel.renderBody(c, 0, 0, 128, 64);
+  EXPECT_STREQ("Public key:", panel.lineForTest(0));
+  EXPECT_STREQ("0011223344556677", panel.lineForTest(1));   // 4 rows of 8 bytes = full 32-byte key
+  EXPECT_STREQ("8899aabbccddeeff", panel.lineForTest(2));
+  EXPECT_STREQ("AABBCCDDEEFF0011", panel.lineForTest(3));
+  EXPECT_STREQ("2233445566778899", panel.lineForTest(4));
+}
+
+TEST(SystemInfoPanel, OmitsPublicKeyWhenServiceHasNone) {
+  FakeApp app; app.stats = sampleStats();   // pubKeyHex left empty
+  AppletContext ctx; ctx.app = &app;
+  SystemInfoPanel panel; panel.begin(ctx);
+  FakeDisplayDriver d; Canvas c(&d);
+  panel.renderBody(c, 0, 0, 128, 64);
+  EXPECT_STREQ("Heap free: 142.3K", panel.lineForTest(0));   // no key rows prepended
 }
 
 TEST(SystemInfoPanel, HandsFocusToActionsAtBottom) {

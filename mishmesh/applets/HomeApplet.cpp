@@ -88,7 +88,8 @@ int HomeApplet::onRender(Canvas& c) {
     c.drawGlyph(iconFont(), xr, 0, (uint16_t)Icon::Radio, DisplayDriver::LIGHT);
     xr -= 3;
   }
-  // Clock-engine indicators: armed alarm, pending timer, running stopwatch.
+  // Clock-engine indicators: armed alarm, pending timer, pomodoro session,
+  // running stopwatch.
   if (clockService().alarmEnabled()) {
     xr -= 12;
     c.drawGlyph(iconFont(), xr, 0, (uint16_t)Icon::AlarmClock, DisplayDriver::LIGHT);
@@ -97,6 +98,11 @@ int HomeApplet::onRender(Canvas& c) {
   if (clockService().tmRunning() || clockService().tmPaused()) {
     xr -= 12;
     c.drawGlyph(iconFont(), xr, 0, (uint16_t)Icon::Hourglass, DisplayDriver::LIGHT);
+    xr -= 3;
+  }
+  if (clockService().pmActive()) {
+    xr -= 12;
+    c.drawGlyph(iconFont(), xr, 0, (uint16_t)Icon::Tomato, DisplayDriver::LIGHT);
     xr -= 3;
   }
   if (clockService().swRunning()) {

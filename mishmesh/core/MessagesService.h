@@ -11,6 +11,9 @@ enum class ChanResult : int8_t { Ok, Full, Invalid, Duplicate, Error };
 // Per-chat notification level. All == 0 so an absent/default setting reads as All.
 enum class NotifyLevel : uint8_t { All = 0, MentionsOnly = 1, Mute = 2 };
 
+// Per-chat screen-wake override. Default follows the global MessagesConfig.wakeOnMessage.
+enum class WakeOverride : uint8_t { Default = 0, On = 1, Off = 2 };
+
 // Short label for the ChatMenu "Notifications" row value column.
 inline const char* notifyLevelShortLabel(NotifyLevel lvl) {
   switch (lvl) {
@@ -28,6 +31,10 @@ struct MessagesConfig {
   bool    autoRetry     = false;
   bool    autoResetPath = false;
   uint8_t directAcks    = 1;   // 1 or 2
+  bool    wakeOnMessage = true;   // false = incoming messages don't wake a sleeping screen
+  uint8_t repeatMins    = 0;      // re-alert every N minutes while unread; 0 = off
+  uint8_t repeatStopMins = 30;    // give up re-alerting after N minutes; 0 = never
+  bool    openAtUnread  = false;  // true = a chat opens at its first unread message, not the newest
 };
 
 struct ConvoView {
@@ -51,13 +58,13 @@ struct MessageView {
   uint8_t     retryAttempt; // outbound DM still pending: current auto-retry number (0 = none)
   int8_t      snrx4;
   uint8_t     hops;
-  const uint8_t* path; uint8_t pathLen;
+  const uint8_t* path; uint8_t pathLen; // MeshCore encoded path length
 };
 struct RepeatView {
   uint8_t        hops;
   int8_t         snrx4;
-  const uint8_t* path;     // hop hash-bytes; resolve via resolveHop()
-  uint8_t        pathLen;
+  const uint8_t* path;
+  uint8_t        pathLen;   // MeshCore encoded path length
 };
 
 struct MessagesService {
@@ -80,7 +87,7 @@ struct MessagesService {
   virtual void clearActiveConvo() = 0;
   virtual int  repeatCount(const ConvoKey& k, int msgIdx) const = 0;
   virtual bool getRepeat(const ConvoKey& k, int msgIdx, int r, RepeatView& out) const = 0;
-  virtual bool resolveHop(uint8_t hashByte, const char*& name, uint8_t& knownCount) const = 0;
+  virtual bool resolveHop(const uint8_t* hash, uint8_t hashSize, const char*& name, uint8_t& knownCount) const = 0;
   virtual void deleteMessage(const ConvoKey& k, int i) = 0;
   virtual void clearConvo(const ConvoKey& k) = 0;
   virtual void deleteConvo(const ConvoKey& k) = 0;
@@ -105,6 +112,10 @@ struct MessagesService {
   // non-adapter impls (tests) inert at Default.
   virtual uint8_t chatSound(const ConvoKey& k) const { (void)k; return 0; }
   virtual void setChatSound(const ConvoKey& k, uint8_t encoded) { (void)k; (void)encoded; }
+  // Per-chat screen-wake override (Default follows the global toggle). Adapter-
+  // backed; defaults keep non-adapter impls (tests) inert at Default.
+  virtual WakeOverride chatWake(const ConvoKey& k) const { (void)k; return WakeOverride::Default; }
+  virtual void setChatWake(const ConvoKey& k, WakeOverride v) { (void)k; (void)v; }
   // Global Messages settings. Adapter-backed; defaults keep non-adapter impls
   // (tests) inert at the struct defaults.
   virtual MessagesConfig getMessagesConfig() const { return MessagesConfig(); }

@@ -9,20 +9,25 @@ struct AppletRegistration;
 
 // Cross-cutting UI preferences: battery indicator style and the Home screen's
 // left/right quick-action shortcuts. Values are cached in RAM and persisted
-// via AppletStorage ("uibatt", "qa_l", "qa_r"). Quick actions are stored as
+// via AppletStorage ("uibatt", "battcal", "qa_l", "qa_r"). Quick actions are stored as
 // the applet's registered label string so no registry changes are needed; an
 // unresolvable label falls back to the slot default (Contacts / Messages).
 // begin(nullptr) is valid (host tests, headless): defaults apply, sets no-op.
 class UiPrefs {
 public:
+  enum class BattMode : uint8_t { Gauge = 0, Percent = 1, Voltage = 2 };
+
   static const int SLOT_LEFT = 0;
   static const int SLOT_RIGHT = 1;
   static const int LABEL_CAP = 17;   // stored label + NUL (registry labels are short)
 
   void begin(AppletStorage* s);
 
-  bool battShowPercent() const { return _battPercent; }
-  void setBattShowPercent(bool on);
+  BattMode battMode() const { return _battMode; }
+  void     setBattMode(BattMode m);           // persists "uibatt"
+
+  int  battCalPercent() const { return _battCal; }   // 50..150, 100 = no trim
+  void setBattCalPercent(int pct);            // clamps, persists "battcal"
 
   // The raw configured label (stored value, else the slot default).
   const char* quickActionLabel(int slot) const;
@@ -40,7 +45,8 @@ public:
 
 private:
   AppletStorage* _st = nullptr;
-  bool _battPercent = false;
+  BattMode _battMode = BattMode::Gauge;
+  int      _battCal = 100;
   bool _dark = true;
   char _qa[2][LABEL_CAP] = {{0}, {0}};
 };

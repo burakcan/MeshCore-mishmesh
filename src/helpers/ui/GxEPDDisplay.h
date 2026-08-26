@@ -16,6 +16,9 @@
 
 #include "DisplayDriver.h"
 
+// [mishmesh] Per-variant panel geometry. The logical canvas the UI draws into is
+// configurable so a board can pick an integer scale onto its panel - non-integer
+// scales smear the pixel fonts. Defaults reproduce the old hardcoded 128x128.
 #ifndef EINK_DISPLAY_MODEL
   #define EINK_DISPLAY_MODEL GxEPD2_150_BN
   #ifndef PIN_DISPLAY_CS
@@ -43,6 +46,7 @@
 #ifndef EINK_Y_OFFSET
   #define EINK_Y_OFFSET 10
 #endif
+// [/mishmesh]
 
 class GxEPDDisplay : public DisplayDriver {
 
@@ -57,29 +61,37 @@ class GxEPDDisplay : public DisplayDriver {
   CRC32 display_crc;
   int last_display_crc_value = 0;
 
+  // [mishmesh] Scale both edges, then subtract. Scaling w/h independently of x/y
+  // truncates twice, so abutting rects leave 1px seams on the panel.
   void scaleRect(int x, int y, int w, int h, int& x1, int& y1, int& x2, int& y2) const {
     x1 = (int)(x * scale_x);
     y1 = (int)(y * scale_y);
     x2 = (int)((x + w) * scale_x);
     y2 = (int)((y + h) * scale_y);
   }
+  // [/mishmesh]
 
 public:
+  // [mishmesh] logical canvas size comes from the variant
   GxEPDDisplay() : DisplayDriver(EINK_LOGICAL_WIDTH, EINK_LOGICAL_HEIGHT), display(EINK_DISPLAY_MODEL(PIN_DISPLAY_CS, PIN_DISPLAY_DC, PIN_DISPLAY_RST, PIN_DISPLAY_BUSY)) {}
+  // [/mishmesh]
 
   bool begin();
 
   bool isOn() override { return _isOn; }
   bool isEink() override { return true; }
+  // [mishmesh] a panel refresh blocks for hundreds of ms; hand GxEPD2's busy
+  // callback through so the UI can keep sampling buttons meanwhile.
   void setBusyPoll(void (*cb)(const void*), const void* ctx) override {
     display.epd2.setBusyCallback(cb, ctx);
   }
+  // [/mishmesh]
   void turnOn() override;
   void turnOff() override;
   void clear() override;
-  void startFrame(Color bkg = DARK) override;
+  void startFrame(ColorVal bkg = UIColor::window_bkg) override;
   void setTextSize(int sz) override;
-  void setColor(Color c) override;
+  void setColor(ColorVal c) override;
   void setCursor(int x, int y) override;
   void print(const char* str) override;
   void fillRect(int x, int y, int w, int h) override;

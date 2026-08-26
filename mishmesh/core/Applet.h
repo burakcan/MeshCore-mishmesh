@@ -10,10 +10,8 @@ namespace mishmesh {
 class Canvas;
 class AppletHost;
 struct ContactsService;   // mishmesh/core/ContactsService.h
-// [mishmesh]
 namespace sound { class SoundEngine; }
 class AirtimeHistory;     // mishmesh/core/AirtimeHistory.h
-// [/mishmesh]
 
 // Snapshot of device health for the System stats screen. Plain integers so the
 // framework stays free of companion/platform types. 0 (or nullptr) means
@@ -28,11 +26,11 @@ struct SystemStats {
   uint32_t    storageTotalKb   = 0;   // 0 = unknown
   uint32_t    uptimeSecs       = 0;
   uint16_t    batteryMv        = 0;
+  int16_t     mcuTempC10       = INT16_MIN; // MCU die temperature in 0.1C; INT16_MIN = unavailable
   const char* meshcoreVersion  = nullptr;   // upstream MeshCore release
   const char* mishmeshVersion  = nullptr;   // mishmesh UI version
 };
 
-// [mishmesh]
 // Radio airtime / duty-cycle usage for the Airtime applet. Totals are lifetime
 // (since boot) in ms; the budget fields describe the duty-cycle token bucket the
 // Dispatcher enforces. `history` (may be null) is the loop-fed per-minute ring
@@ -49,7 +47,6 @@ struct AirtimeStats {
   uint32_t recvDirect   = 0;
   const AirtimeHistory* history = nullptr;
 };
-// [/mishmesh]
 
 // LoRa radio configuration surfaced to the on-device UI. Units match NodePrefs:
 // freq in MHz, bw in kHz.
@@ -72,7 +69,6 @@ struct AppServices {
   virtual uint32_t    epochSeconds() const = 0;   // UNIX seconds; 0 if unknown
   // Fill device-health stats; return false if unavailable. Default: no stats.
   virtual bool systemStats(SystemStats& out) const { (void)out; return false; }
-  // [mishmesh]
   // BLE/companion link state. Defaults keep the framework companion-agnostic;
   // the adapter (UITask) overrides these on BLE builds.
   virtual bool     bleSupported() const { return false; }
@@ -88,6 +84,12 @@ struct AppServices {
   // Defaults keep the framework companion-agnostic (off, not settable).
   virtual bool shareLocationInAdvert() const { return false; }
   virtual void setShareLocationInAdvert(bool) {}
+  // Path-hash size this node stamps on floods it originates: 0/1/2 = 1/2/3 bytes
+  // per hop (NodePrefs.path_hash_mode). Higher sizes disambiguate nodes but are
+  // dropped by repeaters on firmware < 1.14 and cut the max flood hop count.
+  // Defaults keep the framework companion-agnostic (mode 0, not settable).
+  virtual uint8_t pathHashMode() const { return 0; }
+  virtual void    setPathHashMode(uint8_t mode) { (void)mode; }
   // Set + persist the global sound volume (0=Mute,1=Low,2=Mid,3=High). The adapter
   // applies it to the engine and writes it to NodePrefs. Default no-op.
   virtual void setSoundVolume(uint8_t level) { (void)level; }
@@ -129,6 +131,12 @@ struct AppServices {
   // it to NodePrefs and applies it live to the AppletHost.
   virtual uint8_t screenSleepIndex() const { return 1; }
   virtual void    setScreenSleepIndex(uint8_t) {}
+  virtual bool    screenBrightnessSupported() const { return false; }
+  virtual uint8_t screenBrightnessIndex() const { return 2; }
+  virtual void    setScreenBrightnessIndex(uint8_t) {}
+  // Apply a brightness index to the panel live without persisting it, so the
+  // stepper can preview each level; Cancel re-applies the saved index.
+  virtual void    previewScreenBrightnessIndex(uint8_t) {}
   // Set + persist the device (advert) name. Rejects invalid/empty names
   // (isValidNodeName). Returns true if applied. Save only - no advert is sent.
   // Defaults keep the framework companion-agnostic (not settable).
@@ -159,7 +167,16 @@ struct AppServices {
   // Dev tool: re-trigger the first-boot onboarding wizard (sets onboarding_state to
   // IN_PROGRESS and reboots). Default no-op. Only wired/surfaced in dev builds.
   virtual void resetOnboarding() {}
-  // [/mishmesh]
+  // Battery ADC calibration. batteryCalPercent is the stored trim (50..150,
+  // 100 = none). preview* applies a trim live without persisting (stepper
+  // preview); set* persists + applies. batteryMillivoltsLive is a fresh,
+  // unsmoothed reading for that live preview (batteryMillivolts() above is the
+  // 8s-smoothed value the always-on indicator uses). Defaults keep the
+  // framework companion-agnostic.
+  virtual int      batteryCalPercent() const { return 100; }
+  virtual void     previewBatteryCalibration(int pct) { (void)pct; }
+  virtual void     setBatteryCalibration(int pct) { (void)pct; }
+  virtual uint16_t batteryMillivoltsLive() const { return 0; }
 };
 
 // Handle through which an applet reaches host/app services. Grows as features land.
@@ -167,7 +184,6 @@ struct AppletContext {
   AppletHost*      host = nullptr;
   AppServices*     app = nullptr;
   ContactsService* contacts = nullptr;   // [new] contacts/mesh seam
-  // [mishmesh]
   struct MessagesService* messages = nullptr;
   const InputState* inputState = nullptr;   // host-owned; updated once per loop
   AppletStorage* storage = nullptr;   // generic key->blob persistence (may be null)
@@ -178,7 +194,6 @@ struct AppletContext {
     static const InputState kEmpty;
     return inputState ? *inputState : kEmpty;
   }
-  // [/mishmesh]
 };
 
 class Applet {

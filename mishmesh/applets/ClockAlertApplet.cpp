@@ -41,11 +41,41 @@ int ClockAlertApplet::onRender(Canvas& c) {
   }
 
   bool alarm = _kind == ClockEvent::AlarmDue;
+  bool pomo  = _kind == ClockEvent::PomodoroBreak ||
+               _kind == ClockEvent::PomodoroFocus ||
+               _kind == ClockEvent::PomodoroSetDone;
   int w = c.width(), h = c.height();
-  c.drawGlyph(iconFont(), w / 2 - 6, 4, (uint16_t)(alarm ? Icon::Bell : Icon::Clock),
-              DisplayDriver::LIGHT);
-  c.drawText(fontSubtitle(), w / 2, 19, alarm ? "Alarm" : "Timer done",
-             DisplayDriver::LIGHT, TextAlign::Center);
+
+  const char* title;
+  Icon icon;
+  switch (_kind) {
+    case ClockEvent::PomodoroBreak:   title = "Break time";    icon = Icon::Coffee; break;
+    case ClockEvent::PomodoroFocus:   title = "Back to focus"; icon = Icon::Tomato; break;
+    case ClockEvent::PomodoroSetDone: title = "Set complete!"; icon = Icon::Tomato; break;
+    case ClockEvent::AlarmDue:        title = "Alarm";         icon = Icon::Bell;   break;
+    default:                          title = "Timer done";    icon = Icon::Clock;  break;
+  }
+  c.drawGlyph(iconFont(), w / 2 - 6, 4, (uint16_t)icon, DisplayDriver::LIGHT);
+  c.drawText(fontSubtitle(), w / 2, 19, title, DisplayDriver::LIGHT, TextAlign::Center);
+
+  if (_kind == ClockEvent::PomodoroSetDone) {
+    // Celebrate: a full session ring of the configured length.
+    int n = clockService().pmSetCount();
+    int cx = w / 2, cy = 40, r = 12;
+    int seg = 360 / n, gap = 10;
+    for (int i = 0; i < n; i++)
+      c.drawArc(cx, cy, r, 3, i * seg + gap / 2, (i + 1) * seg - gap / 2,
+                DisplayDriver::LIGHT);
+    c.drawText(fontCaption(), w / 2, h - 7, "Press any key to dismiss",
+               DisplayDriver::LIGHT, TextAlign::Center);
+    return 250;
+  }
+  if (pomo) {
+    // Break / resume: no numeric readout, just the wording + dismiss hint.
+    c.drawText(fontCaption(), w / 2, h - 7, "Press any key to dismiss",
+               DisplayDriver::LIGHT, TextAlign::Center);
+    return 250;
+  }
 
   char buf[12] = "";
   bool fmt12 = _app && _app->timeFormat12h();

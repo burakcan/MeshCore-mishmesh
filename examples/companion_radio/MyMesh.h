@@ -8,11 +8,11 @@
 #define FIRMWARE_VER_CODE 13
 
 #ifndef FIRMWARE_BUILD_DATE
-#define FIRMWARE_BUILD_DATE "6 Jun 2026"
+#define FIRMWARE_BUILD_DATE "14 Aug 2026"
 #endif
 
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.16.0"
+#define FIRMWARE_VERSION "v1.17.1"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -206,6 +206,22 @@ public:
   int  uiRecentAdvertCount();
   bool uiGetRecentAdvert(int index, ContactInfo& out);
   // [/mishmesh]
+
+  // [mishmesh] Active node discovery (NODE_DISCOVER_REQ/RESP, firmware v1.10+).
+  // uiStartNodeDiscover broadcasts a zero-hop request filtered to advTypeMask
+  // (1<<ADV_TYPE_*); matching direct neighbours reply into _ui_discover_results (this
+  // session, carries SNR) and the shared discovery pool (uiNoteDiscovery, so the
+  // existing add path / Contacts Discover tab surface them).
+  static const int UI_MAX_DISCOVER_RESULTS = 16;
+  static const uint32_t DISCOVER_WINDOW_MS = 12000;
+  struct UiDiscoverResult { uint8_t pubkey[PUB_KEY_SIZE]; uint8_t type; int8_t snrX4; };
+  void     uiStartNodeDiscover(uint8_t advTypeMask);
+  uint32_t uiDiscoverSeq() const { return _ui_discover_seq; }
+  bool     uiDiscoverScanning();                 // non-const: reads the clock
+  int      uiDiscoverResultCount() const { return _ui_discover_result_count; }
+  bool     uiGetDiscoverResult(int i, UiDiscoverResult& out) const;
+  // [/mishmesh]
+
   void uiSetMessageStore(mishmesh::MessageStore* s) { _mm_store = s; }
   DataStore* getStore() const { return _store; }
   // On-device send mirroring CMD_SEND_TXT_MSG: DM (k.type==0) or channel (k.type==1).
@@ -213,8 +229,10 @@ public:
   // Same, but applies a per-chat flood-scope override for this one send (mishmesh
   // per-chat region): scope_key16 = 16-byte TransportKey, or null to fall back to
   // the node default scope. Any session scope set by the companion is saved and
-  // restored around the send.
-  bool mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16);
+  // restored around the send. senderTimeOut (optional, DMs only) receives the
+  // message timestamp the send used - the id auto-retry tracks the message by.
+  bool mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16,
+                        uint32_t* senderTimeOut = nullptr);
   // Seed an (empty) chat for every joined channel (e.g. the default Public
   // channel) so it shows on a fresh device before any message arrives.
   void uiSeedChannels();
@@ -235,6 +253,7 @@ public:
 protected:
   float getAirtimeBudgetFactor() const override;
   int getInterferenceThreshold() const override;
+  bool getCADEnabled() const override;
   int calcRxDelay(float score, uint32_t air_time) const override;
   uint32_t getRetransmitDelay(const mesh::Packet *packet) override;
   uint32_t getDirectRetransmitDelay(const mesh::Packet *packet) override;
@@ -295,7 +314,11 @@ protected:
   }
 
 public:
-  void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
+  void savePrefs() {
+    _prefs.node_lat = sensors.node_lat;
+    _prefs.node_lon = sensors.node_lon;
+    _store->savePrefs(_prefs);
+  }
 
   // [mishmesh] storage stats for the on-device System screen
   uint32_t getStorageUsedKb()  const { return _store->getStorageUsedKb(); }
@@ -385,6 +408,13 @@ private:
   ContactInfo _ui_discoveries[UI_MAX_DISCOVERIES];
   int _ui_discovery_count = 0;
   void uiNoteDiscovery(const ContactInfo& ci);   // called from onDiscoveredContact
+  // [mishmesh] active node-discovery session state
+  uint32_t _ui_discover_tag = 0;
+  uint32_t _ui_discover_until = 0;
+  uint32_t _ui_discover_seq = 0;
+  UiDiscoverResult _ui_discover_results[UI_MAX_DISCOVER_RESULTS];
+  int _ui_discover_result_count = 0;
+  // [/mishmesh]
   // [mishmesh]
   ContactInfo _ui_recent_adverts[UI_MAX_RECENT_ADVERTS];
   int _ui_recent_advert_count = 0;
@@ -397,7 +427,8 @@ private:
   void markContactsDirty();
   mishmesh::MessageStore* _mm_store = nullptr;
   void logRx(mesh::Packet* pkt, int len, float score) override;
-  bool mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text);  // send body, scope-agnostic
+  bool mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text,
+                            uint32_t* senderTimeOut);  // send body, scope-agnostic
   // [/mishmesh]
 
   TransportKey send_scope;

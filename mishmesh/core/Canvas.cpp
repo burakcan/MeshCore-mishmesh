@@ -1,10 +1,12 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/UiPrefs.h>
 #include <mcufont.h>
+#include <math.h>
+#include <string.h>
 
 namespace mishmesh {
 
-// [mishmesh] glyph-overlay hook state (set via Canvas::setEmojiRenderer). Null
+// glyph-overlay hook state (set via Canvas::setEmojiRenderer). Null
 // until an overlay registers, so unregistered rendering/measuring is unchanged.
 static const mf_font_s* s_emojiFont = nullptr;
 static Canvas::EmojiLookupFn s_emojiLookup = nullptr;
@@ -17,11 +19,14 @@ void Canvas::setEmojiRenderer(const mf_font_s* font, EmojiLookupFn lookup,
                               EmojiZeroWidthFn zeroWidth) {
   s_emojiFont = font; s_emojiLookup = lookup; s_emojiZeroWidth = zeroWidth;
 }
-// [/mishmesh]
 
-DisplayDriver::Color themedColor(DisplayDriver::Color c) {
+DisplayDriver::Color themeSwapped(DisplayDriver::Color c) {
   if (uiPrefs().darkMode()) return c;
-  return c == DisplayDriver::LIGHT ? DisplayDriver::DARK : DisplayDriver::LIGHT;
+  return c == DisplayDriver::DARK ? DisplayDriver::LIGHT : DisplayDriver::DARK;
+}
+
+ColorVal themedColor(DisplayDriver::Color c) {
+  return themeSwapped(c) == DisplayDriver::DARK ? UIColor::window_bkg : UIColor::primary_txt;
 }
 
 // Intersect a local rect with the clip window [cl,cr) x [ct,cb); false if
@@ -128,7 +133,7 @@ void mm_pixel(int16_t x, int16_t y, uint8_t count, uint8_t alpha, void* state) {
 
 uint8_t mm_char(int16_t x, int16_t y, mf_char ch, void* state) {
   TextState* s = (TextState*)state;
-  // [mishmesh] Glyph overlay: zero-width modifiers (VS16/ZWJ/skin tones) draw
+  // Glyph overlay: zero-width modifiers (VS16/ZWJ/skin tones) draw
   // nothing; mapped codepoints come from the registered overlay atlas, drawn
   // centered on the body line and advancing by the atlas glyph's width (mcufont
   // advances by our return - mf_justify.c). Unregistered -> unchanged path below.
@@ -142,7 +147,6 @@ uint8_t mm_char(int16_t x, int16_t y, mf_char ch, void* state) {
       return (uint8_t)(s_emojiFont->character_width(s_emojiFont, glyph) + 2 * kEmojiPadPx);
     }
   }
-  // [/mishmesh]
   // Glyphs the font can't render (emoji, other non-BMP/out-of-range codepoints)
   // would otherwise be drawn as mcufont's '?' fallback. Show a solid block
   // instead, advancing by the fallback width so layout/wrapping is unchanged.
@@ -184,7 +188,7 @@ static int glyphAdvance(const mf_font_s* font, mf_char ch) {
 
 int Canvas::textWidth(const mf_font_s* font, const char* str) const {
   if (!font || !str) return 0;
-  // [mishmesh] With an overlay registered, mirror mm_char so measure == render:
+  // With an overlay registered, mirror mm_char so measure == render:
   // mapped codepoints measure at the overlay glyph's advance, zero-width modifiers
   // measure 0, everything else keeps stock width (incl. the fallback width for
   // unknown glyphs). No overlay -> exactly mf_get_string_width(..., false).
@@ -193,7 +197,6 @@ int Canvas::textWidth(const mf_font_s* font, const char* str) const {
     while ((ch = mf_getchar(&p)) != 0) w += glyphAdvance(font, ch);
     return w;
   }
-  // [/mishmesh]
   return mf_get_string_width(font, str, 0, false);
 }
 
@@ -291,6 +294,26 @@ void Canvas::fillStipple(int x, int y, int w, int h, DisplayDriver::Color c) {
   for (int j = 0; j < h; j++)
     for (int i = ((phase + j) & 1); i < w; i += 2)
       _d->fillRect(_ox + x + i, _oy + y + j, 1, 1);
+}
+
+void Canvas::drawArc(int cx, int cy, int r, int thickness, int startDeg,
+                     int endDeg, DisplayDriver::Color color) {
+  if (r <= 0 || thickness <= 0 || endDeg <= startDeg) return;
+  if (thickness > r) thickness = r;   // rr = r - t must not cross the center
+  // Angular step fine enough that the outer edge has no gaps (arc length per
+  // step <= ~1px): d(theta) ~ 1/r radians.
+  const double stepRad = 1.0 / (double)r;
+  const double a0 = startDeg * M_PI / 180.0;
+  const double a1 = endDeg   * M_PI / 180.0;
+  for (double a = a0; a <= a1; a += stepRad) {
+    double s = sin(a), co = cos(a);
+    for (int t = 0; t < thickness; t++) {
+      int rr = r - t;
+      int x = cx + (int)lround(rr * s);   // 0deg = top, clockwise
+      int y = cy - (int)lround(rr * co);
+      fillRect(x, y, 1, 1, color);        // 1x1 => FakeDisplayDriver logs a litPixel
+    }
+  }
 }
 
 void Canvas::blit1bpp(const uint8_t* buf, int w, int h) {

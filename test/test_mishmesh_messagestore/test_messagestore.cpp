@@ -1,6 +1,7 @@
 // test/test_mishmesh_messagestore/test_messagestore.cpp
 #include <gtest/gtest.h>
 #include <mishmesh/core/MessageStore.h>
+#include <mishmesh/core/RetryEngine.h>
 #include "FakeMsgLogBackend.h"
 #include <cstring>
 using namespace mishmesh;
@@ -32,6 +33,16 @@ TEST_F(MSFix, InboundCreatesConvoAndMessage) {
   EXPECT_EQ(-32, r.snrx4);
   EXPECT_EQ(2, r.pathLen);
   EXPECT_EQ(0x63, r.path[1]);
+}
+
+TEST_F(MSFix, InboundPreservesMultibytePathHashes) {
+  uint8_t path[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+  s.appendInbound(dm("ALICE!"), "hi", 2, 1000, 2000, -32, path, 0x42);
+  MsgRecord r;
+  ASSERT_TRUE(s.getMessage(dm("ALICE!"), 0, r));
+  EXPECT_EQ(0x42, r.pathLen);
+  EXPECT_EQ(2, r.hops);
+  EXPECT_EQ(0, memcmp(path, r.path, 4));
 }
 
 TEST_F(MSFix, RecencySortedNewestFirst) {
@@ -201,26 +212,54 @@ TEST_F(MSFix, PendingDMEnumerationSkipsNonPending) {
   EXPECT_FALSE(s.getPendingDM(1, k, st));                            // only one left
 }
 
-TEST_F(MSFix, CollectPendingDMsSinglePass) {
+TEST_F(MSFix, CheckPendingDMsReportsPerEntry) {
   s.appendOutboundDM(dm("ALICE!"), "a", 1, 100, 100, 0x1111, 0);
   s.appendOutboundDM(dm("ALICE!"), "b", 1, 101, 101, 0x1112, 0);
   s.appendOutboundDM(dm("BOBBBB"), "c", 1, 200, 200, 0x2222, 0);
-  s.appendInbound(dm("CAROL!"), "in", 2, 300, 300, 0, nullptr, 0);   // inbound: skipped
-  s.appendOutboundChannel(channelKey(4), "d", 1, 400, 400);          // channel: skipped
-  ConvoKey keys[8]; uint32_t times[8];
-  EXPECT_EQ(3, s.collectPendingDMs(keys, times, 8));
-  s.markDelivered(0x1111, 0);                                        // one drops out
-  int n = s.collectPendingDMs(keys, times, 8);
-  EXPECT_EQ(2, n);
-  for (int i = 0; i < n; i++) EXPECT_NE(100u, times[i]);             // the delivered one is gone
+  ConvoKey keys[4] = { dm("ALICE!"), dm("ALICE!"), dm("BOBBBB"), dm("CAROL!") };
+  uint32_t times[4] = { 100, 101, 200, 300 };
+  bool pending[4];
+  s.checkPendingDMs(keys, times, pending, 4);
+  EXPECT_TRUE(pending[0]);
+  EXPECT_TRUE(pending[1]);
+  EXPECT_TRUE(pending[2]);
+  EXPECT_FALSE(pending[3]);                                          // no such message
+  s.markDelivered(0x1111, 0);
+  s.markFailed(dm("BOBBBB"), 200);
+  s.checkPendingDMs(keys, times, pending, 4);
+  EXPECT_FALSE(pending[0]);
+  EXPECT_TRUE(pending[1]);
+  EXPECT_FALSE(pending[2]);
 }
 
-TEST_F(MSFix, CollectPendingDMsRespectsCap) {
-  for (int i = 0; i < 5; i++)
+// The retry engine reads this as "still in flight", so an entry it asks about
+// must never be dropped for being one of many - there is no cap to fall off.
+TEST_F(MSFix, CheckPendingDMsHasNoCap) {
+  ConvoKey keys[RetryEngine::MAX_PENDING]; uint32_t times[RetryEngine::MAX_PENDING];
+  bool pending[RetryEngine::MAX_PENDING];
+  for (int i = 0; i < RetryEngine::MAX_PENDING; i++) {
     s.appendOutboundDM(dm("ALICE!"), "x", 1, 500 + i, 500 + i, 0x3000 + i, 0);
-  ConvoKey keys[3]; uint32_t times[3];
-  EXPECT_EQ(3, s.collectPendingDMs(keys, times, 3));                 // stops at cap
-  EXPECT_EQ(0, s.collectPendingDMs(keys, times, 0));                 // degenerate cap
+    keys[i] = dm("ALICE!"); times[i] = 500 + i;
+  }
+  s.appendOutboundDM(dm("BOBBBB"), "y", 1, 900, 900, 0x4000, 0);     // extra pending elsewhere
+  s.checkPendingDMs(keys, times, pending, RetryEngine::MAX_PENDING);
+  for (int i = 0; i < RetryEngine::MAX_PENDING; i++) EXPECT_TRUE(pending[i]);
+}
+
+TEST_F(MSFix, FailStalePendingDMsSettlesPreviousSession) {
+  s.appendOutboundDM(dm("ALICE!"), "a", 1, 100, 100, 0x1111, 0);
+  s.appendOutboundDM(dm("ALICE!"), "b", 1, 101, 101, 0x1112, 0);
+  s.appendOutboundDM(dm("BOBBBB"), "c", 1, 200, 200, 0x2222, 0);
+  s.markDelivered(0x1112, 42);
+  s.appendInbound(dm("CAROL!"), "in", 2, 300, 300, 0, nullptr, 0);
+  s.appendOutboundChannel(channelKey(4), "d", 1, 400, 400);          // channel: untouched
+  EXPECT_EQ(2, s.failStalePendingDMs());
+  EXPECT_EQ(0, s.pendingDMCount());
+  MsgRecord r;
+  ASSERT_TRUE(s.getMessage(dm("ALICE!"), 0, r)); EXPECT_EQ(ST_FAILED, r.status);
+  ASSERT_TRUE(s.getMessage(dm("ALICE!"), 1, r)); EXPECT_EQ(ST_DELIVERED, r.status);
+  ASSERT_TRUE(s.getMessage(dm("BOBBBB"), 0, r)); EXPECT_EQ(ST_FAILED, r.status);
+  EXPECT_EQ(0, s.failStalePendingDMs());                             // nothing left to settle
 }
 
 TEST_F(MSFix, GetDMTextReturnsBody) {

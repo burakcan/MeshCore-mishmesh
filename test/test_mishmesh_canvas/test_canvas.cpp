@@ -3,6 +3,8 @@
 #include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/text/Fonts.h>
 #include "FakeDisplayDriver.h"
+#include <algorithm>
+#include <cmath>
 
 using namespace mishmesh;
 
@@ -134,6 +136,100 @@ TEST(CanvasFallback, UnrenderableGlyphDrawsBlockNotQuestionMark) {
   EXPECT_EQ(1, blocks);
 }
 
+TEST(CanvasEllipsis, CyrillicIsNeverSplitMidCodepoint) {
+  const mf_font_s* f = mishmesh::fontBody();
+  FakeDisplayDriver truncated, expected;
+  mishmesh::Canvas tc(&truncated), ec(&expected);
+  int maxw = ec.textWidth(f, "П...");
+
+  tc.drawTextEllipsized(f, 0, 0, maxw, "Привет", DisplayDriver::LIGHT);
+  ec.drawText(f, 0, 0, "П...", DisplayDriver::LIGHT);
+
+  // Cutting between П's two UTF-8 bytes would leave a stray lead byte, which
+  // renders as the block placeholder rather than the letter.
+  ASSERT_FALSE(truncated.fills.empty());
+  ASSERT_EQ(expected.fills.size(), truncated.fills.size());
+  for (size_t i = 0; i < expected.fills.size(); i++) {
+    EXPECT_EQ(expected.fills[i].x, truncated.fills[i].x) << "run " << i;
+    EXPECT_EQ(expected.fills[i].y, truncated.fills[i].y) << "run " << i;
+    EXPECT_EQ(expected.fills[i].w, truncated.fills[i].w) << "run " << i;
+    EXPECT_EQ(expected.fills[i].h, truncated.fills[i].h) << "run " << i;
+  }
+}
+
+TEST(CanvasCyrillic, RussianTextUsesBitmapGlyphs) {
+  FakeDisplayDriver d(128, 64);
+  mishmesh::Canvas c(&d);
+  const Font* f = fontBody();
+
+  c.drawText(f, 0, 0, "Привет", DisplayDriver::LIGHT);
+
+  EXPECT_EQ(36, c.textWidth(f, "Привет"));
+  ASSERT_FALSE(d.fills.empty());
+  for (const auto& run : d.fills) EXPECT_EQ(1, run.h);
+}
+
+TEST(CanvasCyrillic, BodyStrokeWeightMatchesNokiaLatin) {
+  FakeDisplayDriver latinDisplay(128, 64);
+  FakeDisplayDriver cyrillicDisplay(128, 64);
+  mishmesh::Canvas latin(&latinDisplay);
+  mishmesh::Canvas cyrillic(&cyrillicDisplay);
+
+  latin.drawText(fontBody(), 0, 0, "B", DisplayDriver::LIGHT);
+  cyrillic.drawText(fontBody(), 0, 0, "Б", DisplayDriver::LIGHT);
+
+  int latinPixels = 0;
+  int cyrillicPixels = 0;
+  for (const auto& run : latinDisplay.fills) latinPixels += run.w;
+  for (const auto& run : cyrillicDisplay.fills) cyrillicPixels += run.w;
+  EXPECT_GE(cyrillicPixels, latinPixels * 3 / 4);
+}
+
+TEST(CanvasCyrillic, SharesLatinBaseline) {
+  FakeDisplayDriver latinDisplay(128, 64);
+  FakeDisplayDriver cyrillicDisplay(128, 64);
+  mishmesh::Canvas latin(&latinDisplay);
+  mishmesh::Canvas cyrillic(&cyrillicDisplay);
+
+  latin.drawText(fontBody(), 0, 0, "A", DisplayDriver::LIGHT);
+  cyrillic.drawText(fontBody(), 0, 0, "А", DisplayDriver::LIGHT);
+
+  ASSERT_FALSE(latinDisplay.fills.empty());
+  ASSERT_FALSE(cyrillicDisplay.fills.empty());
+  int latinTop = latinDisplay.fills.front().y;
+  int cyrillicTop = cyrillicDisplay.fills.front().y;
+  for (const auto& run : latinDisplay.fills) latinTop = std::min(latinTop, (int)run.y);
+  for (const auto& run : cyrillicDisplay.fills) cyrillicTop = std::min(cyrillicTop, (int)run.y);
+  EXPECT_EQ(latinTop, cyrillicTop);
+}
+
+TEST(CanvasCyrillic, DescenderUsesBottomRowWithoutClipping) {
+  FakeDisplayDriver d(128, 64);
+  mishmesh::Canvas c(&d);
+
+  c.drawText(fontBody(), 0, 0, "у", DisplayDriver::LIGHT);
+
+  int bottomPixels = 0;
+  for (const auto& run : d.fills) {
+    if (run.y == c.fontHeight(fontBody())) bottomPixels += run.w;
+  }
+  EXPECT_GE(bottomPixels, 2);
+}
+
+TEST(CanvasCyrillic, BodyLinesKeepTwoBlankRowsApart) {
+  FakeDisplayDriver d(128, 64);
+  mishmesh::Canvas c(&d);
+  const Font* font = fontBody();
+
+  c.drawText(font, 0, 0, "ЁЩ", DisplayDriver::LIGHT);
+  c.drawText(font, 0, c.lineHeight(font), "ЙЦ", DisplayDriver::LIGHT);
+
+  for (const auto& run : d.fills) {
+    EXPECT_NE(10, run.y);
+    EXPECT_NE(11, run.y);
+  }
+}
+
 TEST(CanvasTheme, LightModeSwapsColorsAtDriverBoundary) {
   mishmesh::uiPrefs().resetForTest();               // dark: identity mapping
   FakeDisplayDriver d;
@@ -146,7 +242,7 @@ TEST(CanvasTheme, LightModeSwapsColorsAtDriverBoundary) {
   EXPECT_EQ(DisplayDriver::DARK, d.lastColor);
   c.fillRect(0, 0, 4, 4, DisplayDriver::DARK);
   EXPECT_EQ(DisplayDriver::LIGHT, d.lastColor);
-  EXPECT_EQ(DisplayDriver::DARK, mishmesh::themedColor(DisplayDriver::LIGHT));
+  EXPECT_EQ(DisplayDriver::DARK, mishmesh::themeSwapped(DisplayDriver::LIGHT));
 
   mishmesh::uiPrefs().resetForTest();               // don't leak into other tests
 }
@@ -178,6 +274,56 @@ TEST(CanvasRoundRect, FillSmallFallsBackToPlainRect) {
   EXPECT_EQ(4, d.fills[0].y);
   EXPECT_EQ(2, d.fills[0].w);
   EXPECT_EQ(2, d.fills[0].h);
+}
+
+TEST(CanvasArc, FullRingLightsCardinalPointsNotCenter) {
+  FakeDisplayDriver d(64, 64);
+  Canvas c(&d);
+  c.drawArc(32, 32, 20, 1, 0, 360, DisplayDriver::LIGHT);
+  EXPECT_TRUE(d.hasLit(32, 12));   // top    (cy - r)
+  EXPECT_TRUE(d.hasLit(52, 32));   // right  (cx + r)
+  EXPECT_TRUE(d.hasLit(32, 52));   // bottom (cy + r)
+  EXPECT_TRUE(d.hasLit(12, 32));   // left   (cx - r)
+  EXPECT_FALSE(d.hasLit(32, 32));  // center stays clear
+}
+
+TEST(CanvasArc, TopRightQuadrantOnly) {
+  FakeDisplayDriver d(64, 64);
+  Canvas c(&d);
+  c.drawArc(32, 32, 20, 1, 0, 90, DisplayDriver::LIGHT);  // top -> right
+  EXPECT_TRUE(d.hasLit(32, 12));    // top
+  EXPECT_TRUE(d.hasLit(52, 32));    // right
+  EXPECT_FALSE(d.hasLit(32, 52));   // bottom not drawn
+  EXPECT_FALSE(d.hasLit(12, 32));   // left not drawn
+}
+
+TEST(CanvasArc, ThicknessStaysWithinRadialBand) {
+  FakeDisplayDriver d(64, 64);
+  Canvas c(&d);
+  c.drawArc(32, 32, 20, 3, 0, 360, DisplayDriver::LIGHT);
+  // Every lit pixel is within [r-thickness, r] of center (allow 1px rounding slop).
+  for (auto& p : d.litPixels) {
+    double dist = std::sqrt(double((p.first-32)*(p.first-32) + (p.second-32)*(p.second-32)));
+    EXPECT_GE(dist, 20 - 3 - 1.0);
+    EXPECT_LE(dist, 20 + 1.0);
+  }
+}
+
+TEST(CanvasArc, OuterEdgeHasNoGaps) {
+  FakeDisplayDriver d(64, 64);
+  Canvas c(&d);
+  c.drawArc(32, 32, 20, 1, 0, 360, DisplayDriver::LIGHT);
+  auto lit = [&](int x, int y) { return d.hasLit(x, y); };
+  for (auto& p : d.litPixels) {
+    int x = p.first, y = p.second;
+    bool neighbor = false;
+    for (int dy = -1; dy <= 1 && !neighbor; dy++)
+      for (int dx = -1; dx <= 1; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        if (lit(x + dx, y + dy)) { neighbor = true; break; }
+      }
+    EXPECT_TRUE(neighbor) << "isolated pixel at " << x << "," << y;
+  }
 }
 
 int main(int argc, char** argv) {

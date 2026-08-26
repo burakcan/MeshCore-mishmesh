@@ -51,7 +51,8 @@ TEST(UiPrefs, DefaultsWithoutStorage) {
   primeRegistry();
   uiPrefs().resetForTest();
   uiPrefs().begin(nullptr);
-  EXPECT_FALSE(uiPrefs().battShowPercent());
+  EXPECT_EQ(UiPrefs::BattMode::Gauge, uiPrefs().battMode());
+  EXPECT_EQ(100, uiPrefs().battCalPercent());
   EXPECT_STREQ("Contacts", uiPrefs().quickActionLabel(UiPrefs::SLOT_LEFT));
   EXPECT_STREQ("Messages", uiPrefs().quickActionLabel(UiPrefs::SLOT_RIGHT));
   ASSERT_NE(nullptr, uiPrefs().quickAction(UiPrefs::SLOT_LEFT));
@@ -63,14 +64,31 @@ TEST(UiPrefs, PersistsAndReloads) {
   MemStorage mem;
   uiPrefs().resetForTest();
   uiPrefs().begin(&mem);
-  uiPrefs().setBattShowPercent(true);
+  uiPrefs().setBattMode(UiPrefs::BattMode::Voltage);
+  uiPrefs().setBattCalPercent(112);
   uiPrefs().setQuickAction(UiPrefs::SLOT_RIGHT, "Contacts");
 
   uiPrefs().resetForTest();          // simulate reboot
   uiPrefs().begin(&mem);
-  EXPECT_TRUE(uiPrefs().battShowPercent());
+  EXPECT_EQ(UiPrefs::BattMode::Voltage, uiPrefs().battMode());
+  EXPECT_EQ(112, uiPrefs().battCalPercent());
   EXPECT_STREQ("Contacts", uiPrefs().quickActionLabel(UiPrefs::SLOT_RIGHT));
   EXPECT_EQ(&a1, uiPrefs().quickAction(UiPrefs::SLOT_RIGHT)->applet);
+}
+
+TEST(UiPrefs, CalibrationClampsToRange) {
+  primeRegistry();
+  MemStorage mem;
+  uiPrefs().resetForTest();
+  uiPrefs().begin(&mem);
+  uiPrefs().setBattCalPercent(5);      // below floor
+  EXPECT_EQ(50, uiPrefs().battCalPercent());
+  uiPrefs().setBattCalPercent(999);    // above ceiling
+  EXPECT_EQ(150, uiPrefs().battCalPercent());
+
+  uiPrefs().resetForTest();            // simulate reboot
+  uiPrefs().begin(&mem);
+  EXPECT_EQ(150, uiPrefs().battCalPercent());
 }
 
 TEST(UiPrefs, DarkModePersists) {

@@ -5,6 +5,7 @@
 #include <mishmesh/text/Fonts.h>
 #include <mishmesh/core/SettingsPanel.h>
 #include <mishmesh/applets/settings/AdvertSettingsPanel.h>
+#include <mishmesh/applets/settings/BatterySettingsPanel.h>
 #include "FakeDisplayDriver.h"
 using namespace mishmesh;
 
@@ -176,6 +177,106 @@ TEST(MessagesSettingsPanel, TogglesAndAcksStepper) {
   EXPECT_EQ(2, svc.getMessagesConfig().directAcks);
 }
 
+TEST(MessagesSettingsPanel, OpenAtUnreadToggles) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::MessagesSettingsPanel panel;
+  panel.begin(ctx);
+  EXPECT_FALSE(svc.getMessagesConfig().openAtUnread);   // default: open at the newest message
+  using Row = mishmesh::MessagesSettingsPanel::Model;
+  for (int i = 0; i < Row::OpenAtUnread; i++) panel.onInput(mishmesh::InputEvent::NavDown);
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  EXPECT_TRUE(svc.getMessagesConfig().openAtUnread);
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  EXPECT_FALSE(svc.getMessagesConfig().openAtUnread);
+}
+
+TEST(MessagesSettingsPanel, RepeatAlertRowShowsTheInterval) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::MessagesSettingsPanel panel;
+  panel.begin(ctx);
+  EXPECT_STREQ("Off", panel.rowValueForTest(mishmesh::MessagesSettingsPanel::Model::RepeatAlert));
+
+  mishmesh::MessagesConfig cfg = svc.getMessagesConfig();
+  cfg.repeatMins = 5;
+  svc.setMessagesConfig(cfg);
+  EXPECT_STREQ("5 min", panel.rowValueForTest(mishmesh::MessagesSettingsPanel::Model::RepeatAlert));
+}
+
+#include <mishmesh/applets/settings/RepeatAlertPanel.h>
+
+TEST(RepeatAlertPanel, DefaultsToOffAndThirtyMinuteRingOut) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+  EXPECT_STREQ("Repeat alert", panel.title());
+  EXPECT_STREQ("Off", panel.rowValueForTest(0));
+  EXPECT_STREQ("30 min", panel.rowValueForTest(1));
+}
+
+TEST(RepeatAlertPanel, EveryStepperWritesTheInterval) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));   // row 0 = Every
+  EXPECT_TRUE(panel.modalActive());
+  panel.onInput(mishmesh::InputEvent::NavRight);              // Off -> 1 min
+  panel.onInput(mishmesh::InputEvent::Select);
+  EXPECT_FALSE(panel.modalActive());
+  EXPECT_EQ(1, svc.getMessagesConfig().repeatMins);
+  EXPECT_STREQ("1 min", panel.rowValueForTest(0));
+}
+
+TEST(RepeatAlertPanel, StopAfterStepperWritesTheRingOut) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::NavDown));  // row 1 = Stop after
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  panel.onInput(mishmesh::InputEvent::NavRight);              // 30 min -> 1 hour
+  panel.onInput(mishmesh::InputEvent::Select);
+  EXPECT_EQ(60, svc.getMessagesConfig().repeatStopMins);
+  EXPECT_STREQ("1 hour", panel.rowValueForTest(1));
+}
+
+TEST(RepeatAlertPanel, StopAfterCanBeSetToNever) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::NavDown));
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  panel.onInput(mishmesh::InputEvent::NavRight);              // 1 hour
+  panel.onInput(mishmesh::InputEvent::NavRight);              // Never
+  panel.onInput(mishmesh::InputEvent::Select);
+  EXPECT_EQ(0, svc.getMessagesConfig().repeatStopMins);
+  EXPECT_STREQ("Never", panel.rowValueForTest(1));
+}
+
+TEST(RepeatAlertPanel, BackCancelsTheStepperWithoutWriting) {
+  FakeMessagesService svc;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::RepeatAlertPanel panel;
+  panel.begin(ctx);
+
+  EXPECT_TRUE(panel.onInput(mishmesh::InputEvent::Select));
+  panel.onInput(mishmesh::InputEvent::NavRight);
+  panel.onInput(mishmesh::InputEvent::Back);
+  EXPECT_FALSE(panel.modalActive());
+  EXPECT_EQ(0, svc.getMessagesConfig().repeatMins);
+}
+
+TEST(RepeatAlertPanel, SingletonIsStable) {
+  EXPECT_EQ(&mishmesh::repeatAlertSettings(), &mishmesh::repeatAlertSettings());
+}
+
 #include <mishmesh/applets/settings/ContactsSettingsPanel.h>
 #include "FakeContactsService.h"
 
@@ -266,7 +367,7 @@ TEST(SettingsApplet, SelectPushesDetailWithChosenPanel) {
 
   mishmesh::SettingsApplet menu;
   host.setRoot(&menu);
-  EXPECT_EQ(7, menu.entryCountForTest());  // Home, Contacts, Messages, Advert, Radio, Time, System Info
+  EXPECT_EQ(9, menu.entryCountForTest());  // Home, Battery, Contacts, Messages, Advert, Radio, Time, Experimental, System Info
 
   // Row 0 = Home: Select pushes the detail bound to homeSettings().
   host.dispatch(mishmesh::InputEvent::Select);
@@ -275,7 +376,7 @@ TEST(SettingsApplet, SelectPushesDetailWithChosenPanel) {
   host.dispatch(mishmesh::InputEvent::Back);   // pop back to the menu
   EXPECT_EQ(&menu, host.foreground());
 
-  // Row 1 = Contacts.
+  // Row 1 = Battery.
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::Select);
   EXPECT_EQ(&mishmesh::settingsDetailApplet(), host.foreground());
@@ -290,7 +391,7 @@ TEST(SettingsApplet, RendersStatusBarHeader) {
   mishmesh::Canvas c(&d);
   menu.onRender(c);
   EXPECT_GT(d.fills.size(), 0u);                 // header + list drew something
-  EXPECT_EQ(7, menu.entryCountForTest());        // Home/Contacts/Messages/Advert/Radio/Time/SystemInfo all available
+  EXPECT_EQ(9, menu.entryCountForTest());        // Home/Battery/Contacts/Messages/Advert/Radio/Time/Experimental/SystemInfo all available
 }
 
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
@@ -353,9 +454,10 @@ TEST(MessagesSettingsPanel, ShowsPerTypeSoundRows) {
   mishmesh::AppletContext ctx; ctx.app = &app; ctx.messages = &svc;
   mishmesh::MessagesSettingsPanel panel;
   panel.begin(ctx);
-  // Rows 3/4 = Channel/Direct sound, showing the resolved tone names.
-  EXPECT_STREQ("Silent", panel.rowValueForTest(3));
-  EXPECT_STREQ("Droplet", panel.rowValueForTest(4));
+  // The two sound rows show the resolved tone names.
+  using Row = mishmesh::MessagesSettingsPanel::Model;
+  EXPECT_STREQ("Silent", panel.rowValueForTest(Row::ChannelSound));
+  EXPECT_STREQ("Droplet", panel.rowValueForTest(Row::DirectSound));
 }
 
 TEST(SettingsApplet, ListsAllSections) {
@@ -363,9 +465,9 @@ TEST(SettingsApplet, ListsAllSections) {
   mishmesh::AppletContext ctx;
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  // Home/Contacts/Messages/Advert/Radio/Time/System Info. Bluetooth moved to the
-  // home-screen quick toggle, so it is no longer a settings section.
-  EXPECT_EQ(7, menu.entryCountForTest());
+  // Home/Battery/Contacts/Messages/Advert/Radio/Time/Experimental/System Info. Bluetooth
+  // moved to the home-screen quick toggle, so it is no longer a settings section.
+  EXPECT_EQ(9, menu.entryCountForTest());
 }
 
 TEST(SettingsPanelLifecycle, DetailAppletCallsOnHideOnStop) {
@@ -384,6 +486,141 @@ TEST(SettingsPanelLifecycle, DetailAppletCallsOnHideOnStop) {
   EXPECT_EQ(panel.hides, 0);
   mishmesh::settingsDetailApplet().onStop();
   EXPECT_EQ(panel.hides, 1);
+}
+
+#include <mishmesh/applets/PathHashApplet.h>
+
+namespace {
+class FakePathHashApp : public mishmesh::AppServices {
+public:
+  uint8_t mode = 0;
+  const char* nodeName() const override { return "n"; }
+  uint16_t batteryMillivolts() const override { return 4000; }
+  uint32_t epochSeconds() const override { return 0; }
+  uint8_t pathHashMode() const override { return mode; }
+  void setPathHashMode(uint8_t m) override { mode = m; }
+};
+}  // namespace
+
+TEST(PathHashApplet, SelectWritesModeAndRadioReflects) {
+  FakePathHashApp app;
+  mishmesh::AppletContext ctx; ctx.app = &app;
+  mishmesh::PathHashApplet applet;
+  applet.onStart(ctx);
+
+  EXPECT_STREQ("Path hash size", applet.name());
+  EXPECT_EQ(3, applet.count());
+  EXPECT_STREQ("1 byte", applet.label(0));
+  EXPECT_STREQ("2 byte", applet.label(1));
+  EXPECT_STREQ("3 byte", applet.label(2));
+  EXPECT_TRUE(applet.radioOn(0));            // starts at mode 0
+
+  applet.onInput(mishmesh::InputEvent::NavDown);   // -> row 1
+  applet.onInput(mishmesh::InputEvent::NavDown);   // -> row 2
+  EXPECT_TRUE(applet.onInput(mishmesh::InputEvent::Select));
+  EXPECT_EQ(2, app.mode);
+  EXPECT_TRUE(applet.radioOn(2));
+  EXPECT_FALSE(applet.radioOn(0));
+
+  FakeDisplayDriver d; mishmesh::Canvas c(&d);
+  applet.onRender(c);                        // header + list draw, no crash
+  EXPECT_GT(d.fills.size(), 0u);
+}
+
+#include <mishmesh/applets/settings/ExperimentalSettingsPanel.h>
+
+TEST(ExperimentalSettingsPanel, ShowsPathHashSizeValue) {
+  FakePathHashApp app; app.mode = 1;
+  mishmesh::AppletContext ctx; ctx.app = &app;
+  mishmesh::ExperimentalSettingsPanel panel;
+  panel.begin(ctx);
+  EXPECT_STREQ("Experimental", panel.title());
+  EXPECT_STREQ("2 byte", panel.rowValueForTest(0));
+}
+
+TEST(ExperimentalSettingsPanel, SingletonIsStable) {
+  EXPECT_EQ(&mishmesh::experimentalSettings(), &mishmesh::experimentalSettings());
+}
+
+namespace {
+struct FakeBattApp : mishmesh::AppServices {
+  int cal = 100, previewed = 100, saved = 100;
+  const char* nodeName() const override { return "n"; }
+  uint16_t batteryMillivolts() const override { return 3800; }
+  uint16_t batteryMillivoltsLive() const override { return 3800; }
+  uint32_t epochSeconds() const override { return 0; }
+  int  batteryCalPercent() const override { return cal; }
+  void previewBatteryCalibration(int p) override { previewed = p; }
+  void setBatteryCalibration(int p) override { saved = p; cal = p; }
+};
+}
+
+TEST(BatterySettingsPanel, DisplayStepperSetsMode) {
+  mishmesh::uiPrefs().resetForTest();
+  mishmesh::uiPrefs().begin(nullptr);
+  FakeBattApp app;
+  mishmesh::AppletContext ctx; ctx.app = &app;
+  mishmesh::BatterySettingsPanel& p = mishmesh::batterySettings();
+  p.begin(ctx);
+  EXPECT_STREQ("Battery", p.title());
+  // Row 0 = Display: Select opens a modal stepper seeded at the current mode (Gauge).
+  EXPECT_EQ(mishmesh::UiPrefs::BattMode::Gauge, mishmesh::uiPrefs().battMode());
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::Select));
+  EXPECT_TRUE(p.modalActive());
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::NavRight));   // Gauge -> Percent
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::NavRight));   // Percent -> Voltage
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::Select));     // confirm
+  EXPECT_FALSE(p.modalActive());
+  EXPECT_EQ(mishmesh::UiPrefs::BattMode::Voltage, mishmesh::uiPrefs().battMode());
+  // Cancel leaves the mode unchanged.
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::Select));     // reopen, seeded at Voltage
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::NavLeft));    // stage Percent
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::Cancel));     // bail
+  EXPECT_FALSE(p.modalActive());
+  EXPECT_EQ(mishmesh::UiPrefs::BattMode::Voltage, mishmesh::uiPrefs().battMode());
+}
+
+TEST(BatterySettingsPanel, CalibrationStepperPreviewsAndConfirms) {
+  mishmesh::uiPrefs().resetForTest();
+  mishmesh::uiPrefs().begin(nullptr);
+  FakeBattApp app;
+  mishmesh::AppletContext ctx; ctx.app = &app;
+  mishmesh::BatterySettingsPanel& p = mishmesh::batterySettings();
+  p.begin(ctx);
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::NavDown));   // -> row 1 (Calibration)
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::Select));    // open stepper at 100
+  EXPECT_TRUE(p.modalActive());
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::NavRight));  // 100 -> 101, previews live
+  EXPECT_EQ(101, app.previewed);
+  EXPECT_EQ(100, app.saved);                                // not persisted yet
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::Select));    // confirm
+  EXPECT_FALSE(p.modalActive());
+  EXPECT_EQ(101, app.saved);
+}
+
+TEST(SettingsApplet, ExperimentalSectionPushesPanel) {
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx;
+  mishmesh::AppletHost host(&d, ctx);
+  mishmesh::SettingsApplet menu;
+  host.setRoot(&menu);
+  EXPECT_EQ(9, menu.entryCountForTest());
+
+  // Experimental is index 7 (after Home,Battery,Contacts,Messages,Advert,Radio,Time).
+  for (int i = 0; i < 7; i++) host.dispatch(mishmesh::InputEvent::NavDown);
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(&mishmesh::settingsDetailApplet(), host.foreground());
+}
+
+TEST(SettingsApplet, BatterySectionPushesPanel) {
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx;
+  mishmesh::AppletHost host(&d, ctx);
+  mishmesh::SettingsApplet menu;
+  host.setRoot(&menu);
+  host.dispatch(mishmesh::InputEvent::NavDown);   // Home -> Battery (index 1)
+  host.dispatch(mishmesh::InputEvent::Select);
+  EXPECT_EQ(&mishmesh::settingsDetailApplet(), host.foreground());
 }
 
 int main(int argc, char** argv) {

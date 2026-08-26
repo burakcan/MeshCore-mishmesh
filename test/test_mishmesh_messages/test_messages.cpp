@@ -6,6 +6,7 @@
 #include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/applets/MessagePathApplet.h>
 #include <mishmesh/applets/ContactsApplet.h>
+#include <mishmesh/applets/settings/MessagesSettingsPanel.h>
 #include <mishmesh/core/AppletHost.h>
 #include "FakeDisplayDriver.h"
 
@@ -51,6 +52,29 @@ TEST(MessagesService, SeqIncrementsOnMutation) {
   uint32_t s0 = svc.seq();
   svc.store.appendInbound(mishmesh::directKey((const uint8_t*)"ALICE!"), "x", 1, 1, 1, 0, nullptr, 0);
   EXPECT_GT(svc.seq(), s0);
+}
+
+TEST(MessagesService, WakeDefaults) {
+  FakeMessagesService svc;
+  EXPECT_TRUE(svc.getMessagesConfig().wakeOnMessage);      // default ON
+  mishmesh::ConvoKey k{}; k.type = 0; k.id[0] = 0x11;
+  EXPECT_EQ(mishmesh::WakeOverride::Default, svc.chatWake(k));   // default = follow global
+  svc.setChatWake(k, mishmesh::WakeOverride::Off);
+  EXPECT_EQ(mishmesh::WakeOverride::Off, svc.chatWake(k));
+}
+
+TEST(MessagesSettingsPanel, WakeOnMessageToggles) {
+  FakeMessagesService svc;                       // default wakeOnMessage == true
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::MessagesSettingsPanel& p = mishmesh::messagesSettings();
+  p.begin(ctx);
+  // Row 3 = Wake on message (after Auto retry / Auto reset / DM acks).
+  for (int i = 0; i < 3; i++) EXPECT_TRUE(p.onInput(mishmesh::InputEvent::NavDown));
+  EXPECT_TRUE(svc.getMessagesConfig().wakeOnMessage);
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::Select));       // toggle off
+  EXPECT_FALSE(svc.getMessagesConfig().wakeOnMessage);
+  EXPECT_TRUE(p.onInput(mishmesh::InputEvent::Select));       // toggle on
+  EXPECT_TRUE(svc.getMessagesConfig().wakeOnMessage);
 }
 
 TEST(MessagesApplet, ListsConversations) {
@@ -398,6 +422,24 @@ TEST(MessagePath, InboundResolvesNameElseHex) {
   EXPECT_EQ(2, mishmesh::messagePathApplet().rowCountForTest());
   EXPECT_STREQ("1  Alice", mishmesh::messagePathApplet().lineForTest(0));
   EXPECT_STREQ("2  5B",    mishmesh::messagePathApplet().lineForTest(1));
+}
+
+TEST(MessagePath, InboundGroupsMultibytePathHashes) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  uint8_t path[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+  svc.store.appendInbound(k, "hi", 2, 1, 1, 0, path, 0x42);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messagePathApplet().setTarget(k, 0);
+  host.push(&mishmesh::messagePathApplet());
+  host.loop(0);
+  EXPECT_STREQ("Path: 2 hops", mishmesh::messagePathApplet().titleForTest());
+  EXPECT_EQ(2, mishmesh::messagePathApplet().rowCountForTest());
+  EXPECT_STREQ("1  Alice2", mishmesh::messagePathApplet().lineForTest(0));
+  EXPECT_STREQ("2  CCDD", mishmesh::messagePathApplet().lineForTest(1));
 }
 
 TEST(MessagePath, InboundDirectHasNoHops) {
@@ -944,6 +986,132 @@ TEST(MessageThread, StatusLabelShowsRetryCount) {
   m.status = ST_FAILED; m.retryAttempt = 0;
   MessageThreadApplet::statusLabel(m, buf, sizeof(buf));
   EXPECT_STREQ("Failed", buf);
+}
+
+// --- Open at unread (Settings > Messages > "Open at unread") ---
+
+// Helper: append `n` inbound messages, then mark the chat read (open+close it in
+// the store) so the next batch is the only unread run.
+static void seedRead(FakeMessagesService& svc, const mishmesh::ConvoKey& k,
+                     int n, uint32_t t0) {
+  for (int i = 0; i < n; i++) svc.store.appendInbound(k, "old", 3, t0 + i, t0 + i, 0, nullptr, 0);
+  svc.store.setActiveConvo(k);     // clears the unread count
+  svc.store.clearActiveConvo();
+}
+
+static void enableOpenAtUnread(FakeMessagesService& svc) {
+  mishmesh::MessagesConfig cfg = svc.getMessagesConfig();
+  cfg.openAtUnread = true;
+  svc.setMessagesConfig(cfg);
+}
+
+TEST(MessageThread, OpenAtUnreadFocusesFirstUnread) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  seedRead(svc, k, 2, 100);                                   // indices 0,1 read
+  svc.store.appendInbound(k, "n1", 2, 200, 200, 0, nullptr, 0);  // index 2
+  svc.store.appendInbound(k, "n2", 2, 201, 201, 0, nullptr, 0);  // index 3
+  svc.store.appendInbound(k, "n3", 2, 202, 202, 0, nullptr, 0);  // index 4
+  enableOpenAtUnread(svc);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.loop(0);
+  EXPECT_EQ(2, mishmesh::messageThreadApplet().focusedIndexForTest());
+}
+
+// Outbound messages never bump the unread count, so the "N unread" run has to be
+// counted backwards over inbound messages only - not taken as the last N entries.
+TEST(MessageThread, OpenAtUnreadSkipsOutboundWhenCounting) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  seedRead(svc, k, 1, 100);                                     // index 0 read
+  svc.store.appendInbound(k, "n1", 2, 200, 200, 0, nullptr, 0);  // index 1 unread
+  svc.store.appendOutboundDM(k, "me", 2, 201, 201, 0, 0);        // index 2 (not unread)
+  svc.store.appendInbound(k, "n2", 2, 202, 202, 0, nullptr, 0);  // index 3 unread
+  enableOpenAtUnread(svc);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.loop(0);
+  EXPECT_EQ(1, mishmesh::messageThreadApplet().focusedIndexForTest());
+}
+
+TEST(MessageThread, OpenAtUnreadOffStillOpensAtNewest) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  seedRead(svc, k, 2, 100);
+  svc.store.appendInbound(k, "n1", 2, 200, 200, 0, nullptr, 0);
+  svc.store.appendInbound(k, "n2", 2, 201, 201, 0, nullptr, 0);
+  FakeDisplayDriver d;                                          // setting left off
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.loop(0);
+  EXPECT_EQ(3, mishmesh::messageThreadApplet().focusedIndexForTest());
+}
+
+TEST(MessageThread, OpenAtUnreadWithNothingUnreadOpensAtNewest) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  seedRead(svc, k, 3, 100);                                     // all read
+  enableOpenAtUnread(svc);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.loop(0);
+  EXPECT_EQ(2, mishmesh::messageThreadApplet().focusedIndexForTest());
+}
+
+// The first unread message is parked at the top of the viewport, not merely
+// scrolled just into view from the bottom edge.
+TEST(MessageThread, OpenAtUnreadParksFirstUnreadAtViewportTop) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  seedRead(svc, k, 8, 100);
+  for (int i = 0; i < 8; i++) svc.store.appendInbound(k, "new one", 7, 200 + i, 200 + i, 0, nullptr, 0);
+  enableOpenAtUnread(svc);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.loop(0);
+  EXPECT_EQ(8, mishmesh::messageThreadApplet().focusedIndexForTest());
+  EXPECT_EQ(mishmesh::messageThreadApplet().focusTopForTest(),
+            mishmesh::messageThreadApplet().scrollForTest());
+}
+
+// Opening above the fold must not silently consume the unread badge: leaving
+// before scrolling down to the newest message re-marks the chat unread.
+TEST(MessageThread, OpenAtUnreadKeepsBadgeWhenLeavingEarly) {
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  seedRead(svc, k, 8, 100);
+  for (int i = 0; i < 8; i++) svc.store.appendInbound(k, "new one", 7, 200 + i, 200 + i, 0, nullptr, 0);
+  enableOpenAtUnread(svc);
+  FakeDisplayDriver d;
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.loop(0);
+  EXPECT_EQ(0u, svc.totalUnread());        // active convo: badge suppressed while open
+  host.dispatch(mishmesh::InputEvent::Back);
+  EXPECT_GT(svc.totalUnread(), 0u);        // left with unread still below the fold
 }
 
 int main(int argc, char** argv) {

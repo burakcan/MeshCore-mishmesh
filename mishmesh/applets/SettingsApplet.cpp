@@ -1,11 +1,13 @@
 #include <mishmesh/applets/SettingsApplet.h>
 #include <mishmesh/applets/SettingsDetailApplet.h>
 #include <mishmesh/applets/settings/HomeSettingsPanel.h>
+#include <mishmesh/applets/settings/BatterySettingsPanel.h>
 #include <mishmesh/applets/settings/ContactsSettingsPanel.h>
 #include <mishmesh/applets/settings/MessagesSettingsPanel.h>
 #include <mishmesh/applets/settings/AdvertSettingsPanel.h>
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
 #include <mishmesh/applets/settings/RadioSettingsPanel.h>
+#include <mishmesh/applets/settings/ExperimentalSettingsPanel.h>
 #include <mishmesh/applets/settings/TimeSettingsPanel.h>
 #include <mishmesh/applets/settings/DevResetOnboardingPanel.h>
 #include <mishmesh/core/AppletHost.h>
@@ -16,11 +18,13 @@
 namespace mishmesh {
 
 static SettingsPanel* homePanelPtr()        { return &homeSettings(); }
+static SettingsPanel* batteryPanelPtr()     { return &batterySettings(); }
 static SettingsPanel* contactsPanelPtr()    { return &contactsSettings(); }
 static SettingsPanel* messagesPanelPtr()    { return &messagesSettings(); }
 static SettingsPanel* advertPanelPtr()      { return &advertSettings(); }
 static SettingsPanel* systemInfoPanelPtr()  { return &systemInfoSettings(); }
 static SettingsPanel* radioPanelPtr()       { return &radioSettings(); }
+static SettingsPanel* experimentalPanelPtr() { return &experimentalSettings(); }
 static SettingsPanel* timePanelPtr()        { return &timeSettings(); }
 static SettingsPanel* devResetPanelPtr()    { return &devResetOnboardingSettings(); }
 
@@ -35,11 +39,13 @@ static bool devBuildOnly(const AppletContext&) {
 
 const SettingsApplet::Entry SettingsApplet::ENTRIES[ENTRY_COUNT] = {
   { "Home",        homePanelPtr,       (uint16_t)Icon::Home,      always    },
+  { "Battery",     batteryPanelPtr,    (uint16_t)Icon::BatteryFull, always },
   { "Contacts",    contactsPanelPtr,   (uint16_t)Icon::Users,     always    },
   { "Messages",    messagesPanelPtr,   (uint16_t)Icon::Message,   always    },
   { "Advert",      advertPanelPtr,     (uint16_t)Icon::Radio,     always    },
   { "Radio",       radioPanelPtr,      (uint16_t)Icon::Wifi,      always    },
   { "Time & date", timePanelPtr,       (uint16_t)Icon::Clock,     always    },
+  { "Experimental", experimentalPanelPtr, (uint16_t)Icon::Sliders, always   },
   { "System Info", systemInfoPanelPtr, (uint16_t)Icon::Chip,      always    },
   { "Reset onboarding", devResetPanelPtr, (uint16_t)Icon::Reload, devBuildOnly },
 };

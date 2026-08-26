@@ -9,11 +9,16 @@ namespace mishmesh {
 
 enum class TextAlign { Left, Center, Right };
 
-// The display theme, applied centrally: in light mode (UiPrefs::darkMode()
-// false) LIGHT and DARK swap. Canvas resolves every color through this at its
-// driver boundary; AppletHost uses it for the frame-clear background. Raw
-// blits (games) intentionally bypass it.
-DisplayDriver::Color themedColor(DisplayDriver::Color c);
+// The light/dark swap on its own, still in semantic space: in light mode
+// (UiPrefs::darkMode() false) LIGHT and DARK swap. An involution, so pre-applying
+// it cancels the swap Canvas does later (QrView needs that: an inverted QR won't
+// reliably scan).
+DisplayDriver::Color themeSwapped(DisplayDriver::Color c);
+// The swap plus the mapping from mishmesh's semantic color onto the driver's
+// UIColor palette, which is what setColor() takes since meshcore v1.17. Canvas
+// resolves every color through this at its driver boundary; AppletHost uses it
+// for the frame-clear background. Raw blits (games) intentionally bypass it.
+ColorVal themedColor(DisplayDriver::Color c);
 
 // A clipped drawing surface over a DisplayDriver: a value type carrying a
 // drawing origin, a clip window, and the current frame time. The origin and the
@@ -102,6 +107,14 @@ public:
   // use for small regions or a scrim, not large solid fills.
   void fillStipple(int x, int y, int w, int h, DisplayDriver::Color c);
 
+  // Arc band for the Pomodoro session ring: plots pixels from radius r inward by
+  // `thickness` px, sweeping startDeg..endDeg where 0deg = top and angle grows
+  // clockwise. Pixels are emitted as 1x1 fills (the panel has no circle/line op),
+  // so keep radii small and call at low frame rates. No-op when endDeg <= startDeg
+  // (empty or reversed range).
+  void drawArc(int cx, int cy, int r, int thickness, int startDeg, int endDeg,
+               DisplayDriver::Color color);
+
   // Blit a full-screen column-major 1bpp buffer to the panel (device coords). See
   // DisplayDriver::blitColumnMajor1bpp. Intended for full-frame sources (e.g. a game).
   void blit1bpp(const uint8_t* buf, int w, int h);
@@ -111,7 +124,7 @@ public:
   // boot logo) positioned within the visible area.
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h);
 
-  // [mishmesh] Optional inline glyph-overlay hook: a secondary bitmap font whose
+  // Optional inline glyph-overlay hook: a secondary bitmap font whose
   // glyphs replace mapped codepoints in body text (used for a small emoji atlas).
   // Registered once at startup; when unset, all text rendering/measuring is
   // byte-identical to upstream. Static because the mcufont callbacks are shared.
@@ -121,7 +134,6 @@ public:
   typedef bool (*EmojiZeroWidthFn)(uint16_t key);
   static void setEmojiRenderer(const mf_font_s* font, EmojiLookupFn lookup,
                                EmojiZeroWidthFn zeroWidth);
-  // [/mishmesh]
 };
 
 }  // namespace mishmesh

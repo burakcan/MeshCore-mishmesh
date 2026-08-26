@@ -1,0 +1,126 @@
+---
+import Base from "../layouts/Base.astro";
+import StatusBar from "../components/StatusBar.astro";
+const description =
+  "mishmesh - the on-device UI for MeshCore. Messaging, contacts, repeater admin and radio config on a LoRa radio's own screen. For the Seeed Wio Tracker L1 / L1 Pro.";
+---
+<Base title="mishmesh - the on-device UI for MeshCore" description={description} bodyClass="landing" css="landing.css">
+  <StatusBar variant="landing" />
+<main>
+<section class="hero dither" id="top">
+  <div class="in wrap">
+    <div>
+      <h1 class="reveal">mishmesh<span class="cursor"></span></h1>
+      <p class="tag reveal"><b>The on-device UI for MeshCore.</b></p>
+      <p class="sub reveal">Messaging, contacts, repeater admin and radio config - all on the 128x64 screen, driven by the buttons. The phone app still works; you just don't need it.</p>
+      <div class="btns reveal">
+        <a class="btn solid" href="#install">Flash it</a>
+        <a class="btn" href="#" data-manual>Open manual</a>
+      </div>
+      <p class="meta-line">For the Seeed Wio Tracker L1 / L1 Pro</p>
+    </div>
+    <figure>
+      <img src="assets/img/home.png" alt="mishmesh home screen: node name, big clock, quick-action hints">
+      <figcaption>HOME</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="what"><div class="wrap">
+  <span class="head">What it is</span>
+  <p class="lead">MeshCore is a LoRa mesh: messages hop from node to node with no towers or internet. Normally you operate it through the phone companion app over Bluetooth.</p>
+  <p class="lead"><b>mishmesh is an alternative companion firmware that puts that interface on the device itself.</b> Messaging, contacts, repeater administration, radio settings, a background clock - all on the 128x64 screen, driven by the buttons.</p>
+  <p class="lead">It's a drop-in replacement for the stock MeshCore companion UI. The phone app still connects over Bluetooth; you just don't need it to do the everyday things.</p>
+</div></section>
+
+<section id="apps"><div class="wrap">
+  <span class="head">The apps</span>
+  <div class="menu">
+    <div class="item on"><span class="b4"></span><span class="t">Messages<small>DMs, channels and rooms - delivery status, auto-retry, QR channel sharing</small></span><span class="m">3 unread</span></div>
+    <div class="item"><span class="b4"></span><span class="t">Contacts<small>Favorites, repeaters, rooms, sensors, discover - telemetry, ping, manual paths</small></span><span class="m">&gt;</span></div>
+    <div class="item"><span class="b4"></span><span class="t">Repeater tools<small>Log in over the air, watch live stats, run CLI, edit remote config and ACLs</small></span><span class="m">&gt;</span></div>
+    <div class="item"><span class="b4"></span><span class="t">Airtime<small>Live TX budget and duty-cycle history so you stay legal on the band</small></span><span class="m">&gt;</span></div>
+    <div class="item"><span class="b4"></span><span class="t">Clock<small>Stopwatch, timer, alarm and world clock - keeps time while the app is closed</small></span><span class="m">&gt;</span></div>
+    <div class="item"><span class="b4"></span><span class="t">Settings<small>Radio, contacts, time and DST, plus an Experimental drawer for the deep knobs</small></span><span class="m">&gt;</span></div>
+    <div class="item"><span class="b4"></span><span class="t">2048<small>a built-in tile game</small></span><span class="m">&gt;</span></div>
+  </div>
+</div></section>
+
+<section id="screens"><div class="wrap">
+  <span class="head">Screens</span>
+  <p class="lead" style="margin-bottom:24px">Real captures, rendered pixel-for-pixel from the firmware.</p>
+  <div class="gal">
+    <figure><img src="assets/img/appmenu.png" alt="app menu grid"><figcaption><b>App menu</b><br>every screen, one grid</figcaption></figure>
+    <figure><img src="assets/img/chat.png" alt="chat thread"><figcaption><b>Threads</b><br>bubbles, status, emoji</figcaption></figure>
+    <figure><img src="assets/img/contacts.png" alt="contacts list"><figcaption><b>Contacts</b><br>sorted by kind</figcaption></figure>
+    <figure><img src="assets/img/contact_detail.png" alt="contact detail"><figcaption><b>Contact</b><br>telemetry, path, ping</figcaption></figure>
+    <figure><img src="assets/img/repeater.png" alt="repeater management"><figcaption><b>Repeater</b><br>live stats, over the air</figcaption></figure>
+    <figure><img src="assets/img/clock_world.png" alt="world clock"><figcaption><b>Clock</b><br>timers that run in the background</figcaption></figure>
+    <figure><img src="assets/img/keypad.png" alt="on-screen keypad"><figcaption><b>Keypad</b><br>multi-tap text, symbols, emoji, 18 layouts</figcaption></figure>
+    <figure><img src="assets/img/settings.png" alt="settings menu"><figcaption><b>Settings</b><br>radio, time, experimental</figcaption></figure>
+  </div>
+</div></section>
+
+<section id="install"><div class="wrap">
+  <span class="head">Install</span>
+  <p class="lead" style="margin-bottom:8px">mishmesh runs on the <b>Seeed Wio Tracker L1 / L1 Pro</b> (nRF52840; they're the same board). Two ways in.</p>
+  <p class="lead" style="margin-bottom:8px;font-size:18px">More boards are on the way, including the e-ink L1 variant.</p>
+
+  <div class="pill" role="tablist">
+    <button class="sel" data-tab="uf2" role="tab">Drag-and-drop .uf2</button>
+    <button data-tab="src" role="tab">Build from source</button>
+  </div>
+
+  <div class="steps" data-panel="uf2">
+    <div class="step"><span class="n"></span><div>
+      <h3>Grab the firmware</h3>
+      <p>Download the latest <a href="#" data-releases>.uf2 from Releases</a>. Pick <b>_ble_</b> for the Bluetooth companion build or <b>_usb_</b> for serial.</p>
+    </div></div>
+    <div class="step"><span class="n"></span><div>
+      <h3>Enter the bootloader</h3>
+      <p>Double-tap the reset button. A USB drive named <b>...BOOT</b> appears - that's the nRF52 bootloader.</p>
+    </div></div>
+    <div class="step"><span class="n"></span><div>
+      <h3>Drop it on</h3>
+      <p>Copy the .uf2 onto the BOOT drive. The board reboots into mishmesh. First boot runs a short setup wizard: name, region, time.</p>
+    </div></div>
+  </div>
+
+  <div class="steps" data-panel="src" hidden>
+    <div class="step"><span class="n"></span><div>
+      <h3>Build it</h3>
+      <p>From a PlatformIO checkout of the repo. FIRMWARE_VERSION (the MeshCore base) is optional for mishmesh builds.</p>
+      <pre><button class="copy">copy</button><code><span class="c"># optional: pin the meshcore base it reports</span>
+export FIRMWARE_VERSION=v1.16.0
+sh build.sh build-firmware WioTrackerL1_companion_radio_usb_mishmesh</code></pre>
+    </div></div>
+    <div class="step"><span class="n"></span><div>
+      <h3>Flash it</h3>
+      <p>Upload over USB - nrfutil does a 1200-baud touch to drop the board into DFU, no manual reset needed. Swap <b>usb</b> for <b>ble</b> for the Bluetooth build.</p>
+      <pre><button class="copy">copy</button><code>pio run -e WioTrackerL1_companion_radio_usb_mishmesh -t upload</code></pre>
+    </div></div>
+    <div class="note"><b>Heads up:</b> a bricked or empty board won't enumerate a serial port - use the double-tap + .uf2 method above instead. Full build notes live in the <a href="#" data-repo>repo README</a>.</div>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="in wrap">
+  <div class="col">
+    <b>mishmesh</b>
+    <a href="#" data-repo>Source on GitHub</a>
+    <a href="#" data-releases>Releases / .uf2</a>
+    <a href="#" data-manual>Manual</a>
+  </div>
+  <div class="col">
+    <b>Upstream</b>
+    <a href="https://github.com/ripplebiz/MeshCore">MeshCore project</a>
+  </div>
+  <div class="col">
+    <b>Support this fork</b>
+    <a href="https://ko-fi.com/burak_can">ko-fi.com/burak_can</a>
+  </div>
+  <div class="cr">
+    <span>mm v1.4.0 &middot; mc v1.17.1</span>
+  </div>
+</div></footer>
+</Base>

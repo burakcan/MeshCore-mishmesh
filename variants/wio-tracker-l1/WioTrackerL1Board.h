@@ -4,6 +4,10 @@
 #include <Arduino.h>
 #include <helpers/NRF52Board.h>
 
+// [mishmesh]
+extern float mishmeshBatteryCalFactor;
+// [/mishmesh]
+
 class WioTrackerL1Board : public NRF52BoardDCDC {
 protected:
   uint8_t btn_prev_state;
@@ -27,7 +31,7 @@ public:
     analogReference(AR_INTERNAL);
     delay(10);
     adcvalue = analogRead(PIN_VBAT_READ);
-    return (adcvalue * ADC_MULTIPLIER * AREF_VOLTAGE) / 4.096;
+    return (adcvalue * ADC_MULTIPLIER * AREF_VOLTAGE) / 4.096 * mishmeshBatteryCalFactor;  // [mishmesh] trim
   }
 
   const char* getManufacturerName() const override {
@@ -35,6 +39,6 @@ public:
   }
 
   void powerOff() override {
-    sd_power_system_off();
+    NRF52Board::powerOff();
   }
 };

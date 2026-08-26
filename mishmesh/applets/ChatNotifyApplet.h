@@ -9,9 +9,9 @@ namespace mishmesh {
 
 // Per-chat notification drill-down (reached from ChatMenu's "Notifications" row).
 // A single list: level radios on top (DMs: All/Mute; channels add "Mentions
-// only"), then a non-radio "Sound" row whose value is the chat's ringtone and
-// which pushes the shared SoundPickerApplet (per-chat mode). Launch-only
-// singleton.
+// only"), then two non-radio value rows - "Sound" (pushes the shared
+// SoundPickerApplet, per-chat mode) and "Screen wake" (pushes WakeOverrideApplet).
+// Launch-only singleton.
 class ChatNotifyApplet : public Applet, public ListModel {
 public:
   ChatNotifyApplet();
@@ -20,15 +20,16 @@ public:
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
 
-  // ListModel: level rows (2 DM / 3 channel) + 1 Sound row.
-  int count() const override { return (_isChannel ? 3 : 2) + 1; }
+  // ListModel: level rows (2 DM / 3 channel) + Sound row + Screen wake row.
+  int count() const override { return (_isChannel ? 3 : 2) + 2; }
   const char* label(int i) const override;
-  const char* value(int i) const override;        // Sound row -> ringtone name
+  const char* value(int i) const override;        // Sound/Screen wake rows -> current setting
   bool isRadio(int i) const override;
   bool radioOn(int i) const override;
 
 private:
   bool soundRow(int i) const { return i == (_isChannel ? 3 : 2); }
+  bool wakeRow(int i) const { return i == (_isChannel ? 4 : 3); }
   NotifyLevel levelForRow(int row) const;
 
   AppServices*     _app = nullptr;

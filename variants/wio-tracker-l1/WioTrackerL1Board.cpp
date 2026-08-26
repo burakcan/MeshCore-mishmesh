@@ -3,6 +3,13 @@
 
 #include "WioTrackerL1Board.h"
 
+// [mishmesh] runtime battery ADC trim; 1.0 = no correction. The mishmesh UI sets
+// this from the persisted calibration percent (at boot and when the user adjusts
+// it) so on-device %, the phone-app battery report, and mesh telemetry all agree.
+// Non-mishmesh envs never write it, so their behavior is unchanged.
+float mishmeshBatteryCalFactor = 1.0f;
+// [/mishmesh]
+
 void WioTrackerL1Board::begin() {
   NRF52BoardDCDC::begin();
   btn_prev_state = HIGH;

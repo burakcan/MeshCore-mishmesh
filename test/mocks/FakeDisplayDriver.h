@@ -14,7 +14,7 @@ public:
   std::vector<std::string> calls;     // ordered log of high-level calls
   std::vector<Rect> fills;            // fillRect args (device coords)
   std::vector<Rect> rects;            // drawRect args (device coords)
-  Color lastColor = DARK;
+  ColorVal lastColor = UIColor::window_bkg;
   int cursorX = 0, cursorY = 0;
   std::vector<std::string> prints;
   std::vector<std::pair<int,int>> litPixels;   // (x,y) of 1x1 fills emitted by blit
@@ -29,15 +29,15 @@ public:
   void turnOn() override { on = true; }
   void turnOff() override { on = false; }
   void clear() override { calls.push_back("clear"); }
-  void startFrame(Color bkg = DARK) override { (void)bkg; calls.push_back("startFrame"); }
+  void startFrame(ColorVal bkg = UIColor::window_bkg) override { (void)bkg; calls.push_back("startFrame"); }
   void endFrame() override { calls.push_back("endFrame"); }
   void setTextSize(int) override {}
-  void setColor(Color c) override { lastColor = c; }
+  void setColor(ColorVal c) override { lastColor = c; }
   void setCursor(int x, int y) override { cursorX = x; cursorY = y; }
   void print(const char* str) override { prints.push_back(str ? str : ""); }
   void fillRect(int x, int y, int w, int h) override {
     fills.push_back({x, y, w, h});
-    if (w == 1 && h == 1 && lastColor != DARK) litPixels.push_back({x, y});
+    if (w == 1 && h == 1 && lastColor != UIColor::window_bkg) litPixels.push_back({x, y});
   }
   void drawRect(int x, int y, int w, int h) override { rects.push_back({x, y, w, h}); }
   void drawXbm(int, int, const uint8_t*, int, int) override {}

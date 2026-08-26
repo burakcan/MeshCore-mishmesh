@@ -19,7 +19,7 @@ public:
   const char* lineForTest(int i) const { return _text.lineForTest(i); }
 private:
   void rebuild();
-  void hopLabel(uint8_t b, char* out, size_t cap) const;   // name if known, else %02X
+  void hopLabel(const uint8_t* hash, uint8_t size, char* out, size_t cap) const;
   MessagesService* _svc = nullptr;
   AppServices*     _app = nullptr;
   ConvoKey         _key{};

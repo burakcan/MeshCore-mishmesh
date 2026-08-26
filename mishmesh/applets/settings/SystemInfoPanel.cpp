@@ -37,6 +37,12 @@ int formatSystemStats(const SystemStats& s, char out[][SYSSTATS_LINE_LEN], int m
   else
     SS_EMIT("Battery: %u.%02uV", (unsigned)(s.batteryMv / 1000),
             (unsigned)((s.batteryMv % 1000) / 10));
+  if (s.mcuTempC10 != INT16_MIN) {
+    int t = s.mcuTempC10;
+    const char* sign = t < 0 ? "-" : "";
+    if (t < 0) t = -t;
+    SS_EMIT("MCU temp: %s%d.%dC", sign, t / 10, t % 10);
+  }
   uint32_t mins = s.uptimeSecs / 60;
   SS_EMIT("Uptime: %uh %02um", (unsigned)(mins / 60), (unsigned)(mins % 60));
   if (s.meshcoreVersion) SS_EMIT("meshcore: %s", s.meshcoreVersion);
@@ -53,6 +59,17 @@ void SystemInfoPanel::rebuild(uint32_t now, bool keepScroll) {
   if (!(_app && _app->systemStats(s))) {
     _stats.addLine("Stats unavailable");
     return;
+  }
+  // Self identity up top: the full 32-byte public key so it can be read off / shared
+  // from the device. 8 bytes (16 hex) per row so it fits the display width without
+  // ellipsis, matching the Discover detail layout. Skipped when the companion exposes
+  // no key (default AppServices writes "").
+  char key[65];
+  key[0] = 0;
+  _app->selfPublicKeyHex(key, sizeof(key), 32);
+  if (key[0]) {
+    _stats.addLine("Public key:");
+    for (int i = 0; key[i]; i += 16) _stats.addf("%.16s", key + i);
   }
   char lines[SYSSTATS_MAX_LINES][SYSSTATS_LINE_LEN];
   int n = formatSystemStats(s, lines, SYSSTATS_MAX_LINES);

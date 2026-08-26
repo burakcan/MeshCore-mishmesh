@@ -6,7 +6,7 @@
 namespace mishmesh { namespace codec {
 
 constexpr int REC_HDR = 17;                  // flags+type+id(6)+senderTime(4)+localTime(4)+textLen(1)
-constexpr int MAX_REC = REC_HDR + 160 + 10; // worst case = 187
+constexpr int MAX_REC = REC_HDR + MAX_TEXT + 2 + MAX_PATH_BYTES;
 
 uint8_t  recKind(const uint8_t* r);
 bool     recDead(const uint8_t* r);

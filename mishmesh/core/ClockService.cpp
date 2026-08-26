@@ -32,6 +32,13 @@ void ClockService::begin(AppletStorage* st) {
       _tmRemainMs = secs * 1000u;
     }
   }
+  if (_st->load("pmcf", buf, 5) == 5) {
+    if (buf[0] >= 5 && buf[0] <= 60) _pmFocusMin = buf[0];
+    if (buf[1] >= 1 && buf[1] <= 30) _pmShortMin = buf[1];
+    if (buf[2] >= 5 && buf[2] <= 45) _pmLongMin  = buf[2];
+    if (buf[3] >= 2 && buf[3] <= 8)  _pmSetN     = buf[3];
+    _pmAuto = buf[4] != 0;
+  }
 }
 
 // --- stopwatch ---
@@ -104,6 +111,92 @@ void ClockService::tmToggle(uint32_t nowMs) {
 void ClockService::tmReset() {
   _tmRunning = false;
   _tmRemainMs = _tmDurationSecs * 1000u;
+}
+
+// --- pomodoro ---
+
+uint32_t ClockService::pmPhaseMs(PomoPhase p) const {
+  switch (p) {
+    case PomoPhase::Focus:      return (uint32_t)_pmFocusMin * 60u * 1000u;
+    case PomoPhase::ShortBreak: return (uint32_t)_pmShortMin * 60u * 1000u;
+    case PomoPhase::LongBreak:  return (uint32_t)_pmLongMin  * 60u * 1000u;
+    default:                    return 0;
+  }
+}
+
+uint32_t ClockService::pmRemainingMs(uint32_t nowMs) const {
+  if (!_pmRunning) return _pmRemainMs;
+  int32_t left = (int32_t)(_pmEndAt - nowMs);
+  return left > 0 ? (uint32_t)left : 0;
+}
+
+uint8_t ClockService::pmElapsedPct(uint32_t nowMs) const {
+  if (_pmPhaseTotalMs == 0) return 0;
+  uint32_t rem = pmRemainingMs(nowMs);
+  if (rem > _pmPhaseTotalMs) rem = _pmPhaseTotalMs;
+  return (uint8_t)(((uint64_t)(_pmPhaseTotalMs - rem) * 100u) / _pmPhaseTotalMs);
+}
+
+void ClockService::pmStart(uint32_t nowMs) {
+  _pmPhase = PomoPhase::Focus;
+  _pmBlock = 1;
+  _pmPhaseTotalMs = pmPhaseMs(PomoPhase::Focus);
+  _pmRemainMs = _pmPhaseTotalMs;
+  _pmEndAt = nowMs + _pmRemainMs;
+  _pmRunning = true;
+}
+
+void ClockService::pmToggle(uint32_t nowMs) {
+  if (!pmActive()) return;
+  if (_pmRunning) {
+    _pmRemainMs = pmRemainingMs(nowMs);
+    _pmRunning = false;
+  } else {
+    if (_pmRemainMs == 0) _pmRemainMs = _pmPhaseTotalMs;
+    _pmEndAt = nowMs + _pmRemainMs;
+    _pmRunning = true;
+  }
+}
+
+void ClockService::pmReset() {
+  _pmPhase = PomoPhase::Idle;
+  _pmBlock = 0;
+  _pmRunning = false;
+  _pmRemainMs = 0;
+  _pmPhaseTotalMs = 0;
+}
+
+void ClockService::setPmFocusMin(uint8_t m) {
+  _pmFocusMin = m < 5 ? 5 : m > 60 ? 60 : m; persistPomodoro();
+}
+void ClockService::setPmShortMin(uint8_t m) {
+  _pmShortMin = m < 1 ? 1 : m > 30 ? 30 : m; persistPomodoro();
+}
+void ClockService::setPmLongMin(uint8_t m) {
+  _pmLongMin = m < 5 ? 5 : m > 45 ? 45 : m; persistPomodoro();
+}
+void ClockService::setPmSetCount(uint8_t n) {
+  _pmSetN = n < 2 ? 2 : n > 8 ? 8 : n; persistPomodoro();
+}
+void ClockService::setPmAutoAdvance(bool on) { _pmAuto = on; persistPomodoro(); }
+
+void ClockService::advanceOrArm(uint32_t nowMs, PomoPhase next) {
+  _pmPhase = next;
+  _pmPhaseTotalMs = pmPhaseMs(next);
+  _pmRemainMs = _pmPhaseTotalMs;
+  if (_pmAuto) {
+    _pmEndAt = nowMs + _pmRemainMs;   // hands-free: next phase starts now
+    _pmRunning = true;
+  } else {
+    _pmRunning = false;               // armed-paused until the user resumes
+  }
+}
+
+void ClockService::persistPomodoro() {
+  if (!_st) return;
+  uint8_t b[5] = { _pmFocusMin, _pmShortMin, _pmLongMin, _pmSetN,
+                   (uint8_t)(_pmAuto ? 1 : 0) };
+  _st->save("pmcf", b, 5);
 }
 
 // --- alarm ---
@@ -189,6 +282,25 @@ void ClockService::persistCities() {
 // --- tick ---
 
 ClockEvent ClockService::tick(uint32_t nowMs, uint32_t epochUtc, int16_t tzOffsetMin) {
+  if (_pmRunning && (int32_t)(nowMs - _pmEndAt) >= 0) {
+    PomoPhase done = _pmPhase;
+    ClockEvent ev;
+    if (done == PomoPhase::Focus) {
+      // Nth focus block flows into the long break; earlier ones into a short break.
+      advanceOrArm(nowMs, _pmBlock >= _pmSetN ? PomoPhase::LongBreak
+                                              : PomoPhase::ShortBreak);
+      ev = ClockEvent::PomodoroBreak;
+    } else if (done == PomoPhase::ShortBreak) {
+      _pmBlock++;
+      advanceOrArm(nowMs, PomoPhase::Focus);
+      ev = ClockEvent::PomodoroFocus;
+    } else {   // LongBreak -> stop and celebrate
+      pmReset();
+      ev = ClockEvent::PomodoroSetDone;
+    }
+    _ringing = ev;
+    return ev;
+  }
   if (_tmRunning && (int32_t)(nowMs - _tmEndAt) >= 0) {
     _tmRunning = false;
     _tmRemainMs = _tmDurationSecs * 1000u;   // re-arm for the next run
@@ -211,6 +323,9 @@ void ClockService::resetForTest() {
   _st = nullptr;
   _swRunning = false; _swAccum = 0; _swStart = 0; _lapTotal = 0;
   _tmRunning = false; _tmDurationSecs = 300; _tmRemainMs = 300 * 1000u; _tmEndAt = 0;
+  _pmFocusMin = 25; _pmShortMin = 5; _pmLongMin = 15; _pmSetN = 4; _pmAuto = true;
+  _pmPhase = PomoPhase::Idle; _pmBlock = 0; _pmRunning = false;
+  _pmRemainMs = 0; _pmPhaseTotalMs = 0;
   _alEnabled = false; _alHour = 7; _alMinute = 0; _alFiredStamp = 0;
   _alTone = 1; _tmTone = 0; _alVol = 0; _tmVol = 0;
   _cityCount = 0;

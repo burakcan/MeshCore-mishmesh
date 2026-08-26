@@ -1,0 +1,29 @@
+---
+interface Props {
+  title: string;
+  description: string;
+  bodyClass: string;
+  css: string;
+}
+const { title, description, bodyClass, css } = Astro.props;
+const favicon =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E" +
+  "%3Crect width='8' height='8' fill='%230b111b'/%3E" +
+  "%3Crect x='1' y='1' width='2' height='6' fill='%23cbe9f4'/%3E" +
+  "%3Crect x='5' y='1' width='2' height='6' fill='%23cbe9f4'/%3E%3C/svg%3E";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href={favicon} />
+    <link rel="stylesheet" href={css} />
+  </head>
+  <body class={bodyClass}>
+    <slot />
+    <script src="main.js" defer is:inline></script>
+  </body>
+</html>

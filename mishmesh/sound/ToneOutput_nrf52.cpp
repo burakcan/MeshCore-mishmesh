@@ -21,10 +21,14 @@ public:
     if (top < 4) top = 4;
     if (top > 32767) top = 32767;
     uint32_t duty;
+    // Loudness is NOT monotonic in duty on this passive piezo: it peaks around a narrow
+    // ~12% pulse (buzzer resonance) and falls off on BOTH sides - pulses wider toward 50%
+    // get quieter, not louder. So keep the ramp on the rising (low-duty) side: High sits
+    // at the ~12% peak, Mid/Low step down from there (Low ~3% is already properly quiet).
     switch (vol) {
-      case VolumeLevel::High: duty = top / 2;  break;   // ~50%
-      case VolumeLevel::Mid:  duty = top / 8;  break;   // ~12%
-      default:                duty = top / 32; break;   // Low ~3%
+      case VolumeLevel::High: duty = top / 8;  break;   // ~12% - resonance peak, loudest
+      case VolumeLevel::Mid:  duty = top / 16; break;   // ~6%
+      default:                duty = top / 32; break;   // Low ~3% - quietest
     }
     if (duty == 0) duty = 1;
     _pwm->setMaxValue(top);

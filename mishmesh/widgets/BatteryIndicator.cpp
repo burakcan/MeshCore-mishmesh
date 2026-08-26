@@ -10,18 +10,27 @@ namespace mishmesh {
 static const int GAUGE_W = 14;   // 12 body + 2 nub
 static const int GAUGE_H = 7;
 
+// One decimal keeps the top-bar string short (e.g. "3.9V").
+static void fmtVolts(char* out, uint16_t cap, uint16_t mv) {
+  snprintf(out, cap, "%u.%uV", (unsigned)(mv / 1000), (unsigned)((mv % 1000) / 100));
+}
+
 int BatteryIndicator::measureWidth(Canvas& c) const {
-  if (!uiPrefs().battShowPercent()) return GAUGE_W;
+  UiPrefs::BattMode m = uiPrefs().battMode();
+  if (m == UiPrefs::BattMode::Gauge) return GAUGE_W;
   char txt[8];
-  snprintf(txt, sizeof(txt), "%d%%", batteryPercent(_mv));
+  if (m == UiPrefs::BattMode::Voltage) fmtVolts(txt, sizeof(txt), _mv);
+  else snprintf(txt, sizeof(txt), "%d%%", batteryPercent(_mv));
   return c.textWidth(fontBody(), txt);
 }
 
 int BatteryIndicator::drawRightAligned(Canvas& c, int xRight, int rowH) {
   int pct = batteryPercent(_mv);
-  if (uiPrefs().battShowPercent()) {
+  UiPrefs::BattMode m = uiPrefs().battMode();
+  if (m != UiPrefs::BattMode::Gauge) {
     char txt[8];
-    snprintf(txt, sizeof(txt), "%d%%", pct);
+    if (m == UiPrefs::BattMode::Voltage) fmtVolts(txt, sizeof(txt), _mv);
+    else snprintf(txt, sizeof(txt), "%d%%", pct);
     int ty = (rowH - c.fontHeight(fontBody())) / 2;
     if (ty < 0) ty = 0;
     c.drawText(fontBody(), xRight, ty, txt, DisplayDriver::LIGHT, TextAlign::Right);

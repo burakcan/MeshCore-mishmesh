@@ -30,10 +30,9 @@ struct ContactView {
   bool           hasLocation;
   int32_t        gpsLat;      // degrees * 1e6
   int32_t        gpsLon;
-  // [mishmesh] our-clock receive time (UNIX seconds, 0 = unknown); used by the
+  // our-clock receive time (UNIX seconds, 0 = unknown); used by the
   // Advert applet's Recent tab for the "heard N ago" column.
   uint32_t       heardAt = 0;
-  // [/mishmesh]
 };
 
 struct AutoAddConfig {
@@ -41,7 +40,7 @@ struct AutoAddConfig {
   bool    addChat, addRepeater, addRoom, addSensor;   // consulted only when !autoAddAll
   bool    overwriteOldest;
   uint8_t maxHops;            // mirrors prefs; not edited in v1 UI
-  bool    notifyWhenFull;     // [mishmesh] on-device "contacts full" alert enable
+  bool    notifyWhenFull;     // on-device "contacts full" alert enable
 };
 
 struct TelemetryField {
@@ -86,12 +85,11 @@ struct RepeaterStatusView {
   uint32_t recvErrors;
 };
 
-// [mishmesh] Repeater ACL (binary REQ_TYPE_GET_ACCESS_LIST). requestAccessList() fires the
+// Repeater ACL (binary REQ_TYPE_GET_ACCESS_LIST). requestAccessList() fires the
 // request; the reply bumps accessListSeq(); latestAccessList() decodes it for pubKey.
 struct AclEntry { uint8_t pubkey[6]; uint8_t perms; };
 static const int MAX_ACL = 20;
 struct AccessListView { bool valid; uint8_t count; AclEntry entries[MAX_ACL]; };
-// [/mishmesh]
 
 // The only seam through which applets reach contacts/mesh state. Implemented by
 // the companion adapter; faked in host tests.
@@ -101,7 +99,7 @@ struct ContactsService {
   virtual int  countByKind(ContactKind k) const = 0;
   virtual bool getByKind(ContactKind k, int index, ContactView& out) const = 0;
 
-  // [mishmesh] Cheap raw random access + a change token, so the list UI can build
+  // Cheap raw random access + a change token, so the list UI can build
   // a filtered index once and stop re-scanning the whole table per row per frame.
   // contactAt() is O(1) with no full-record copy; contactsSeq() changes whenever
   // any rendered/ordering field mutates, from any source (advert, phone app,
@@ -110,7 +108,6 @@ struct ContactsService {
   virtual int      contactCount() const { return 0; }
   virtual bool     contactAt(int rawIndex, ContactView& out) const { (void)rawIndex; (void)out; return false; }
   virtual uint32_t contactsSeq() const { return 0; }
-  // [/mishmesh]
 
   // Favourites span all kinds (flags bit0). The tab is shown only when count > 0.
   virtual int  countFavourites() const = 0;
@@ -123,13 +120,26 @@ struct ContactsService {
   virtual bool getDiscovered(int index, ContactView& out) const = 0;
   virtual bool addDiscovered(const uint8_t* pubKey) = 0;   // promote to a real contact
 
-  // [mishmesh] Recent adverts: every advert heard (incl. known contacts), newest
+  // Active node discovery (NODE_DISCOVER_REQ/RESP, firmware v1.10+).
+  // startNodeDiscover broadcasts a zero-hop request filtered to advTypeMask
+  // (1<<ADV_TYPE_*); replies land in a session result list (carries SNR) and the
+  // shared discovered pool. discoverSeq() bumps per accepted reply; discoverScanning()
+  // is true during the request window. getDiscoverResult's pubKey points at
+  // adapter-owned storage stable until the next call. Non-pure so host fakes and other
+  // implementers keep compiling.
+  struct DiscoverResultView { const uint8_t* pubKey; uint8_t type; int8_t snrX4; };
+  virtual bool     startNodeDiscover(uint8_t advTypeMask) { (void)advTypeMask; return false; }
+  virtual uint32_t discoverSeq() const { return 0; }
+  virtual bool     discoverScanning() const { return false; }
+  virtual int      discoverResultCount() const { return 0; }
+  virtual bool     getDiscoverResult(int i, DiscoverResultView& out) const { (void)i; (void)out; return false; }
+
+  // Recent adverts: every advert heard (incl. known contacts), newest
   // first. Non-pure so existing implementers/fakes need not override. isContact
   // lets the Recent row route to the contact vs discover detail screen.
   virtual int  countRecentAdverts() const { return 0; }
   virtual bool getRecentAdvert(int index, ContactView& out) const { (void)index; (void)out; return false; }
   virtual bool isContact(const uint8_t* pubKey) const { (void)pubKey; return false; }
-  // [/mishmesh]
 
   // Our own location (degrees * 1e6); false if unknown.
   virtual bool selfLocation(int32_t& lat1e6, int32_t& lon1e6) const = 0;
@@ -166,7 +176,7 @@ struct ContactsService {
   virtual uint32_t pingSeq() const = 0;                      // bumps on each reply
   virtual bool     latestPing(const uint8_t* pubKey, PingView& out) const = 0;
 
-  // [mishmesh] Room-server login. login() sends `password` to a Room contact; the
+  // Room-server login. login() sends `password` to a Room contact; the
   // result arrives asynchronously (server round-trip) and bumps loginSeq().
   // loginResult() reports the most recent outcome. isLoggedIn() tracks contacts
   // logged in during this power cycle so a re-open can skip the prompt. Non-pure
@@ -177,9 +187,8 @@ struct ContactsService {
     (void)pubKey; (void)ok; (void)isAdmin; (void)perms; return false;
   }
   virtual bool     isLoggedIn(const uint8_t* pubKey) const { (void)pubKey; return false; }
-  // [/mishmesh]
 
-  // [mishmesh] Admin CLI command to a logged-in server (repeater/room). sendCliCommand()
+  // Admin CLI command to a logged-in server (repeater/room). sendCliCommand()
   // sends a text command; the reply arrives asynchronously (server round-trip) and bumps
   // cliSeq(). cliResult() reports the outcome for pubKey - false when no reply is latched
   // for this contact (e.g. a reply for a different one). `response` points at adapter-owned
@@ -195,9 +204,8 @@ struct ContactsService {
   virtual bool     cliResult(const uint8_t* pubKey, uint32_t afterSeq, bool& ok, const char*& response) const {
     (void)pubKey; (void)afterSeq; (void)ok; (void)response; return false;
   }
-  // [/mishmesh]
 
-  // [mishmesh] Repeater status (binary REQ_TYPE_GET_STATUS). requestStatus() fires the
+  // Repeater status (binary REQ_TYPE_GET_STATUS). requestStatus() fires the
   // request; the reply arrives asynchronously and bumps statusSeq(). latestStatus()
   // decodes it for pubKey (false when none is latched for this contact). loginClock()
   // is the repeater's UNIX-seconds clock captured from the login response (0 = unknown).
@@ -208,22 +216,20 @@ struct ContactsService {
   }
   virtual uint32_t loginClock(const uint8_t* pubKey) const { (void)pubKey; return 0; }
 
-  // [mishmesh] Repeater ACL - see AccessListView above.
+  // Repeater ACL - see AccessListView above.
   virtual bool     requestAccessList(const uint8_t* pubKey) { (void)pubKey; return false; }
   virtual uint32_t accessListSeq() const { return 0; }
   virtual bool     latestAccessList(const uint8_t* pubKey, AccessListView& out) const {
     (void)pubKey; out.valid = false; return false;
   }
-  // [/mishmesh]
 
-  // [mishmesh] Key generation: produce a 64-byte Ed25519 private key as 128 hex.
+  // Key generation: produce a 64-byte Ed25519 private key as 128 hex.
   // seedHex null/empty => random (device RNG); else seedHex is a 64-hex (32-byte)
   // seed expanded via ed25519_create_keypair. Returns false on bad seed / no crypto.
   // out must hold >= 129 bytes.
   virtual bool makeIdentityHex(const char* seedHex, char* out, int outCap) {
     (void)seedHex; (void)out; (void)outCap; return false;
   }
-  // [/mishmesh]
 
   virtual AutoAddConfig getAutoAdd() const = 0;
   virtual void          setAutoAdd(const AutoAddConfig& cfg) = 0;

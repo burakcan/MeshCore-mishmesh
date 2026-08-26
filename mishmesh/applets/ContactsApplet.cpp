@@ -1,5 +1,6 @@
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/ContactDetailApplet.h>
+#include <mishmesh/applets/DiscoverApplet.h>   // discoverApplet()
 #include <mishmesh/applets/DiscoverDetailApplet.h>
 #include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/core/AppletHost.h>
@@ -66,14 +67,17 @@ uint16_t FavouritesListModel::icon(int i) const {
 }
 
 const char* DiscoverListModel::label(int i) const {
+  if (i == 0) return "Discover nodes";
   static ContactView v;
   static char buf[44];
-  if (!_svc || !_svc->getDiscovered(i, v)) return "";
+  if (!_svc || !_svc->getDiscovered(i - 1, v)) return "";
   return contactLabel(v, buf, sizeof(buf));
 }
+
 uint16_t DiscoverListModel::icon(int i) const {
+  if (i == 0) return (uint16_t)Icon::Search;
   static ContactView v;
-  if (!_svc || !_svc->getDiscovered(i, v)) return 0;
+  if (!_svc || !_svc->getDiscovered(i - 1, v)) return 0;
   return kindIcon((ContactKind)v.type);
 }
 
@@ -95,7 +99,7 @@ void ContactsApplet::syncListToTab() {
   const TabSlot& s = currentSlot();
   switch (s.kind) {
     case TabKind::Favourites: _list.setModel(&_favs); _list.setEmptyText("No favourites"); break;
-    case TabKind::Discovered: _list.setModel(&_discover); _list.setEmptyText("No new devices"); break;
+    case TabKind::Discovered: _list.setModel(&_discover); _list.setEmptyText(nullptr); break;   // row 0 action row -> never empty
     case TabKind::Settings:   _list.setEmptyText(nullptr); break;   // rendered by contactsSettings()
     default:                  _list.setModel(&_models[(int)s.contactKind - 1]);          // kinds are 1-based
                               _list.setEmptyText(emptyLabel(s.contactKind)); break;
@@ -196,8 +200,12 @@ bool ContactsApplet::onInput(InputEvent ev) {
     if (_svc) {
       const TabSlot& s = currentSlot();
       ContactView v;
-      if (s.kind == TabKind::Discovered) {                 // open the discovery detail (add from there)
-        if (_svc->getDiscovered(_list.selected(), v)) {
+      if (s.kind == TabKind::Discovered) {
+        if (_list.selected() == 0) {                     // leading action row -> scan screen
+          if (_host) _host->push(&discoverApplet());
+          return true;
+        }
+        if (_svc->getDiscovered(_list.selected() - 1, v)) {   // rows shift by the action row
           discoverDetailApplet().setTarget(v);
           if (_host) _host->push(&discoverDetailApplet());
         }

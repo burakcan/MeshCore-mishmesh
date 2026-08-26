@@ -52,6 +52,10 @@ public:
   // gestures (onInput carries no timestamp) without reaching for Arduino millis().
   uint32_t nowMs() const { return _loop_now; }
 
+  // When the last input was actually dispatched (post-debounce), 0 before the
+  // first one. Feeds the unread reminder's "any key stops the nagging" rule.
+  uint32_t lastInputMs() const { return _last_input_ms; }
+
   void dispatch(InputEvent ev, bool repeat = false);
   void loop(uint32_t now_ms);
 

@@ -1,5 +1,6 @@
 #include <mishmesh/applets/settings/MessagesSettingsPanel.h>
 #include <mishmesh/applets/settings/QuickRepliesPanel.h>
+#include <mishmesh/applets/settings/RepeatAlertPanel.h>
 #include <mishmesh/applets/SettingsDetailApplet.h>
 #include <mishmesh/applets/SoundPickerApplet.h>
 #include <mishmesh/core/AppletHost.h>
@@ -16,8 +17,9 @@ static void acksLabel(int v, char* out, uint16_t cap) {
 
 const char* MessagesSettingsPanel::Model::label(int i) const {
   static const char* LABELS[ROW_COUNT] = { "Auto retry DMs", "Auto reset DM paths",
-                                           "Direct msg acks", "Channel sound",
-                                           "Direct sound", "Quick replies" };
+                                           "Direct msg acks", "Wake screen on message",
+                                           "Open at unread", "Repeat alert",
+                                           "Channel sound", "Direct sound", "Quick replies" };
   return (i >= 0 && i < ROW_COUNT) ? LABELS[i] : "";
 }
 
@@ -26,6 +28,8 @@ bool MessagesSettingsPanel::Model::toggleState(int i) const {
   MessagesConfig c = svc->getMessagesConfig();
   if (i == AutoRetry)     return c.autoRetry;
   if (i == AutoResetPath) return c.autoResetPath;
+  if (i == WakeOnMessage) return c.wakeOnMessage;
+  if (i == OpenAtUnread)  return c.openAtUnread;
   return false;
 }
 
@@ -33,6 +37,10 @@ const char* MessagesSettingsPanel::Model::value(int i) const {
   static char buf[8];
   if (i == DirectAcks && svc) {
     snprintf(buf, sizeof(buf), "%u", svc->getMessagesConfig().directAcks);
+    return buf;
+  }
+  if (i == RepeatAlert && svc) {
+    repeatIntervalLabel(svc->getMessagesConfig().repeatMins, buf, sizeof(buf));
     return buf;
   }
   if ((i == ChannelSound || i == DirectSound) && app) {
@@ -89,6 +97,8 @@ bool MessagesSettingsPanel::onInput(InputEvent ev) {
     if (_model.isToggle(i) && _svc) {
       if (i == Model::AutoRetry)          cfg.autoRetry = !cfg.autoRetry;
       else if (i == Model::AutoResetPath) cfg.autoResetPath = !cfg.autoResetPath;
+      else if (i == Model::WakeOnMessage) cfg.wakeOnMessage = !cfg.wakeOnMessage;
+      else if (i == Model::OpenAtUnread)  cfg.openAtUnread = !cfg.openAtUnread;
       _svc->setMessagesConfig(cfg);
     } else if (i == Model::DirectAcks && _svc) {
       _acks.configure("DM acks", cfg.directAcks, 1, 2, acksLabel);
@@ -97,6 +107,10 @@ bool MessagesSettingsPanel::onInput(InputEvent ev) {
       bool channel = i == Model::ChannelSound;
       soundPickerApplet().setGlobal(channel, channel ? "Channel msgs" : "Direct msgs");
       _host->push(&soundPickerApplet());
+    } else if (i == Model::RepeatAlert && _host) {
+      static SettingsDetailApplet detail;
+      detail.setPanel(&repeatAlertSettings());
+      _host->push(&detail);
     } else if (i == Model::QuickReplies && _host) {
       // Drill into the canned-message manager. A dedicated detail-applet instance
       // (not the shared settingsDetailApplet, which is already on the stack hosting

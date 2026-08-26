@@ -1,0 +1,13 @@
+---
+// A framed OLED capture with a caption, in the device's hard-edged style.
+interface Props {
+  src: string;
+  alt: string;
+  caption: string;
+}
+const { src, alt, caption } = Astro.props;
+---
+<figure class="shot">
+  <img src={src} alt={alt} />
+  <figcaption>{caption}</figcaption>
+</figure>

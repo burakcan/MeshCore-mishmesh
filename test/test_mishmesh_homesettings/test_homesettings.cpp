@@ -29,28 +29,20 @@ void prime() {
 
 struct FakeSleepApp : AppServices {
   uint8_t idx = 1;                                  // 30s
+  uint8_t brightness = 2;                           // High (persisted)
+  uint8_t previewed = 2;                            // last live-applied level
   const char* nodeName() const override { return "n"; }
   uint16_t batteryMillivolts() const override { return 0; }
   uint32_t epochSeconds() const override { return 0; }
   uint8_t screenSleepIndex() const override { return idx; }
   void setScreenSleepIndex(uint8_t i) override { idx = i; }
+  bool screenBrightnessSupported() const override { return true; }
+  uint8_t screenBrightnessIndex() const override { return brightness; }
+  void setScreenBrightnessIndex(uint8_t i) override { brightness = i; previewed = i; }
+  void previewScreenBrightnessIndex(uint8_t i) override { previewed = i; }
 };
 
 }  // namespace
-
-TEST(HomeSettingsPanel, TogglesBatteryPercent) {
-  prime();
-  AppletContext ctx;
-  HomeSettingsPanel& p = homeSettings();
-  p.begin(ctx);
-  EXPECT_STREQ("Home", p.title());
-  EXPECT_FALSE(uiPrefs().battShowPercent());
-  // Row 0 = battery toggle; selection starts there.
-  EXPECT_TRUE(p.onInput(InputEvent::Select));
-  EXPECT_TRUE(uiPrefs().battShowPercent());
-  EXPECT_TRUE(p.onInput(InputEvent::Select));
-  EXPECT_FALSE(uiPrefs().battShowPercent());
-}
 
 TEST(QuickActionPickerPanel, PicksAnAppletForASlot) {
   prime();
@@ -83,14 +75,49 @@ TEST(HomeSettingsPanel, ScreenSleepStepperAppliesSelection) {
   HomeSettingsPanel& p = homeSettings();
   p.begin(ctx);
   EXPECT_FALSE(p.modalActive());
-  // Row 0 = battery, row 1 = Screen sleep.
-  EXPECT_TRUE(p.onInput(InputEvent::NavDown));       // -> row 1
+  // Row 0 = Screen sleep now (battery row moved to the Battery panel).
   EXPECT_TRUE(p.onInput(InputEvent::Select));        // open stepper at idx 1 (30s)
   EXPECT_TRUE(p.modalActive());
   EXPECT_TRUE(p.onInput(InputEvent::NavRight));       // 30s -> 1m (idx 2)
   EXPECT_TRUE(p.onInput(InputEvent::Select));         // confirm
   EXPECT_FALSE(p.modalActive());
   EXPECT_EQ(2, app.idx);
+}
+
+
+TEST(HomeSettingsPanel, ScreenBrightnessStepperAppliesSelection) {
+  prime();
+  FakeSleepApp app;
+  AppletContext ctx; ctx.app = &app;
+  HomeSettingsPanel& p = homeSettings();
+  p.begin(ctx);
+  // Brightness is the fourth row, after Screen sleep + the two shortcut rows.
+  for (int i = 0; i < 3; i++) EXPECT_TRUE(p.onInput(InputEvent::NavDown));
+  EXPECT_TRUE(p.onInput(InputEvent::Select));         // open at High (idx 2)
+  EXPECT_TRUE(p.modalActive());
+  EXPECT_TRUE(p.onInput(InputEvent::NavLeft));        // High -> Medium
+  EXPECT_TRUE(p.onInput(InputEvent::Select));
+  EXPECT_FALSE(p.modalActive());
+  EXPECT_EQ(1, app.brightness);
+}
+
+TEST(HomeSettingsPanel, ScreenBrightnessPreviewsWhileStepping) {
+  prime();
+  FakeSleepApp app;
+  AppletContext ctx; ctx.app = &app;
+  HomeSettingsPanel& p = homeSettings();
+  p.begin(ctx);
+  for (int i = 0; i < 3; i++) EXPECT_TRUE(p.onInput(InputEvent::NavDown));
+  EXPECT_TRUE(p.onInput(InputEvent::Select));         // open at High (idx 2)
+  EXPECT_TRUE(p.onInput(InputEvent::NavLeft));        // -> Medium (idx 1)
+  EXPECT_EQ(1, app.previewed);                        // applied live...
+  EXPECT_EQ(2, app.brightness);                       // ...but not persisted yet
+  EXPECT_TRUE(p.onInput(InputEvent::NavLeft));        // -> Low (idx 0)
+  EXPECT_EQ(0, app.previewed);
+  EXPECT_TRUE(p.onInput(InputEvent::Cancel));         // bail out
+  EXPECT_FALSE(p.modalActive());
+  EXPECT_EQ(2, app.brightness);                       // still the saved value
+  EXPECT_EQ(2, app.previewed);                        // display reverted to saved
 }
 
 int main(int argc, char** argv) {

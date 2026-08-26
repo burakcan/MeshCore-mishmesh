@@ -5,7 +5,7 @@
 // the FILESYSTEM typedef and File class are visible when the header is parsed.
 #include <Arduino.h>
 #include <string.h>
-#include "PersistDebug.h"   // [mishmesh] TEMP: unread-persistence instrumentation
+#include "PersistDebug.h"   // TEMP: unread-persistence instrumentation
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   #include <Adafruit_LittleFS.h>

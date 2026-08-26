@@ -1,0 +1,58 @@
+name: Deploy mishmesh site to GitHub Pages
+
+# Builds the Astro site in mishmesh/site and publishes it with the modern
+# GitHub Pages "Actions" source (upload-pages-artifact + deploy-pages).
+# NOTE: a repo's Pages has a single source. Using this workflow means setting
+# Settings > Pages > Source to "GitHub Actions". The inherited upstream
+# github-pages.yml (MkDocs -> gh-pages branch, docs.meshcore.io) uses the older
+# branch source and will conflict; disable it if you deploy this instead.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mishmesh/site/**"
+      - ".github/workflows/deploy-mishmesh-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish; don't cancel it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mishmesh/site
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mishmesh/site/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: mishmesh/site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

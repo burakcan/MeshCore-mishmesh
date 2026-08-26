@@ -3,25 +3,43 @@
 #include <stdint.h>
 #include <string.h>
 
+using ColorVal = uint16_t;
+
+class UIColor {
+public:
+  // color definitions (by element _type_)
+  static ColorVal window_bkg, title_bkg, title_txt, primary_txt, secondary_txt, warning_txt, popup_bkg, popup_txt, corp_blue;
+};
+
 class DisplayDriver {
   int _w, _h;
 protected:
   DisplayDriver(int w, int h) { _w = w; _h = h; }
 public:
-  enum Color { DARK=0, LIGHT, RED, GREEN, BLUE, YELLOW, ORANGE }; // on b/w screen, colors will be !=0 synonym of light
+  //enum Color { DARK=0, LIGHT, RED, GREEN, BLUE, YELLOW, ORANGE }; // on b/w screen, colors will be !=0 synonym of light
+  // [mishmesh] mishmesh draws in these semantic colors and resolves them to the
+  // UIColor palette in Canvas (mishmesh::themedColor), which is also where the
+  // light/dark swap happens. Never pass one of these to setColor() directly.
+  enum Color { DARK=0, LIGHT, RED, GREEN, BLUE, YELLOW, ORANGE };
+  // [/mishmesh]
 
   int width() const { return _w; }
   int height() const { return _h; }
 
   virtual bool isOn() = 0;
   virtual bool isEink() { return false; } // default to non-eink, override in eink drivers
+  // [mishmesh] optional panel brightness (contrast); default unsupported
+  virtual bool supportsBrightness() const { return false; }
+  virtual void setBrightness(uint8_t value) { (void)value; }
+  // lets the UI drain input while an eink panel blocks on a refresh
   virtual void setBusyPoll(void (*cb)(const void*), const void* ctx) {}
+  // [/mishmesh]
   virtual void turnOn() = 0;
   virtual void turnOff() = 0;
   virtual void clear() = 0;
-  virtual void startFrame(Color bkg = DARK) = 0;
+  virtual void startFrame(ColorVal bkg = UIColor::window_bkg) = 0;
   virtual void setTextSize(int sz) = 0;
-  virtual void setColor(Color c) = 0;
+  virtual void setColor(ColorVal c) = 0;
   virtual void setCursor(int x, int y) = 0;
   virtual void print(const char* str) = 0;
   virtual void printWordWrap(const char* str, int max_width) { print(str); }   // fallback to basic print() if no override
@@ -38,7 +56,7 @@ public:
         uint8_t bits = buf[x * pages + p];
         for (int bit = 0; bit < 8; bit++) {
           if (bits & (1 << bit)) {   // only lit pixels are drawn (background already cleared)
-            setColor(LIGHT);
+            setColor(UIColor::primary_txt);
             fillRect(x, p * 8 + bit, 1, 1);
           }
         }

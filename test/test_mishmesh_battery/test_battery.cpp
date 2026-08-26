@@ -8,7 +8,7 @@
 using namespace mishmesh;
 
 TEST(BatteryIndicator, GaugeModeDrawsOutlineNubAndFill) {
-  uiPrefs().resetForTest();          // battShowPercent() == false -> gauge
+  uiPrefs().resetForTest();          // default battMode() is Gauge
   FakeDisplayDriver d;
   Canvas c(&d);
   BatteryIndicator b;
@@ -34,11 +34,25 @@ TEST(BatteryIndicator, GaugeFillScalesWithCharge) {
 TEST(BatteryIndicator, PercentModeDrawsTextNotGauge) {
   uiPrefs().resetForTest();
   uiPrefs().begin(nullptr);
-  uiPrefs().setBattShowPercent(true);
+  uiPrefs().setBattMode(UiPrefs::BattMode::Percent);
   FakeDisplayDriver d;
   Canvas c(&d);
   BatteryIndicator b;
   b.setMillivolts(4000);
+  int w = b.drawRightAligned(c, 128, 12);
+  EXPECT_TRUE(d.rects.empty());      // no gauge outline
+  EXPECT_GT(w, 0);
+  EXPECT_FALSE(d.fills.empty());     // glyph pixels rasterised as fills
+}
+
+TEST(BatteryIndicator, VoltageModeDrawsTextNotGauge) {
+  uiPrefs().resetForTest();
+  uiPrefs().begin(nullptr);
+  uiPrefs().setBattMode(UiPrefs::BattMode::Voltage);
+  FakeDisplayDriver d;
+  Canvas c(&d);
+  BatteryIndicator b;
+  b.setMillivolts(3950);             // -> "3.9V"
   int w = b.drawRightAligned(c, 128, 12);
   EXPECT_TRUE(d.rects.empty());      // no gauge outline
   EXPECT_GT(w, 0);

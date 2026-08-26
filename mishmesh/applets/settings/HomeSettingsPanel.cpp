@@ -57,20 +57,26 @@ static void sleepStepLabel(int idx, char* out, uint16_t cap) {
   snprintf(out, cap, "%s", screenSleepLabel(idx));
 }
 
-const char* HomeSettingsPanel::Model::label(int i) const {
-  static const char* const LABELS[ROW_COUNT] = {
-    "Battery percent", "Screen sleep", "Left shortcut", "Right shortcut" };
-  return (i >= 0 && i < ROW_COUNT) ? LABELS[i] : "";
+static const char* brightnessLabel(int idx) {
+  static const char* const LABELS[] = { "Low", "Medium", "High" };
+  return LABELS[idx < 3 ? idx : 2];
 }
 
-bool HomeSettingsPanel::Model::toggleState(int i) const {
-  return i == BattPercent && uiPrefs().battShowPercent();
+static void brightnessStepLabel(int idx, char* out, uint16_t cap) {
+  snprintf(out, cap, "%s", brightnessLabel(idx));
+}
+
+const char* HomeSettingsPanel::Model::label(int i) const {
+  static const char* const LABELS[ROW_COUNT] = {
+    "Screen sleep", "Left shortcut", "Right shortcut", "Screen brightness" };
+  return (i >= 0 && i < ROW_COUNT) ? LABELS[i] : "";
 }
 
 const char* HomeSettingsPanel::Model::value(int i) const {
   if (i == ScreenSleep) return app ? screenSleepLabel(app->screenSleepIndex()) : "";
   if (i == LeftAction)  return uiPrefs().quickActionLabel(UiPrefs::SLOT_LEFT);
   if (i == RightAction) return uiPrefs().quickActionLabel(UiPrefs::SLOT_RIGHT);
+  if (i == ScreenBrightness && app) return brightnessLabel(app->screenBrightnessIndex());
   return nullptr;
 }
 
@@ -81,22 +87,39 @@ void HomeSettingsPanel::begin(AppletContext& ctx) {
   _list.setModel(&_model);
   _list.resetSelection();   // singleton reuse: setModel skips reset on same-ptr rebind
   _editingSleep = false;
+  _editingBrightness = false;
 }
 
 int HomeSettingsPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
   _list.draw(c, x, y, w, h);
-  if (_editingSleep) { _stepper.draw(c, 0, 0, c.width(), c.height()); return 100; }
+  if (_editingSleep || _editingBrightness) {
+    _stepper.draw(c, 0, 0, c.width(), c.height());
+    return 100;
+  }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool HomeSettingsPanel::onInput(InputEvent ev) {
-  if (_editingSleep) {
+  if (_editingSleep || _editingBrightness) {
     if (_stepper.onInput(ev)) {
       StepperResult r = _stepper.result();
-      if (r != StepperResult::None) {
-        if (r == StepperResult::Confirmed && _model.app)
-          _model.app->setScreenSleepIndex((uint8_t)_stepper.value());
-        _editingSleep = false;
+      if (r == StepperResult::None) {
+        // Live preview: apply each stepped level so the user sees the actual
+        // brightness before confirming (no persist until Confirm).
+        if (_editingBrightness && _model.app)
+          _model.app->previewScreenBrightnessIndex((uint8_t)_stepper.value());
+      } else {
+        if (_model.app) {
+          if (_editingSleep) {
+            if (r == StepperResult::Confirmed)
+              _model.app->setScreenSleepIndex((uint8_t)_stepper.value());
+          } else if (r == StepperResult::Confirmed) {
+            _model.app->setScreenBrightnessIndex((uint8_t)_stepper.value());
+          } else {
+            _model.app->previewScreenBrightnessIndex(_brightnessRestore);   // revert
+          }
+        }
+        _editingSleep = _editingBrightness = false;
         _stepper.reset();
       }
     }
@@ -106,13 +129,18 @@ bool HomeSettingsPanel::onInput(InputEvent ev) {
   if (_list.onInput(ev)) return true;
   if (ev == InputEvent::Select) {
     int i = _list.selected();
-    if (i == Model::BattPercent) {
-      uiPrefs().setBattShowPercent(!uiPrefs().battShowPercent());
-    } else if (i == Model::ScreenSleep) {
+    if (i == Model::ScreenSleep) {
       if (_model.app) {
         _stepper.configure("Screen sleep", _model.app->screenSleepIndex(),
                            0, SCREEN_SLEEP_COUNT - 1, sleepStepLabel);
         _editingSleep = true;
+      }
+    } else if (i == Model::ScreenBrightness) {
+      if (_model.app) {
+        _brightnessRestore = _model.app->screenBrightnessIndex();
+        _stepper.configure("Screen brightness", _brightnessRestore,
+                           0, 2, brightnessStepLabel);
+        _editingBrightness = true;
       }
     } else if (_host) {
       static SettingsDetailApplet detail;   // one level below the shared detail

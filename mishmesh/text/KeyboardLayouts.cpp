@@ -1,10 +1,11 @@
 #include <mishmesh/text/KeyboardLayouts.h>
 #include <string.h>
 
-// Multi-tap letter groups follow Nokia's national-layout convention: each key
-// lists its base ASCII letters first, then that key's accented variants; case is
-// applied by the keypad's shift mode via the explicit `upper` arrays. All glyphs
-// are covered by the mishmesh bitmap fonts (Latin-1 + synthesized Latin Extended-A).
+// Multi-tap letter groups follow Nokia's national-layout convention: a Latin key
+// lists its base ASCII letters first, then that key's accented variants, while a
+// Cyrillic key just takes the next slice of the alphabet; case is applied by the
+// keypad's shift mode via the explicit `upper` arrays. All glyphs
+// are covered by the mishmesh bitmap fonts (Latin-1, Latin Extended-A, and Cyrillic).
 
 namespace mishmesh {
 
@@ -58,6 +59,46 @@ static const KbdLayout LAYOUTS[] = {
   { "HU", "Magyar",
     { P, "abcá","defé","ghií","jkl","mnoóöő","pqrs","tuvúüű","wxyz" },
     { P, "ABCÁ","DEFÉ","GHIÍ","JKL","MNOÓÖŐ","PQRS","TUVÚÜŰ","WXYZ" } },
+
+  // Cyrillic layouts fill in the two cap arrays because the Latin base labels
+  // would be actively misleading, not merely unaccented. Where an alphabet does
+  // not divide into eight 4-letter keys the overflow letter is left off the cap
+  // but still cycles: RU's ё, UK's ґ.
+  { "RU", "Русский",
+    { P, "абвг","деёжз","ийкл","мноп","рсту","фхцч","шщъы","ьэюя" },
+    { P, "АБВГ","ДЕЁЖЗ","ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪЫ","ЬЭЮЯ" },
+    { P, "абвг","дежз", "ийкл","мноп","рсту","фхцч","шщъы","ьэюя" },
+    { P, "АБВГ","ДЕЖЗ", "ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪЫ","ЬЭЮЯ" } },
+
+  { "UK", "Українська",
+    { P, "абвгґ","деєж","зиії","йклм","нопр","стуф","хцчш","щьюя" },
+    { P, "АБВГҐ","ДЕЄЖ","ЗИІЇ","ЙКЛМ","НОПР","СТУФ","ХЦЧШ","ЩЬЮЯ" },
+    { P, "абвг", "деєж","зиії","йклм","нопр","стуф","хцчш","щьюя" },
+    { P, "АБВГ", "ДЕЄЖ","ЗИІЇ","ЙКЛМ","НОПР","СТУФ","ХЦЧШ","ЩЬЮЯ" } },
+
+  { "BE", "Беларуская",
+    { P, "абвг","деёж","зійк","лмно","прст","уўфх","цчшы","ьэюя" },
+    { P, "АБВГ","ДЕЁЖ","ЗІЙК","ЛМНО","ПРСТ","УЎФХ","ЦЧШЫ","ЬЭЮЯ" },
+    { P, "абвг","деёж","зійк","лмно","прст","уўфх","цчшы","ьэюя" },
+    { P, "АБВГ","ДЕЁЖ","ЗІЙК","ЛМНО","ПРСТ","УЎФХ","ЦЧШЫ","ЬЭЮЯ" } },
+
+  { "BG", "Български",
+    { P, "абвг","дежз","ийкл","мноп","рсту","фхцч","шщъ","ьюя" },
+    { P, "АБВГ","ДЕЖЗ","ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪ","ЬЮЯ" },
+    { P, "абвг","дежз","ийкл","мноп","рсту","фхцч","шщъ","ьюя" },
+    { P, "АБВГ","ДЕЖЗ","ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪ","ЬЮЯ" } },
+
+  { "SR", "Српски",
+    { P, "абвг","дђеж","зијк","лљмн","њопр","стћу","фхц","чџш" },
+    { P, "АБВГ","ДЂЕЖ","ЗИЈК","ЛЉМН","ЊОПР","СТЋУ","ФХЦ","ЧЏШ" },
+    { P, "абвг","дђеж","зијк","лљмн","њопр","стћу","фхц","чџш" },
+    { P, "АБВГ","ДЂЕЖ","ЗИЈК","ЛЉМН","ЊОПР","СТЋУ","ФХЦ","ЧЏШ" } },
+
+  { "MK", "Македонски",
+    { P, "абвг","дѓеж","зѕиј","клљм","нњоп","рстќ","уфхц","чџш" },
+    { P, "АБВГ","ДЃЕЖ","ЗЅИЈ","КЛЉМ","НЊОП","РСТЌ","УФХЦ","ЧЏШ" },
+    { P, "абвг","дѓеж","зѕиј","клљм","нњоп","рстќ","уфхц","чџш" },
+    { P, "АБВГ","ДЃЕЖ","ЗЅИЈ","КЛЉМ","НЊОП","РСТЌ","УФХЦ","ЧЏШ" } },
 };
 
 #undef P

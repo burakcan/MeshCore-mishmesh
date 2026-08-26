@@ -56,6 +56,18 @@ public:
     memcpy(aclPub, pk, 6); aclView = v; aclView.valid = true; aclSeqVal++;
   }
 
+  // discover simulation
+  uint8_t  lastDiscoverMask = 0;
+  int      discoverStartCalls = 0;
+  bool     discoverScan = false;
+  uint32_t discoverSeqVal = 0;
+  struct DiscRes { uint8_t pubkey[mishmesh::PUBKEY_LEN] = {0}; uint8_t type = 0; int8_t snrX4 = 0; };
+  std::vector<DiscRes> discoverResults;
+  void simulateDiscoverResult(const uint8_t* pk6, uint8_t type, int8_t snrX4) {
+    DiscRes r; memcpy(r.pubkey, pk6, 6); r.type = type; r.snrX4 = snrX4;
+    discoverResults.push_back(r); discoverSeqVal++;
+  }
+
   // Action log
   std::vector<std::string> calls;
   std::string lastDeleted, lastTelemetryReq, lastResetPath, lastCleared, lastPing;
@@ -250,6 +262,17 @@ public:
   bool latestAccessList(const uint8_t* pk, mishmesh::AccessListView& out) const override {
     if (memcmp(aclPub, pk, 6) != 0) return false;
     out = aclView; return out.valid;
+  }
+  bool startNodeDiscover(uint8_t mask) override {
+    lastDiscoverMask = mask; discoverStartCalls++; discoverScan = true; calls.push_back("discover"); return true;
+  }
+  uint32_t discoverSeq() const override { return discoverSeqVal; }
+  bool discoverScanning() const override { return discoverScan; }
+  int discoverResultCount() const override { return (int)discoverResults.size(); }
+  bool getDiscoverResult(int i, mishmesh::ContactsService::DiscoverResultView& out) const override {
+    if (i < 0 || i >= (int)discoverResults.size()) return false;
+    out.pubKey = discoverResults[i].pubkey; out.type = discoverResults[i].type; out.snrX4 = discoverResults[i].snrX4;
+    return true;
   }
   mishmesh::AutoAddConfig getAutoAdd() const override { return cfg; }
   void setAutoAdd(const mishmesh::AutoAddConfig& c) override { cfg = c; calls.push_back("setautoadd"); }

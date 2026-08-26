@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>MeshCore Pixel Font Bench</title>
+  <style>
+    :root {
+      --ink: #eef6f8;
+      --muted: #78909b;
+      --panel: #0c1820;
+      --panel-2: #101f29;
+      --edge: #223943;
+      --cyan: #2bd9df;
+      --orange: #ff9f43;
+      --red: #ff5d68;
+      --cell: 28px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 18% 0%, #153442 0, transparent 32rem),
+        linear-gradient(135deg, #071016, #08141b 55%, #061016);
+      font-family: "Cascadia Mono", "JetBrains Mono", "IBM Plex Mono", monospace;
+    }
+    button, input, select, textarea { font: inherit; }
+    button {
+      border: 1px solid var(--edge);
+      border-radius: 7px;
+      padding: 8px 11px;
+      color: var(--ink);
+      background: #132630;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan); }
+    button:disabled { opacity: .4; cursor: default; }
+    button.primary { color: #061216; background: var(--cyan); border-color: var(--cyan); font-weight: 800; }
+    button.warn { color: var(--orange); }
+    .app { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    header {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 18px;
+      border-bottom: 1px solid var(--edge);
+      background: rgba(5, 15, 21, .9);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .brand { margin-right: auto; }
+    .brand strong { display: block; color: var(--cyan); letter-spacing: .08em; }
+    .brand small, .status { color: var(--muted); font-size: 12px; }
+    .role-buttons { display: flex; gap: 6px; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(250px, 330px) minmax(390px, 1fr) minmax(420px, 560px);
+      gap: 12px;
+      padding: 12px;
+      min-height: 0;
+    }
+    .panel {
+      min-height: 0;
+      border: 1px solid var(--edge);
+      border-radius: 12px;
+      background: linear-gradient(160deg, rgba(16, 31, 41, .97), rgba(8, 20, 27, .97));
+      box-shadow: 0 16px 45px rgba(0, 0, 0, .22);
+      overflow: hidden;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 48px;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--edge);
+    }
+    .panel-head h2 { margin: 0 auto 0 0; font-size: 14px; letter-spacing: .04em; }
+    .tabs { display: flex; gap: 4px; }
+    .tabs button.active { border-color: var(--orange); color: var(--orange); }
+    .glyph-list {
+      height: calc(100vh - 138px);
+      overflow: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+      align-content: start;
+      gap: 5px;
+      padding: 9px;
+    }
+    .glyph-card {
+      height: 72px;
+      padding: 4px;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      place-items: center;
+      border-radius: 6px;
+      background: #09151c;
+    }
+    .glyph-card.active { outline: 2px solid var(--orange); color: var(--orange); }
+    .glyph-card.edited::after { content: ""; position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); margin: -54px 0 0 42px; }
+    .glyph-card { position: relative; }
+    .glyph-card canvas { width: 42px; height: 42px; image-rendering: pixelated; }
+    .glyph-card span { font-size: 11px; color: var(--muted); }
+    .editor { display: grid; grid-template-rows: auto 1fr auto; }
+    .glyph-meta { display: flex; gap: 10px; align-items: center; }
+    .hero-char { font-size: 26px; color: var(--orange); min-width: 32px; text-align: center; }
+    .code { color: var(--muted); font-size: 12px; }
+    .grid-wrap {
+      overflow: auto;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background:
+        linear-gradient(rgba(43, 217, 223, .025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(43, 217, 223, .025) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    .pixel-grid {
+      display: grid;
+      gap: 2px;
+      padding: 8px;
+      border: 1px solid var(--edge);
+      border-radius: 9px;
+      background: #071118;
+      touch-action: none;
+      user-select: none;
+    }
+    .pixel {
+      width: var(--cell);
+      height: var(--cell);
+      border: 1px solid #1d333d;
+      border-radius: 2px;
+      background: #0d2029;
+    }
+    .pixel.on { border-color: #fff; background: #f2f7f8; box-shadow: 0 0 9px rgba(242, 247, 248, .25); }
+    .pixel.advance-edge { border-right-color: var(--cyan); }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--edge);
+    }
+    .stepper { display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
+    .stepper span { font-size: 12px; color: var(--muted); text-align: center; }
+    .stepper b { display: block; color: var(--ink); font-size: 15px; }
+    .stepper button { border: 0; border-radius: 0; padding: 10px 13px; }
+    .preview-panel { display: grid; grid-template-rows: auto auto 1fr auto; }
+    .oled-shell { margin: 14px; padding: 14px; border: 1px solid #28424b; border-radius: 16px; background: #141d20; box-shadow: inset 0 0 0 5px #080d0f, 0 18px 32px rgba(0,0,0,.28); }
+    #oled { display: block; width: 100%; aspect-ratio: 2 / 1; background: #020609; image-rendering: pixelated; border-radius: 4px; }
+    .preview-input { margin: 0 14px 12px; width: calc(100% - 28px); min-height: 92px; resize: vertical; color: var(--ink); background: #071118; border: 1px solid var(--edge); border-radius: 8px; padding: 9px; }
+    .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; padding: 12px; border-top: 1px solid var(--edge); }
+    .drop-note { color: var(--muted); font-size: 12px; line-height: 1.5; padding: 0 14px 12px; }
+    .empty { grid-column: 1 / -1; min-height: calc(100vh - 90px); display: grid; place-items: center; text-align: center; }
+    .empty-card { max-width: 650px; padding: 40px; }
+    .empty h1 { color: var(--cyan); letter-spacing: .05em; }
+    .empty p { color: var(--muted); line-height: 1.65; }
+    .hidden { display: none !important; }
+    .toast { position: fixed; right: 18px; bottom: 18px; max-width: 440px; padding: 11px 14px; border: 1px solid var(--cyan); border-radius: 8px; color: var(--ink); background: #0c2028; z-index: 20; transform: translateY(90px); opacity: 0; transition: .2s ease; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    @media (max-width: 1180px) {
+      main { grid-template-columns: 260px 1fr; }
+      .preview-panel { grid-column: 1 / -1; }
+      .glyph-list { height: 620px; }
+    }
+    @media (max-width: 720px) {
+      header { flex-wrap: wrap; }
+      main { display: block; }
+      .panel { margin-bottom: 12px; }
+      .glyph-list { height: 360px; }
+      .grid-wrap { min-height: 480px; }
+      :root { --cell: 24px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><strong>PIXEL FONT BENCH</strong><small id="fileStatus">No file open</small></div>
+    <div class="role-buttons">
+      <button data-open-role="Body">Body.c</button>
+      <button data-open-role="Subtitle">Subtitle.c</button>
+      <button data-open-role="Caption">Caption.c</button>
+    </div>
+    <button id="openBtn" class="primary">Open C file</button>
+    <input id="fileInput" type="file" accept=".c,text/plain" hidden>
+  </header>
+
+  <main id="empty" class="empty">
+    <div class="empty-card">
+      <h1>Edit the generated C atlases</h1>
+      <p>Open <b>Body.c</b>, <b>Subtitle.c</b>, or <b>Caption.c</b> directly from disk. This self-contained editor needs no web server or external assets.</p>
+      <button id="emptyOpen" class="primary">Choose font file</button>
+    </div>
+  </main>
+
+  <main id="workspace" class="hidden">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Glyphs</h2>
+        <div class="tabs">
+          <button data-charset="cyrillic" class="active">RU</button>
+          <button data-charset="latin">EN</button>
+        </div>
+      </div>
+      <div id="glyphList" class="glyph-list"></div>
+    </section>
+
+    <section class="panel editor">
+      <div class="panel-head">
+        <div class="glyph-meta"><span id="heroChar" class="hero-char">А</span><span><b id="roleLabel">Body</b><br><span id="codeLabel" class="code">U+0410</span></span></div>
+        <button id="undoBtn" title="Ctrl+Z">↶</button>
+        <button id="redoBtn" title="Ctrl+Y">↷</button>
+        <button id="clearBtn" class="warn">Clear</button>
+      </div>
+      <div class="grid-wrap"><div id="pixelGrid" class="pixel-grid"></div></div>
+      <div class="controls">
+        <div class="stepper"><button data-step="bitmap" data-delta="-1">−</button><span>bitmap width<b id="bitmapWidth">0</b></span><button data-step="bitmap" data-delta="1">+</button></div>
+        <div class="stepper"><button data-step="advance" data-delta="-1">−</button><span>advance<b id="advanceWidth">0</b></span><button data-step="advance" data-delta="1">+</button></div>
+      </div>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="panel-head"><h2>OLED 128×64</h2><span id="dirtyStatus" class="status">No changes</span></div>
+      <div class="oled-shell"><canvas id="oled" width="128" height="64"></canvas></div>
+      <textarea id="previewInput" class="preview-input" spellcheck="false"></textarea>
+      <div>
+        <div class="drop-note">Left-click toggles a pixel; dragging continues with the same value. Right-click erases. Drafts are stored automatically in localStorage.</div>
+        <div class="actions">
+          <button id="saveBtn" class="primary">Save C</button>
+          <button id="downloadBtn">Download C</button>
+          <button id="copyBtn">Copy overrides</button>
+          <button id="exportBtn">Export JSON</button>
+          <button id="restoreBtn" disabled>Restore draft</button>
+          <button id="discardBtn" class="warn">Discard edits</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const ROLE = {
+    Body: { height: 10, asciiHeight: 8, lineHeight: 11, offsetY: { latin: 1, cyrillic: 0 } },
+    Subtitle: { height: 15, asciiHeight: 13, lineHeight: 17, offsetY: { latin: 1, cyrillic: 0 } },
+    Caption: { height: 6, asciiHeight: 6, lineHeight: 6, offsetY: { latin: 0, cyrillic: 0 } }
+  };
+  const RU_UPPER = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯЂЃЄЅІЇЈЉЊЋЌЎЏҐ";
+  const RU_LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяђѓєѕіїјљњћќўџґ";
+  const EN = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?-+/:;()[]_@#%&*=";
+  const SETS = {
+    latin: { banks: [{ suffix: "0", first: 0x20, count: 95 }], chars: EN },
+    cyrillic: {
+      banks: [{ suffix: "cyr0", first: 0x400, count: 96 }, { suffix: "cyr1", first: 0x490, count: 2 }],
+      chars: RU_UPPER + RU_LOWER
+    }
+  };
+
+  const inBank = (bank, cp) => cp >= bank.first && cp < bank.first + bank.count;
+  const bankFor = (charset, cp) => SETS[charset].banks.find(bank => inBank(bank, cp));
+
+  const $ = id => document.getElementById(id);
+  const state = {
+    role: null, name: "", source: "", handle: null, sets: {}, charset: "cyrillic",
+    cp: 0x410, undo: [], redo: [], dirty: false, originalSource: ""
+  };
+  let painting = false;
+  let paintValue = true;
+  let toastTimer;
+  let pendingRole = null;
+
+  function toast(message, error = false) {
+    const box = $("toast");
+    box.textContent = message;
+    box.style.borderColor = error ? "var(--red)" : "var(--cyan)";
+    box.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => box.classList.remove("show"), 2800);
+  }
+
+  function parseArray(source, name) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = source.match(new RegExp(`${escaped}\\[[^\\]]+\\][\\s\\S]*?=\\s*\\{([\\s\\S]*?)\\};`));
+    if (!match) throw new Error(`Array ${name} was not found`);
+    return [...match[1].matchAll(/0x[0-9a-f]+|\b\d+\b/gi)].map(m => Number(m[0]));
+  }
+
+  function decodeSet(source, role, charset) {
+    const prefix = `mf_bwfont_${role}`;
+    const storedHeight = charset === "latin" ? ROLE[role].asciiHeight : ROLE[role].height;
+    const height = ROLE[role].height;
+    const heightBytes = Math.ceil(storedHeight / 8);
+    const glyphs = new Map();
+    for (const bank of SETS[charset].banks) {
+      const data = parseArray(source, `${prefix}_glyph_data_${bank.suffix}`);
+      const offsets = parseArray(source, `${prefix}_glyph_offsets_${bank.suffix}`);
+      const advances = parseArray(source, `${prefix}_glyph_widths_${bank.suffix}`);
+      for (let index = 0; index < bank.count; index++) {
+        const columns = [];
+        for (let column = offsets[index]; column < offsets[index + 1]; column++) {
+          const pixels = [];
+          for (let y = 0; y < height; y++) {
+            pixels.push(y < storedHeight && Boolean(data[column * heightBytes + Math.floor(y / 8)] & (1 << (y % 8))));
+          }
+          columns.push(pixels);
+        }
+        glyphs.set(bank.first + index, { pixels: columns, advance: advances[index] });
+      }
+    }
+    const originals = new Map([...glyphs].map(([cp, glyph]) => [cp, cloneGlyph(glyph)]));
+    return { glyphs, originals, edited: new Set(), storedHeight, offsetY: ROLE[role].offsetY[charset] };
+  }
+
+  function cloneGlyph(glyph) {
+    return { pixels: glyph.pixels.map(column => [...column]), advance: glyph.advance };
+  }
+
+  function glyphsEqual(a, b) {
+    return a.advance === b.advance && a.pixels.length === b.pixels.length &&
+      a.pixels.every((column, x) => column.length === b.pixels[x].length && column.every((value, y) => value === b.pixels[x][y]));
+  }
+
+  function refreshEdited(charset, cp) {
+    const set = state.sets[charset];
+    if (glyphsEqual(set.glyphs.get(cp), set.originals.get(cp))) set.edited.delete(cp);
+    else set.edited.add(cp);
+    state.dirty = state.sets.latin.edited.size + state.sets.cyrillic.edited.size > 0;
+  }
+
+  function glyphRows(glyph) {
+    const height = ROLE[state.role].height;
+    return Array.from({ length: height }, (_, y) => glyph.pixels.map(column => column[y] ? "#" : ".").join(""));
+  }
+
+  async function loadSource(source, name, handle = null, expectedRole = null) {
+    const match = source.match(/mf_bwfont_(Body|Subtitle|Caption)_glyph_data_0/);
+    if (!match) throw new Error("This is not Body.c, Subtitle.c, or Caption.c");
+    const role = match[1];
+    if (expectedRole && role !== expectedRole) throw new Error(`Expected ${expectedRole}.c, but opened ${role}.c`);
+    const sets = {
+      latin: decodeSet(source, role, "latin"),
+      cyrillic: decodeSet(source, role, "cyrillic")
+    };
+    Object.assign(state, {
+      role, name: name || `${role}.c`, source, originalSource: source, handle, sets,
+      charset: "cyrillic", cp: "А".codePointAt(0), undo: [], redo: [], dirty: false
+    });
+    $("empty").classList.add("hidden");
+    $("workspace").classList.remove("hidden");
+    $("fileStatus").textContent = `${state.name} · ${role} · ${ROLE[role].height}px`;
+    $("roleLabel").textContent = role;
+    document.querySelectorAll("[data-charset]").forEach(b => b.classList.toggle("active", b.dataset.charset === state.charset));
+    setPreviewDefault();
+    updateDraftButton();
+    renderAll();
+    toast(`Loaded ${state.name}`);
+  }
+
+  async function openFile(expectedRole = null) {
+    pendingRole = expectedRole;
+    if (window.showOpenFilePicker) {
+      try {
+        const [handle] = await showOpenFilePicker({ types: [{ description: "C font atlas", accept: { "text/plain": [".c"] } }] });
+        const file = await handle.getFile();
+        await loadSource(await file.text(), file.name, handle, expectedRole);
+        return;
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        toast(error.message, true);
+        return;
+      }
+    }
+    $("fileInput").click();
+  }
+
+  function charsForCurrentSet() {
+    return [...SETS[state.charset].chars];
+  }
+
+  function currentGlyph() {
+    return state.sets[state.charset].glyphs.get(state.cp);
+  }
+
+  function renderAll() {
+    renderGlyphList();
+    renderEditor();
+    renderOled();
+    updateHistoryButtons();
+    updateDirty();
+  }
+
+  function renderGlyphList() {
+    const list = $("glyphList");
+    list.replaceChildren();
+    const set = state.sets[state.charset];
+    for (const char of charsForCurrentSet()) {
+      const cp = char.codePointAt(0);
+      const glyph = set.glyphs.get(cp);
+      if (!glyph) continue;
+      const card = document.createElement("button");
+      card.className = "glyph-card" + (cp === state.cp ? " active" : "") + (set.edited.has(cp) ? " edited" : "");
+      card.dataset.cp = cp;
+      const canvas = document.createElement("canvas");
+      canvas.width = 42;
+      canvas.height = 42;
+      drawGlyphCanvas(canvas, glyph, "#eef6f8");
+      const label = document.createElement("span");
+      label.textContent = `${char} ${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+      card.append(canvas, label);
+      card.addEventListener("click", () => { state.cp = cp; renderAll(); });
+      list.append(card);
+    }
+  }
+
+  function drawGlyphCanvas(canvas, glyph, color) {
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const h = ROLE[state.role].height;
+    const scale = Math.max(2, Math.floor(Math.min(36 / Math.max(glyph.advance, glyph.pixels.length), 36 / h)));
+    const ox = Math.floor((canvas.width - glyph.advance * scale) / 2);
+    const oy = Math.floor((canvas.height - h * scale) / 2);
+    ctx.fillStyle = color;
+    glyph.pixels.forEach((column, x) => column.forEach((on, y) => { if (on) ctx.fillRect(ox + x * scale, oy + y * scale, scale, scale); }));
+  }
+
+  function renderEditor() {
+    const glyph = currentGlyph();
+    if (!glyph) return;
+    const grid = $("pixelGrid");
+    grid.replaceChildren();
+    grid.style.gridTemplateColumns = `repeat(${glyph.pixels.length}, var(--cell))`;
+    for (let y = 0; y < ROLE[state.role].height; y++) {
+      for (let x = 0; x < glyph.pixels.length; x++) {
+        const cell = document.createElement("div");
+        cell.className = "pixel" + (glyph.pixels[x][y] ? " on" : "") + (x + 1 === glyph.advance ? " advance-edge" : "");
+        cell.dataset.x = x;
+        cell.dataset.y = y;
+        cell.addEventListener("pointerdown", beginPaint);
+        cell.addEventListener("pointerenter", continuePaint);
+        cell.addEventListener("contextmenu", event => event.preventDefault());
+        grid.append(cell);
+      }
+    }
+    const char = String.fromCodePoint(state.cp);
+    $("heroChar").textContent = char === " " ? "␠" : char;
+    $("codeLabel").textContent = `U+${state.cp.toString(16).toUpperCase().padStart(4, "0")}`;
+    $("bitmapWidth").textContent = glyph.pixels.length;
+    $("advanceWidth").textContent = glyph.advance;
+  }
+
+  function beginPaint(event) {
+    event.preventDefault();
+    const glyph = currentGlyph();
+    pushUndo();
+    painting = true;
+    const x = Number(event.currentTarget.dataset.x);
+    const y = Number(event.currentTarget.dataset.y);
+    paintValue = event.button === 2 ? false : !glyph.pixels[x][y];
+    setPixel(x, y, paintValue);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function continuePaint(event) {
+    if (!painting) return;
+    setPixel(Number(event.currentTarget.dataset.x), Number(event.currentTarget.dataset.y), paintValue);
+  }
+
+  function setPixel(x, y, value) {
+    const glyph = currentGlyph();
+    if (glyph.pixels[x][y] === value) return;
+    glyph.pixels[x][y] = value;
+    markEdited();
+    renderEditor();
+    renderOled();
+  }
+
+  function pushUndo() {
+    state.undo.push({ charset: state.charset, cp: state.cp, glyph: cloneGlyph(currentGlyph()) });
+    if (state.undo.length > 100) state.undo.shift();
+    state.redo.length = 0;
+  }
+
+  function swapHistory(from, to) {
+    const entry = from.pop();
+    if (!entry) return;
+    const set = state.sets[entry.charset];
+    const current = set.glyphs.get(entry.cp);
+    to.push({ charset: entry.charset, cp: entry.cp, glyph: cloneGlyph(current) });
+    set.glyphs.set(entry.cp, cloneGlyph(entry.glyph));
+    refreshEdited(entry.charset, entry.cp);
+    state.charset = entry.charset;
+    state.cp = entry.cp;
+    saveDraft();
+    renderAll();
+  }
+
+  function markEdited() {
+    refreshEdited(state.charset, state.cp);
+    saveDraft();
+    updateDirty();
+  }
+
+  function resizeBitmap(delta) {
+    const glyph = currentGlyph();
+    if (glyph.pixels.length + delta < 1 || glyph.pixels.length + delta > 16) return;
+    pushUndo();
+    if (delta > 0) glyph.pixels.push(Array(ROLE[state.role].height).fill(false));
+    else glyph.pixels.pop();
+    markEdited();
+    renderAll();
+  }
+
+  function resizeAdvance(delta) {
+    const glyph = currentGlyph();
+    const next = glyph.advance + delta;
+    if (next < 1 || next > 18) return;
+    pushUndo();
+    glyph.advance = next;
+    markEdited();
+    renderAll();
+  }
+
+  function clearGlyph() {
+    pushUndo();
+    currentGlyph().pixels.forEach(column => column.fill(false));
+    markEdited();
+    renderAll();
+  }
+
+  function setPreviewDefault() {
+    $("previewInput").value = state.charset === "cyrillic"
+      ? `${RU_UPPER}\n${RU_LOWER}\nСъешь ещё этих мягких булок.`
+      : "ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\nThe quick brown fox jumps.";
+  }
+
+  function glyphForCodePoint(cp) {
+    for (const charset of ["latin", "cyrillic"]) {
+      if (bankFor(charset, cp)) return { glyph: state.sets[charset].glyphs.get(cp), charset };
+    }
+    return { glyph: state.sets.latin.glyphs.get("?".codePointAt(0)), charset: "latin" };
+  }
+
+  function renderOled() {
+    if (!state.role) return;
+    const canvas = $("oled");
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#020609";
+    ctx.fillRect(0, 0, 128, 64);
+    ctx.fillStyle = "#edf7f8";
+    const lineHeight = ROLE[state.role].lineHeight;
+    let x = 1, y = 1;
+    for (const char of $("previewInput").value) {
+      if (char === "\n") { x = 1; y += lineHeight; continue; }
+      const info = glyphForCodePoint(char.codePointAt(0));
+      const glyph = info.glyph;
+      if (!glyph) continue;
+      if (x + glyph.advance > 127) { x = 1; y += lineHeight; }
+      if (y + lineHeight > 64) break;
+      const offsetY = state.sets[info.charset].offsetY;
+      glyph.pixels.forEach((column, gx) => column.forEach((on, gy) => { if (on) ctx.fillRect(x + gx, y + gy + offsetY, 1, 1); }));
+      x += glyph.advance;
+    }
+  }
+
+  function encodeBank(charset, bank) {
+    const set = state.sets[charset];
+    const heightBytes = Math.ceil(set.storedHeight / 8);
+    const data = [], offsets = [0], widths = [];
+    for (let cp = bank.first; cp < bank.first + bank.count; cp++) {
+      const glyph = set.glyphs.get(cp);
+      for (const column of glyph.pixels) {
+        for (let byteIndex = 0; byteIndex < heightBytes; byteIndex++) {
+          let value = 0;
+          for (let y = byteIndex * 8; y < Math.min((byteIndex + 1) * 8, set.storedHeight); y++) if (column[y]) value |= 1 << (y % 8);
+          data.push(value);
+        }
+      }
+      offsets.push(offsets[offsets.length - 1] + glyph.pixels.length);
+      widths.push(glyph.advance);
+    }
+    return { data, offsets, widths };
+  }
+
+  function formatArray(name, values, type, columns) {
+    const lines = [`static const ${type} ${name}[${values.length}] PROGMEM = {`];
+    for (let i = 0; i < values.length; i += columns) {
+      const chunk = values.slice(i, i + columns).map(value => type === "uint8_t" ? `0x${value.toString(16).padStart(2, "0")}` : String(value));
+      lines.push(`    ${chunk.join(", ")},`);
+    }
+    lines.push("};");
+    return lines.join("\n");
+  }
+
+  function replaceArray(source, name, replacement) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`static const \\w+ ${escaped}\\[[^\\]]+\\] PROGMEM = \\{[\\s\\S]*?\\};`);
+    if (!pattern.test(source)) throw new Error(`Could not replace ${name}`);
+    return source.replace(pattern, replacement);
+  }
+
+  function serializedSource() {
+    let source = state.source;
+    const prefix = `mf_bwfont_${state.role}`;
+    for (const charset of ["latin", "cyrillic"]) {
+      if (!state.sets[charset].edited.size) continue;
+      for (const bank of SETS[charset].banks) {
+        const encoded = encodeBank(charset, bank);
+        source = replaceArray(source, `${prefix}_glyph_data_${bank.suffix}`, formatArray(`${prefix}_glyph_data_${bank.suffix}`, encoded.data, "uint8_t", 16));
+        source = replaceArray(source, `${prefix}_glyph_offsets_${bank.suffix}`, formatArray(`${prefix}_glyph_offsets_${bank.suffix}`, encoded.offsets, "uint16_t", 10));
+        source = replaceArray(source, `${prefix}_glyph_widths_${bank.suffix}`, formatArray(`${prefix}_glyph_widths_${bank.suffix}`, encoded.widths, "uint8_t", 16));
+      }
+    }
+    return source;
+  }
+
+  async function saveSource() {
+    try {
+      const source = serializedSource();
+      if (state.handle?.createWritable) {
+        const writable = await state.handle.createWritable();
+        await writable.write(source);
+        await writable.close();
+        state.source = source;
+        state.dirty = false;
+        updateDirty();
+        toast(`Saved ${state.name}`);
+      } else {
+        downloadText(source, state.name, "text/plain");
+        toast("Direct file access is unavailable, so an updated C file was downloaded");
+      }
+    } catch (error) { toast(error.message, true); }
+  }
+
+  function downloadText(text, name, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function draftKey() { return state.role ? `meshcore-font-draft:${state.role}` : ""; }
+
+  function draftPayload() {
+    const edits = [];
+    for (const charset of ["latin", "cyrillic"]) for (const cp of state.sets[charset].edited) {
+      const glyph = state.sets[charset].glyphs.get(cp);
+      edits.push({ charset, cp, advance: glyph.advance, rows: glyphRowsForRole(glyph) });
+    }
+    return { role: state.role, edits, savedAt: new Date().toISOString() };
+  }
+
+  function glyphRowsForRole(glyph) {
+    return Array.from({ length: ROLE[state.role].height }, (_, y) => glyph.pixels.map(column => column[y] ? "#" : ".").join(""));
+  }
+
+  function saveDraft() {
+    if (!state.role) return;
+    const payload = draftPayload();
+    if (payload.edits.length) localStorage.setItem(draftKey(), JSON.stringify(payload));
+    else localStorage.removeItem(draftKey());
+    updateDraftButton();
+  }
+
+  function updateDraftButton() {
+    $("restoreBtn").disabled = !state.role || !localStorage.getItem(draftKey());
+  }
+
+  function restoreDraft() {
+    try {
+      const draft = JSON.parse(localStorage.getItem(draftKey()));
+      if (!draft || draft.role !== state.role) throw new Error("This draft belongs to a different font");
+      for (const edit of draft.edits) {
+        const height = ROLE[state.role].height;
+        if (edit.rows.length !== height) continue;
+        const pixels = Array.from({ length: edit.rows[0].length }, (_, x) => Array.from({ length: height }, (_, y) => edit.rows[y][x] === "#"));
+        state.sets[edit.charset].glyphs.set(edit.cp, { pixels, advance: edit.advance });
+        state.sets[edit.charset].edited.add(edit.cp);
+      }
+      state.dirty = draft.edits.length > 0;
+      renderAll();
+      toast(`Restored ${draft.edits.length} edits`);
+    } catch (error) { toast(error.message, true); }
+  }
+
+  function copyOverrides() {
+    const set = state.sets[state.charset];
+    const lines = [...set.edited].sort((a, b) => a - b).map(cp => {
+      const glyph = set.glyphs.get(cp);
+      const rows = glyphRowsForRole(glyph).map(row => `"${row}"`).join(", ");
+      return `    "${String.fromCodePoint(cp)}": (${glyph.advance}, [${rows}]),`;
+    });
+    if (!lines.length) return toast("The selected character set has no edits", true);
+    navigator.clipboard.writeText(lines.join("\n")).then(() => toast(`Copied ${lines.length} overrides`), error => toast(error.message, true));
+  }
+
+  function exportJson() {
+    const payload = draftPayload();
+    downloadText(JSON.stringify(payload, null, 2), `${state.role}-font-edits.json`, "application/json");
+  }
+
+  function discardEdits() {
+    if (!confirm("Discard all unsaved manual edits for this font?")) return;
+    localStorage.removeItem(draftKey());
+    loadSource(state.originalSource, state.name, state.handle);
+  }
+
+  function updateHistoryButtons() {
+    $("undoBtn").disabled = !state.undo.length;
+    $("redoBtn").disabled = !state.redo.length;
+  }
+
+  function updateDirty() {
+    const count = state.role ? state.sets.latin.edited.size + state.sets.cyrillic.edited.size : 0;
+    $("dirtyStatus").textContent = count ? `${count} edited${state.dirty ? " · unsaved" : ""}` : "No changes";
+    $("dirtyStatus").style.color = count ? "var(--orange)" : "var(--muted)";
+  }
+
+  $("openBtn").addEventListener("click", () => openFile());
+  $("emptyOpen").addEventListener("click", () => openFile());
+  $("fileInput").addEventListener("change", async event => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try { await loadSource(await file.text(), file.name, null, pendingRole); } catch (error) { toast(error.message, true); }
+    pendingRole = null;
+    event.target.value = "";
+  });
+  document.querySelectorAll("[data-open-role]").forEach(button => button.addEventListener("click", () => openFile(button.dataset.openRole)));
+  document.querySelectorAll("[data-charset]").forEach(button => button.addEventListener("click", () => {
+    state.charset = button.dataset.charset;
+    state.cp = charsForCurrentSet()[0].codePointAt(0);
+    document.querySelectorAll("[data-charset]").forEach(b => b.classList.toggle("active", b === button));
+    setPreviewDefault();
+    renderAll();
+  }));
+  document.querySelectorAll("[data-step]").forEach(button => button.addEventListener("click", () => {
+    const delta = Number(button.dataset.delta);
+    button.dataset.step === "bitmap" ? resizeBitmap(delta) : resizeAdvance(delta);
+  }));
+  $("previewInput").addEventListener("input", renderOled);
+  $("undoBtn").addEventListener("click", () => swapHistory(state.undo, state.redo));
+  $("redoBtn").addEventListener("click", () => swapHistory(state.redo, state.undo));
+  $("clearBtn").addEventListener("click", clearGlyph);
+  $("saveBtn").addEventListener("click", saveSource);
+  $("downloadBtn").addEventListener("click", () => downloadText(serializedSource(), state.name, "text/plain"));
+  $("copyBtn").addEventListener("click", copyOverrides);
+  $("exportBtn").addEventListener("click", exportJson);
+  $("restoreBtn").addEventListener("click", restoreDraft);
+  $("discardBtn").addEventListener("click", discardEdits);
+  window.addEventListener("pointerup", () => { painting = false; });
+  window.addEventListener("keydown", event => {
+    if (!(event.ctrlKey || event.metaKey) || !state.role) return;
+    if (event.key.toLowerCase() === "z") { event.preventDefault(); swapHistory(state.undo, state.redo); }
+    if (event.key.toLowerCase() === "y") { event.preventDefault(); swapHistory(state.redo, state.undo); }
+    if (event.key.toLowerCase() === "s") { event.preventDefault(); saveSource(); }
+  });
+})();
+</script>
+</body>
+</html>

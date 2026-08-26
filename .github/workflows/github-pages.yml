@@ -1,10 +1,12 @@
 name: Build and deploy Docs site to GitHub Pages
 
+# [mishmesh] Auto-deploy disabled on this fork. This publishes upstream MeshCore
+# docs to docs.meshcore.io via the gh-pages branch, which conflicts with
+# deploy-mishmesh-site.yml (a repo has a single Pages source). Left manual-only;
+# do not re-add the push trigger unless you switch Pages back to the gh-pages
+# branch source. See deploy-mishmesh-site.yml.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: write

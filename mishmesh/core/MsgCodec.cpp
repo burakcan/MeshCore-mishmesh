@@ -11,7 +11,7 @@ uint16_t recTextLen(const uint8_t* r) { return r[16]; }
 int recSize(const uint8_t* r) {
   int n = REC_HDR + recTextLen(r);
   switch (recKind(r)) {
-    case KIND_INBOUND:  n += 2 + r[n + 1]; break;   // snrx4(1)+pathLen(1)+path
+    case KIND_INBOUND:  n += 2 + pathByteLen(r[n + 1]); break; // snrx4+encoded path len+path
     case KIND_OUT_DM:   n += 3; break;               // status(1)+trip(2)
     case KIND_OUT_CHAN: n += 2; break;               // status(1)+heard(1)
   }

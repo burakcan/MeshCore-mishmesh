@@ -4,6 +4,7 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/applets/HomeApplet.h>
+#include <mishmesh/core/ClockService.h>
 #include "FakeDisplayDriver.h"
 
 using namespace mishmesh;
@@ -136,6 +137,27 @@ TEST(HomeApplet, RepeaterModeDrawsExtraIcon) {
     lit[pass] = d.litPixels.size();
   }
   EXPECT_GT(lit[1], lit[0]);   // repeater icon lights additional pixels
+}
+
+TEST(HomeApplet, PomodoroSessionDrawsExtraIcon) {
+  primeRegistry();
+  FakeApp app;
+  // Count total draw ops (fills + 1x1 lit pixels): the tomato is a solid glyph
+  // rendered mostly as horizontal runs, so litPixels alone would miss it.
+  size_t ops[2];
+  for (int pass = 0; pass < 2; pass++) {
+    clockService().resetForTest();
+    if (pass == 1) clockService().pmStart(0);   // active session -> tomato indicator
+    FakeDisplayDriver d;
+    AppletContext ctx; ctx.app = &app;
+    AppletHost host(&d, ctx);
+    HomeApplet home;
+    host.setRoot(&home);
+    host.loop(0);
+    ops[pass] = d.fills.size() + d.litPixels.size();
+  }
+  clockService().resetForTest();
+  EXPECT_GT(ops[1], ops[0]);   // pomodoro session adds the tomato indicator
 }
 
 TEST(HomeApplet, HintLabelTruncatesToFourChars) {

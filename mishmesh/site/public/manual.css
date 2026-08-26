@@ -1,0 +1,73 @@
+@font-face{font-family:"NokiaFC";src:url("assets/nokiafc22.ttf") format("truetype");font-display:block}
+:root{--bg:#0b111b;--ink:#cbe9f4;--dim:#6f93a6;--line:#274155;--dither:#16283a;--sel-bg:#cbe9f4;--sel-ink:#0b111b}
+@media (prefers-color-scheme:light){:root{--bg:#cbe4ec;--ink:#0d1a24;--dim:#3f5a68;--line:#7fa0af;--dither:#a9cad6;--sel-bg:#0d1a24;--sel-ink:#cbe4ec}}
+:root[data-theme="dark"]{--bg:#0b111b;--ink:#cbe9f4;--dim:#6f93a6;--line:#274155;--dither:#16283a;--sel-bg:#cbe9f4;--sel-ink:#0b111b}
+:root[data-theme="light"]{--bg:#cbe4ec;--ink:#0d1a24;--dim:#3f5a68;--line:#7fa0af;--dither:#a9cad6;--sel-bg:#0d1a24;--sel-ink:#cbe4ec}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg);scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{font-family:"NokiaFC","Courier New",monospace;background:var(--bg);color:var(--ink);line-height:1.55;-webkit-font-smoothing:none;image-rendering:pixelated}
+img{image-rendering:pixelated;display:block}
+a{color:inherit}
+::selection{background:var(--ink);color:var(--bg)}
+.dim{color:var(--dim)}
+
+/* status bar */
+.bar{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:2px solid var(--ink)}
+.bar .in{max-width:1080px;margin:0 auto;padding:9px 20px;display:flex;align-items:center;gap:16px;font-size:24px}
+.bar .name a{text-decoration:none}
+.bar .name .sub{color:var(--dim)}
+.bar .right{margin-left:auto;display:flex;align-items:center;gap:16px}
+.bar .home{font-size:20px;color:var(--dim);text-decoration:none}
+.bar .home:hover{color:var(--ink)}
+.themebtn{font-family:inherit;font-size:20px;background:var(--bg);color:var(--dim);border:2px solid var(--line);padding:2px 10px;cursor:pointer}
+.themebtn:hover{color:var(--ink);border-color:var(--ink)}
+
+/* doc layout */
+.doc{max-width:1080px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:230px 1fr;gap:48px;align-items:start}
+.side{position:sticky;top:64px;padding-top:40px}
+.side .lbl{font-size:16px;text-transform:uppercase;color:var(--dim);margin:0 0 10px 2px}
+.side nav{border:2px solid var(--ink)}
+.side a{display:block;text-decoration:none;font-size:20px;padding:11px 14px;border-bottom:2px solid var(--line);color:var(--ink)}
+.side a:last-child{border-bottom:0}
+.side a.on{background:var(--sel-bg);color:var(--sel-ink)}
+.side a:hover:not(.on){color:var(--dim)}
+
+article{padding:40px 0 90px;min-width:0}
+.sec{padding-top:34px;margin-top:34px;border-top:2px solid var(--line)}
+.sec:first-child{border-top:0;margin-top:0;padding-top:0}
+.head{display:inline-block;font-size:24px;text-transform:uppercase;background:var(--ink);color:var(--bg);padding:6px 15px;margin-bottom:20px}
+h2{font-size:32px;font-weight:normal;margin:0 0 14px;text-transform:lowercase}
+h3{font-size:24px;font-weight:normal;margin:26px 0 8px}
+p{font-size:20px;color:var(--dim);max-width:62ch;margin:0 0 14px;line-height:1.55}
+p b,li b{color:var(--ink);font-weight:normal}
+ul{list-style:none;max-width:62ch;margin:0 0 14px}
+li{font-size:20px;color:var(--dim);padding:5px 0 5px 22px;position:relative;line-height:1.5}
+li::before{content:"";position:absolute;left:0;top:12px;width:9px;height:9px;background:var(--dim)}
+
+kbd{border:2px solid var(--ink);padding:0 8px;font-family:inherit;font-size:17px;color:var(--ink);white-space:nowrap;display:inline-block}
+code.inl{border:2px solid var(--line);padding:0 7px;font-size:17px;color:var(--ink)}
+
+/* screenshot */
+.shot{border:2px solid var(--ink);max-width:280px;margin:18px 0}
+.shot img{width:100%}
+.shot figcaption{font-size:15px;color:var(--dim);border-top:2px solid var(--ink);padding:6px 9px}
+.shotrow{display:flex;gap:16px;flex-wrap:wrap;margin:18px 0}
+.shotrow .shot{margin:0}
+
+/* inline tip - a device toast, not a section */
+.tip{border:2px solid var(--ink);padding:14px 16px;margin:18px 0;max-width:62ch}
+.tip .tl{display:inline-block;font-size:15px;text-transform:uppercase;background:var(--ink);color:var(--bg);padding:2px 9px;margin-bottom:9px}
+.tip p{margin:0;font-size:19px}
+.tip p+p{margin-top:8px}
+
+/* mobile: sidebar to top, horizontal */
+@media(max-width:760px){
+  .doc{grid-template-columns:1fr;gap:0}
+  .side{position:sticky;top:52px;z-index:10;padding:0;margin:0 -20px;background:var(--bg);border-bottom:2px solid var(--ink)}
+  .side .lbl{display:none}
+  .side nav{border:0;display:flex;overflow-x:auto}
+  .side a{border-bottom:0;border-right:2px solid var(--line);white-space:nowrap;font-size:18px;padding:10px 14px}
+  article{padding-top:26px}
+}

@@ -1,5 +1,5 @@
 // mishmesh/core/PersistDebug.h
-// [mishmesh] TEMPORARY instrumentation for the unread-persistence investigation.
+// TEMPORARY instrumentation for the unread-persistence investigation.
 // Enable per-env with -D MM_PERSIST_DEBUG=1; prints to Serial (USB). No-op on host/
 // native builds (no ARDUINO), so unit tests are unaffected. Remove once diagnosed.
 #pragma once

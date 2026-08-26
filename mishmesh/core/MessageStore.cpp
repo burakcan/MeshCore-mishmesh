@@ -1,7 +1,7 @@
 // mishmesh/core/MessageStore.cpp
 #include "MessageStore.h"
 #include "MsgCodec.h"
-#include "PersistDebug.h"   // [mishmesh] TEMP: unread-persistence instrumentation
+#include "PersistDebug.h"   // TEMP: unread-persistence instrumentation
 namespace mishmesh {
 
 ConvoKey directKey(const uint8_t* p)   { ConvoKey k; k.type = 0; memcpy(k.id, p, 6); return k; }
@@ -261,10 +261,11 @@ void MessageStore::appendInbound(const ConvoKey& key, const char* text, uint16_t
                                   uint32_t senderTime, uint32_t recvTime,
                                   int8_t snrx4, const uint8_t* path, uint8_t pathLen) {
   if (textLen > MAX_TEXT) textLen = MAX_TEXT;
-  if (pathLen > MAX_PATH) pathLen = MAX_PATH;
+  pathLen = clampPathLen(pathLen);
+  uint8_t pathBytes = pathByteLen(pathLen);
 
   if (_backend) {
-    uint32_t recLen = (uint32_t)(codec::REC_HDR + textLen + 2 + pathLen);
+    uint32_t recLen = (uint32_t)(codec::REC_HDR + textLen + 2 + pathBytes);
     if (!ensureSpace(key, recLen)) return;
   }
 
@@ -272,12 +273,12 @@ void MessageStore::appendInbound(const ConvoKey& key, const char* text, uint16_t
   if (_backend) rotateIfNeeded(key, c);
 
   if (_backend) {
-    uint8_t trailer[2 + MAX_PATH];
+    uint8_t trailer[2 + MAX_PATH_BYTES];
     trailer[0] = (uint8_t)snrx4;
     trailer[1] = pathLen;
-    if (pathLen) memcpy(trailer + 2, path, pathLen);
+    if (pathBytes && path) memcpy(trailer + 2, path, pathBytes);
     int n = codec::writeRecord(_recBuf, KIND_INBOUND, key, text, textLen,
-                               senderTime, recvTime, trailer, (uint8_t)(2 + pathLen));
+                               senderTime, recvTime, trailer, (uint8_t)(2 + pathBytes));
     char name[15]; codec::keyToName(key, name);
     if (!_backend->append(name, _recBuf, (uint32_t)n)) return;
     c.logBytes += (uint32_t)n;
@@ -427,11 +428,12 @@ void MessageStore::addRepeat(const ConvoKey& key, uint32_t senderTime,
                               int8_t snrx4, const uint8_t* path, uint8_t pathLen) {
   Tracked* t = findTracked(key, senderTime);
   if (!t || t->kind != KIND_OUT_CHAN) return;
-  if (pathLen > MAX_PATH) pathLen = MAX_PATH;
+  pathLen = clampPathLen(pathLen);
+  uint8_t pathBytes = pathByteLen(pathLen);
   if (t->rptCount < MAX_REPEATS) {
     RepeatRec& rr = t->repeats[t->rptCount];
-    rr.snrx4 = snrx4; rr.pathLen = pathLen; rr.hops = pathLen;
-    if (pathLen && path) memcpy(t->rptStore[t->rptCount], path, pathLen);
+    rr.snrx4 = snrx4; rr.pathLen = pathLen; rr.hops = pathHopCount(pathLen);
+    if (pathBytes && path) memcpy(t->rptStore[t->rptCount], path, pathBytes);
     rr.path = t->rptStore[t->rptCount];
     t->rptCount++;
   }
@@ -478,7 +480,7 @@ void MessageStore::decodeRecord(const uint8_t* r, const ConvoKey& key, MsgRecord
   out.status = ST_PENDING; out.tripTimeMs = 0; out.heardCount = 0;
   const uint8_t* t = r + codec::REC_HDR + out.textLen;
   if (out.kind == KIND_INBOUND) {
-    out.snrx4 = (int8_t)t[0]; out.pathLen = t[1]; out.hops = t[1];
+    out.snrx4 = (int8_t)t[0]; out.pathLen = t[1]; out.hops = pathHopCount(t[1]);
     out.path = t + 2;
   } else if (out.kind == KIND_OUT_DM) {
     out.status = t[0]; memcpy(&out.tripTimeMs, t + 1, 2);
@@ -654,16 +656,24 @@ bool MessageStore::getPendingDM(int index, ConvoKey& outKey, uint32_t& outSender
   return false;
 }
 
-int MessageStore::collectPendingDMs(ConvoKey* outKeys, uint32_t* outTimes, int cap) const {
-  if (!_backend || cap <= 0) return 0;
-  int out = 0, count = _index.count();
-  for (int ci = 0; ci < count && out < cap; ci++) {
-    ConvoSummary cs; if (!_index.get(ci, cs)) continue;
-    if (cs.key.type != 0) continue;   // only DM logs hold KIND_OUT_DM; skip channels
-    char name[15]; codec::keyToName(cs.key, name);
+// Report which of the given outbound DMs are still awaiting delivery. One pass
+// per distinct chat log, so the auto-retry tick costs the same as the old
+// collect-all sweep without its cap: the caller asks about the messages IT is
+// tracking, and no message can be silently omitted (an omission would read as
+// "delivered" and reset the retry state).
+void MessageStore::checkPendingDMs(const ConvoKey* keys, const uint32_t* times,
+                                   bool* stillPending, int n) const {
+  for (int i = 0; i < n; i++) stillPending[i] = false;
+  if (!_backend) return;
+  for (int i = 0; i < n; i++) {
+    if (keys[i].type != 0) continue;             // only DM logs hold KIND_OUT_DM
+    bool walked = false;
+    for (int p = 0; p < i; p++) if (keys[p].equals(keys[i])) { walked = true; break; }
+    if (walked) continue;                        // this log was covered by an earlier entry
+    char name[15]; codec::keyToName(keys[i], name);
     uint32_t fileSize = _backend->size(name);
     uint32_t pos = 0;
-    while (pos < fileSize && out < cap) {
+    while (pos < fileSize) {
       uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
       if (got < (uint32_t)codec::REC_HDR) break;
       uint32_t sz = (uint32_t)codec::recSize(_recBuf);
@@ -672,15 +682,53 @@ int MessageStore::collectPendingDMs(ConvoKey* outKeys, uint32_t* outTimes, int c
       if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
         const uint8_t* trailer = _recBuf + codec::REC_HDR + codec::recTextLen(_recBuf);
         if (trailer[0] == ST_PENDING) {
-          codec::rdKey(_recBuf, outKeys[out]);
-          outTimes[out] = codec::rd32(_recBuf + 8);
-          out++;
+          ConvoKey rk; codec::rdKey(_recBuf, rk);
+          uint32_t st = codec::rd32(_recBuf + 8);
+          for (int j = i; j < n; j++)
+            if (times[j] == st && keys[j].equals(rk)) stillPending[j] = true;
         }
       }
       pos += sz;
     }
   }
-  return out;
+}
+
+// Boot-time reconciliation: an outbound DM left ST_PENDING by a previous session
+// can never resolve - the ACK match table (_tracked, and MyMesh's expected-ack
+// ring) lives in RAM only, so a late ACK has nothing to match against. Settle
+// them as failed once at startup, otherwise they sit "sending" forever and any
+// future pending sweep would treat them as live traffic.
+int MessageStore::failStalePendingDMs() {
+  if (!_backend) return 0;
+  int changed = 0, count = _index.count();
+  for (int ci = 0; ci < count; ci++) {
+    ConvoSummary cs; if (!_index.get(ci, cs)) continue;
+    if (cs.key.type != 0) continue;
+    char name[15]; codec::keyToName(cs.key, name);
+    uint32_t fileSize = _backend->size(name);
+    uint32_t pos = 0;
+    bool touched = false;
+    while (pos < fileSize) {
+      uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+      if (got < (uint32_t)codec::REC_HDR) break;
+      uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+      if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+      if (pos + sz > fileSize) break;
+      if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
+        uint16_t textLen = codec::recTextLen(_recBuf);
+        const uint8_t* trailerInBuf = _recBuf + codec::REC_HDR + textLen;
+        if (trailerInBuf[0] == ST_PENDING) {
+          uint8_t patch[1] = { ST_FAILED };
+          _backend->patch(name, pos + (uint32_t)codec::REC_HDR + textLen, patch, 1);
+          changed++; touched = true;
+        }
+      }
+      pos += sz;
+    }
+    if (touched) invalidateWindow(cs.key);
+  }
+  if (changed) _seq++;
+  return changed;
 }
 
 int MessageStore::getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const {

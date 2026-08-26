@@ -1,0 +1,9 @@
+---
+// An inline "device toast" callout for a hard-to-find feature. The label is the
+// category chip (Gesture, Hidden, Shortcut, ...); the slot holds the body copy.
+interface Props {
+  label: string;
+}
+const { label } = Astro.props;
+---
+<div class="tip"><span class="tl">{label}</span><slot /></div>

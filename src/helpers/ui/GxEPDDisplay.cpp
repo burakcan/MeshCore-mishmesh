@@ -14,6 +14,18 @@
   SPIClass SPI1 = SPIClass(FSPI);
 #endif
 
+// Color scheme
+ColorVal UIColor::window_bkg = GxEPD_WHITE;
+ColorVal UIColor::title_bkg = GxEPD_WHITE;
+ColorVal UIColor::title_txt = GxEPD_BLACK;
+ColorVal UIColor::primary_txt = GxEPD_BLACK;
+ColorVal UIColor::secondary_txt = GxEPD_BLACK;
+ColorVal UIColor::warning_txt = GxEPD_BLACK;
+ColorVal UIColor::popup_bkg = GxEPD_WHITE;
+ColorVal UIColor::popup_txt = GxEPD_BLACK;
+ColorVal UIColor::corp_blue = GxEPD_BLACK;
+
+
 bool GxEPDDisplay::begin() {
   display.epd2.selectSPI(SPI1, SPISettings(4000000, MSBFIRST, SPI_MODE0));
 #ifdef ESP32
@@ -61,9 +73,9 @@ void GxEPDDisplay::clear() {
   display_crc.reset();
 }
 
-void GxEPDDisplay::startFrame(Color bkg) {
-  display.fillScreen(GxEPD_WHITE);
-  display.setTextColor(_curr_color = GxEPD_BLACK);
+void GxEPDDisplay::startFrame(ColorVal bkg) {
+  display.fillScreen(bkg);
+  display.setTextColor(_curr_color = UIColor::primary_txt);
   display_crc.reset();
 }
 
@@ -85,14 +97,9 @@ void GxEPDDisplay::setTextSize(int sz) {
   }
 }
 
-void GxEPDDisplay::setColor(Color c) {
-  display_crc.update<Color> (c);
-  // colours need to be inverted for epaper displays
-  if (c == DARK) {
-    display.setTextColor(_curr_color = GxEPD_WHITE);
-  } else {
-    display.setTextColor(_curr_color = GxEPD_BLACK);
-  }
+void GxEPDDisplay::setColor(ColorVal c) {
+  display_crc.update<ColorVal> (c);
+  display.setTextColor(_curr_color = c);
 }
 
 void GxEPDDisplay::setCursor(int x, int y) {
@@ -106,6 +113,7 @@ void GxEPDDisplay::print(const char* str) {
   display.print(str);
 }
 
+// [mishmesh] both rect paths go through scaleRect() to avoid double truncation
 void GxEPDDisplay::fillRect(int x, int y, int w, int h) {
   display_crc.update<int>(x);
   display_crc.update<int>(y);
@@ -125,6 +133,7 @@ void GxEPDDisplay::drawRect(int x, int y, int w, int h) {
   scaleRect(x, y, w, h, x1, y1, x2, y2);
   display.drawRect(x1, y1, x2 - x1, y2 - y1, _curr_color);
 }
+// [/mishmesh]
 
 void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
   display_crc.update<int>(x);

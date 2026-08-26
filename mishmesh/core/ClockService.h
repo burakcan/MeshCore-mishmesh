@@ -7,7 +7,10 @@ namespace mishmesh {
 struct AppletStorage;
 
 // What tick() just fired; also the ringing state the alert screen displays.
-enum class ClockEvent : uint8_t { None = 0, TimerDone, AlarmDue };
+enum class ClockEvent : uint8_t { None = 0, TimerDone, AlarmDue,
+                                  PomodoroBreak, PomodoroFocus, PomodoroSetDone };
+
+enum class PomoPhase : uint8_t { Idle, Focus, ShortBreak, LongBreak };
 
 // The clock engine behind the Clock applet: stopwatch, countdown timer, daily
 // alarm, and the persisted world-clock city picks. Pure logic on caller-supplied
@@ -42,6 +45,31 @@ public:
   uint32_t tmRemainingMs(uint32_t nowMs) const;
   void     tmToggle(uint32_t nowMs);           // start / pause / resume
   void     tmReset();
+
+  // --- pomodoro (a self-restarting timer with a Focus/Break phase sequencer;
+  // config persists as key "pmcf", running state is millis-based like the timer
+  // and does not survive a reboot) ---
+  uint8_t pmFocusMin() const { return _pmFocusMin; }
+  uint8_t pmShortMin() const { return _pmShortMin; }
+  uint8_t pmLongMin()  const { return _pmLongMin; }
+  uint8_t pmSetCount() const { return _pmSetN; }
+  bool    pmAutoAdvance() const { return _pmAuto; }
+  void setPmFocusMin(uint8_t m);
+  void setPmShortMin(uint8_t m);
+  void setPmLongMin(uint8_t m);
+  void setPmSetCount(uint8_t n);
+  void setPmAutoAdvance(bool on);
+
+  PomoPhase pmPhase() const { return _pmPhase; }
+  uint8_t   pmBlock() const { return _pmBlock; }        // 1..N current focus block; 0 when Idle
+  bool      pmRunning() const { return _pmRunning; }
+  bool      pmActive() const { return _pmPhase != PomoPhase::Idle; }
+  bool      pmPaused() const { return pmActive() && !_pmRunning; }
+  uint32_t  pmRemainingMs(uint32_t nowMs) const;
+  uint8_t   pmElapsedPct(uint32_t nowMs) const;         // 0..100 within the current phase
+  void      pmStart(uint32_t nowMs);
+  void      pmToggle(uint32_t nowMs);
+  void      pmReset();
 
   // --- daily alarm ---
   bool    alarmEnabled() const { return _alEnabled; }
@@ -84,6 +112,9 @@ public:
 private:
   void persistAlarm();
   void persistCities();
+  void persistPomodoro();
+  uint32_t pmPhaseMs(PomoPhase p) const;
+  void advanceOrArm(uint32_t nowMs, PomoPhase next);
 
   AppletStorage* _st = nullptr;
 
@@ -97,6 +128,15 @@ private:
   uint32_t _tmDurationSecs = 300;
   uint32_t _tmRemainMs = 300 * 1000u;  // valid while not running
   uint32_t _tmEndAt = 0;               // tick deadline while running
+
+  uint8_t   _pmFocusMin = 25, _pmShortMin = 5, _pmLongMin = 15, _pmSetN = 4;
+  bool      _pmAuto = true;
+  PomoPhase _pmPhase = PomoPhase::Idle;
+  uint8_t   _pmBlock = 0;
+  bool      _pmRunning = false;
+  uint32_t  _pmRemainMs = 0;         // valid while paused/armed
+  uint32_t  _pmEndAt = 0;            // tick deadline while running
+  uint32_t  _pmPhaseTotalMs = 0;     // full length of the active phase (for pct + re-arm)
 
   bool     _alEnabled = false;
   uint8_t  _alHour = 7, _alMinute = 0;

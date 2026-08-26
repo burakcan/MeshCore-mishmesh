@@ -84,15 +84,17 @@ public:
   uint16_t icon(int i) const override;
 };
 
-// Discovered (seen-but-not-added) nodes, with a per-row contact-type icon.
+// Discovered (seen-but-not-added) nodes, with a leading "Discover nodes" action row
+// (row 0) that launches the active-discovery screen; per-row contact-type icons follow.
 class DiscoverListModel : public ListModel {
   ContactsService* _svc;
 public:
   DiscoverListModel() : _svc(nullptr) {}
   void bind(ContactsService* svc) { _svc = svc; }
-  int count() const override { return _svc ? _svc->countDiscovered() : 0; }
+  int count() const override { return 1 + (_svc ? _svc->countDiscovered() : 0); }
   const char* label(int i) const override;
   uint16_t icon(int i) const override;
+  bool isButton(int i) const override { return i == 0; }
 };
 
 class ContactsApplet : public Applet {

@@ -56,6 +56,10 @@ below.
 
 - **Messaging** - direct messages, channels, and room servers, with delivery
   status, auto-retry, and path reset when a route goes stale.
+- **Text entry** - Nokia-style multi-tap keypad with symbols and emoji, in 18
+  keyboard layouts. Latin (English, German, French, Spanish, Italian,
+  Portuguese, Swedish, Norwegian, Turkish, Polish, Czech, Hungarian) and
+  Cyrillic (Russian, Ukrainian, Belarusian, Bulgarian, Serbian, Macedonian).
 - **Contacts** - favourites and per-kind tabs (people, repeaters, rooms),
   rename, ping, telemetry requests, and path management.
 - **Repeater management** - log in to a repeater and configure it from the
@@ -101,10 +105,14 @@ sh build.sh build-firmware WioTrackerL1_companion_radio_usb_mishmesh
 ### Emoji
 
 Emoji use the [EmojiMania](https://idanro.itch.io/emojimania) glyph set - a
-purchased license that doesn't allow redistributing the art. So the glyphs live
-outside this repository and are compiled in only for the official release builds.
-Building from source, or any fork, is fully supported and looks identical, except
-emoji render as a placeholder block instead of the glyph.
+purchased license that doesn't allow redistributing the art, so the glyphs live
+outside this repository. Official release builds compile them in. Building from
+source, or any fork, is fully supported and looks identical, except emoji render
+as a placeholder block instead of the glyph.
+
+If you own EmojiMania, you can build with emoji yourself: drop your sheet in and
+run the generator per
+[`mishmesh/text/emoji-tools/README.md`](./mishmesh/text/emoji-tools/README.md).
 
 ### How mishmesh fits
 
@@ -113,8 +121,15 @@ The framework lives under [`mishmesh/`](./mishmesh); a thin adapter in
 bridges it to the companion app without touching `main.cpp`. Screens are `Applet`
 subclasses on a fixed stack managed by `AppletHost`; all drawing goes through
 `Canvas`. Text and icons are bitmap fonts rendered with mcufont (Nokia Cellphone
-FC, Tom Thumb, Pixelarticons); the logo wordmark is set in the LastPriestess pixel
+FC, Tom Thumb, hand-edited Cyrillic, Pixelarticons); the logo wordmark is set in the
+LastPriestess pixel
 font by Christina Antoinette Neofotistou.
+
+Font sources and reproducible generators live in
+[`mishmesh/text/fonts`](./mishmesh/text/fonts). Run `build_cyrillic.py` to rebuild
+the Cyrillic ranges and `preview_fonts.py` to render review sheets. Open
+`font_editor.html` directly from disk to edit `Body.c`, `Subtitle.c`, or
+`Caption.c`; the single-file editor does not require a web server.
 
 ### AI disclosure
 

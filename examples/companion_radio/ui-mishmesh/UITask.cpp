@@ -1,8 +1,6 @@
 #include "UITask.h"
 #include "target.h"   // rtc_clock
-// [mishmesh]
 #include <helpers/sensors/LocationProvider.h>
-// [/mishmesh]
 #include <mishmesh/Version.h>
 #include <mishmesh/applets/NotificationApplet.h>
 #include <mishmesh/applets/onboarding_logo.h>   // MeshCore + mishmesh wordmarks
@@ -27,15 +25,13 @@
   }
 #endif
 
-// [mishmesh] (ExtraFsMsgBackend replaces the old _msgIoBuf snapshot approach)
-// [/mishmesh]
+// (ExtraFsMsgBackend replaces the old _msgIoBuf snapshot approach)
 
-// [mishmesh] onboarding finished: hand off to the home screen.
+// onboarding finished: hand off to the home screen.
 static void onboardingDone(void* ctx) {
   UITask* self = (UITask*)ctx;
   self->finishOnboardingToHome();
 }
-// [/mishmesh]
 
 // Free and total heap in bytes, best-effort per platform; 0 where unavailable.
 static void platformHeap(uint32_t& freeBytes, uint32_t& totalBytes) {
@@ -60,11 +56,32 @@ static void platformHeap(uint32_t& freeBytes, uint32_t& totalBytes) {
 #endif
 }
 
+static uint8_t brightnessValue(uint8_t idx) {
+  // Low / Medium / High. This panel's visible range is top-weighted - low
+  // contrast values all look similarly dim - so Medium sits well up the range
+  // to read as distinct from Low. Floor of 1 is the dimmest the SH1106 contrast
+  // register goes while the panel is still lit.
+  static const uint8_t LEVELS[] = { 1, 96, 255 };
+  return LEVELS[idx < 3 ? idx : 2];
+}
+
 uint32_t UITask::epochSeconds() const {
   return rtc_clock.getCurrentTime();
 }
 
-// [mishmesh]
+void UITask::setScreenBrightnessIndex(uint8_t idx) {
+  NodePrefs* p = the_mesh.getNodePrefs();
+  if (!p) return;
+  if (idx > 2) idx = 2;
+  p->screen_brightness = idx + 1;   // stored index+1; 0 stays reserved for "unset"
+  the_mesh.savePrefs();
+  if (_display) _display->setBrightness(brightnessValue(idx));
+}
+
+void UITask::previewScreenBrightnessIndex(uint8_t idx) {
+  if (_display) _display->setBrightness(brightnessValue(idx));
+}
+
 void UITask::setAutoTimeSync(bool on) {
   NodePrefs* p = the_mesh.getNodePrefs();
   if (p) { p->manual_time_set = on ? 0 : 1; the_mesh.savePrefs(); }
@@ -88,7 +105,6 @@ void UITask::applyTimeSyncGate(bool on) {
   LocationProvider* lp = _sensors->getLocationProvider();
   if (lp) lp->setTimeSyncEnabled(on);
 }
-// [/mishmesh]
 
 bool UITask::systemStats(mishmesh::SystemStats& out) const {
   uint32_t freeHeap = 0, totalHeap = 0;
@@ -104,6 +120,8 @@ bool UITask::systemStats(mishmesh::SystemStats& out) const {
   out.storageTotalKb   = the_mesh.getStorageTotalKb();
   out.uptimeSecs       = millis() / 1000;
   out.batteryMv        = batteryMillivolts();
+  float mcu_temp = _board->getMCUTemperature();   // NAN on MCUs without a die sensor
+  if (!isnan(mcu_temp)) out.mcuTempC10 = (int16_t)lroundf(mcu_temp * 10.0f);
 #ifdef FIRMWARE_VERSION
   out.meshcoreVersion  = FIRMWARE_VERSION;
 #else
@@ -144,7 +162,7 @@ uint16_t UITask::batteryMillivolts() const {
   return _batt_mv;
 }
 
-// [mishmesh] Hand off from the onboarding wizard to the home screen.
+// Hand off from the onboarding wizard to the home screen.
 void UITask::finishOnboardingToHome() {
   // replace(), not setRoot(): setRoot no-ops while the wizard is the foreground root
   // (_depth != 0). replace() swaps the root in place and re-renders. The wizard leaks
@@ -162,32 +180,35 @@ void UITask::drawBootSplash(DisplayDriver* disp) {
   disp->drawXbm((disp->width() - MISHMESH_LOGO_W) / 2, top + MESHCORE_LOGO_H + gap,
                 MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H);
 }
-// [/mishmesh]
 
 void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs) {
   _display = display;
   _sensors = sensors;
   _node_prefs = node_prefs;
-  // [mishmesh] apply the persisted auto/manual time-sync state to the GPS provider
+  // apply the persisted auto/manual time-sync state to the GPS provider
   applyTimeSyncGate(_node_prefs ? _node_prefs->manual_time_set == 0 : true);
   // Re-apply the persisted BLE/serial toggle: startInterface() unconditionally
   // enable()s the link on every boot, so honor a stored "off" here.
-  if (_node_prefs && _node_prefs->ble_enabled == 0) disableSerial();
-  // [/mishmesh]
+  if (_node_prefs && _node_prefs->ble_enabled == 0) disableBluetooth();
 
   if (_display == nullptr) return;   // headless build
 
-  // [mishmesh] wire the flash backend and load persisted index/history.
+  // wire the flash backend and load persisted index/history.
   {
     DataStore* ds = the_mesh.getStore();
     if (ds && ds->extraFs()) _backend.begin(*ds->extraFs());
   }
   _msgStore.begin(&_backend);
+  // A DM left pending by the previous session can never be ACK-matched (the ack
+  // tables are RAM-only), so settle it now instead of showing "sending" forever.
+  _msgStore.failStalePendingDMs();
   _msgSvc.store = &_msgStore;
   _msgSvc.retry = &_retry;            // expose live retry counts to the thread view
   _retryGlue.store = &_msgStore;      // auto-retry acts on the same store
   _theStorage.ds = the_mesh.getStore();
   _msgSvc.storage = &_theStorage;     // per-chat region persistence
+  if (_display && _display->supportsBrightness())
+    _display->setBrightness(brightnessValue(screenBrightnessIndex()));   // apply persisted level on boot
   the_mesh.uiSetMessageStore(&_msgStore);
   // Surface joined channels (e.g. the default Public channel) as chats even
   // before any message arrives - the store is otherwise only fed on message capture.
@@ -213,9 +234,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     }
     for (int i = 0; i < nDrop; i++) _msgStore.deleteConvo(drop[i]);
   }
-  // [/mishmesh]
 
-  // [mishmesh] bring up the sound subsystem and restore persisted prefs.
+  // bring up the sound subsystem and restore persisted prefs.
   _sound.begin(mishmesh::sound::defaultToneOutput());
   _sound.setVolume((mishmesh::sound::VolumeLevel)_node_prefs->sound_volume);
   _sound.setCategoryMask(_node_prefs->sound_mute_mask);
@@ -225,31 +245,27 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   // Default audible; a future mishmesh sound-settings screen will own master mute.
   _sound.setMasterMute(false);
   mishmesh::sound::setActiveEngine(&_sound);
-  // [/mishmesh]
 
   mishmesh::AppletContext ctx;
   ctx.app = this;
   ctx.contacts = this;
-  // [mishmesh]
   ctx.messages = &_msgSvc;
   _theStorage.ds = the_mesh.getStore();
   ctx.storage = &_theStorage;
   mishmesh::quickReplyStore().begin(&_theStorage);   // load canned replies
   mishmesh::uiPrefs().begin(&_theStorage);   // battery style + home shortcuts
+  mishmeshBatteryCalFactor = mishmesh::uiPrefs().battCalPercent() / 100.0f;   // apply persisted trim
   mishmesh::clockService().begin(&_theStorage);   // alarm / world cities / timer duration
-  ctx.sound = &_sound;          // [mishmesh]
-  // [/mishmesh]
+  ctx.sound = &_sound;
   _host = new mishmesh::AppletHost(_display, ctx);
-  // [mishmesh]
   _host->setAutoOffMillis(mishmesh::screenSleepMillis(screenSleepIndex()));   // honor saved sleep pref
-  // [/mishmesh]
 
   _menu = new mishmesh::AppMenuApplet();
   _lock = new mishmesh::LockApplet();
   _home = new mishmesh::HomeApplet();
   _home->setMenu(_menu);
   _home->setLock(_lock);
-  // [mishmesh] first-boot onboarding gate
+  // first-boot onboarding gate
   uint8_t obState = _node_prefs ? _node_prefs->onboarding_state : 2;
   if (mishmesh::shouldShowOnboarding(obState, the_mesh.identityFresh())) {
     if (obState == 0 && _node_prefs) {          // first show: mark in-progress (resumable)
@@ -261,7 +277,6 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   } else {
     _host->setRoot(_home);
   }
-  // [/mishmesh]
 
 #ifdef UI_HAS_JOYSTICK
   // Wio Tracker L1 buttons are active-low (pull-up), hence reverse=true.
@@ -286,7 +301,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _userBtn->begin();
   _host->addSource(_userBtn);
 #endif
-  _sound.play(mishmesh::sound::SoundId::BootJingle);   // [mishmesh]
+  _sound.play(mishmesh::sound::SoundId::BootJingle);
 }
 
 void UITask::msgRead(int /*msgcount*/) {
@@ -294,15 +309,14 @@ void UITask::msgRead(int /*msgcount*/) {
 
 void UITask::newMsg(uint8_t /*path_len*/, const char* /*from_name*/,
                     const char* /*text*/, int /*msgcount*/) {
-  // [mishmesh] store capture already happened in MyMesh::queueMessage; just schedule
+  // store capture already happened in MyMesh::queueMessage; just schedule
   // a flush. Fired from inside a mesh recv callback, so don't drive the render
   // pipeline here - the next UITask::loop() repaints naturally.
   _msgFlushAt = millis() + 8000;
-  // [/mishmesh]
 }
 
 void UITask::notify(UIEventType t) {
-  // [mishmesh] Runs inside a mesh recv callback, BEFORE MyMesh appends the message
+  // Runs inside a mesh recv callback, BEFORE MyMesh appends the message
   // to the store. Delivery acks have no store dependency, so chirp now; message
   // notifications are deferred to loop() so the router sees the fresh store.
   using namespace mishmesh::sound;
@@ -315,11 +329,19 @@ void UITask::notify(UIEventType t) {
     _notifyPending = true;
     _notifyEvent = t;
   }
-  // [/mishmesh]
+}
+
+// Per-chat override wins (On/Off); Default follows the global toggle.
+bool UITask::wakeAllowedFor(const mishmesh::ConvoKey& c) const {
+  switch (_msgSvc.chatWake(c)) {
+    case mishmesh::WakeOverride::On:  return true;
+    case mishmesh::WakeOverride::Off: return false;
+    default:                          return _msgSvc.getMessagesConfig().wakeOnMessage;
+  }
 }
 
 void UITask::dispatchNotification(UIEventType t) {
-  // [mishmesh] The notification router. Picks the least-intrusive visual level for
+  // The notification router. Picks the least-intrusive visual level for
   // an incoming message based on what the user is doing, and gates the alert sound
   // the same way (silent while the relevant chat is open). Called from loop(), so
   // the store already reflects the just-arrived message.
@@ -375,26 +397,59 @@ void UITask::dispatchNotification(UIEventType t) {
     uint8_t typeByte = isChannel ? _node_prefs->notify_tone_ch : _node_prefs->notify_tone_dm;
     SoundId id;
     if (mishmesh::sound::resolveNotifyTone(_msgSvc.chatSound(c), typeByte,
-                                           mishmesh::sound::notifyTypeDefault(isChannel), id))
+                                           mishmesh::sound::notifyTypeDefault(isChannel), id)) {
       _sound.play(id);            // false -> Silent: skip the beep, visual path continues
+      _reminderKey = c;
+      _reminder.noteArrival(millis());   // inside the if: a Silent chat never repeats
+    }
   }
   if (!_host) return;
 
   bool atHome = _host->foreground() == _home;
-  if (sleeping || atHome) {
+  if (sleeping) {
+    if (wakeAllowedFor(c)) {
+      mishmesh::notificationApplet().raise(&_msgSvc, c);
+      _host->wakeDisplay();
+      if (_host->foreground() != &mishmesh::notificationApplet())
+        _host->push(&mishmesh::notificationApplet());
+    }
+    // else: stay dark. markNotifiable already updated the unread count, so the
+    // clock/home shows it on the next manual wake. Raising the notification applet
+    // under a dark screen would drop the user into an alert they never saw.
+  } else if (atHome) {
     mishmesh::notificationApplet().raise(&_msgSvc, c);
-    if (sleeping) _host->wakeDisplay();
     if (_host->foreground() != &mishmesh::notificationApplet())
       _host->push(&mishmesh::notificationApplet());
   } else {
     _host->postBubble(_msgSvc.totalNotifyUnread());
   }
   _host->requestRender();
-  // [/mishmesh]
+}
+
+void UITask::tickUnreadReminder() {
+  // Repeat the alert tone while notifiable messages sit unread. Runs
+  // with the screen off too - that is the point: the node lives in a pocket or a
+  // backpack and has to draw attention to itself. Any key press since the arrival
+  // counts as "seen" and stops it (see UnreadReminder).
+  if (!_host || millis() < _reminderCheckAt) return;
+  _reminderCheckAt = millis() + 250;
+
+  if (_sound.isPlaying()) return;
+
+  mishmesh::MessagesConfig cfg = _msgSvc.getMessagesConfig();
+  _reminder.configure((uint16_t)cfg.repeatMins * 60, (uint16_t)cfg.repeatStopMins * 60);
+  if (!_reminder.tick(millis(), _msgSvc.totalNotifyUnread(), _host->lastInputMs())) return;
+
+  bool isChannel = _reminderKey.type == 1;
+  uint8_t typeByte = isChannel ? _node_prefs->notify_tone_ch : _node_prefs->notify_tone_dm;
+  mishmesh::sound::SoundId id;
+  if (mishmesh::sound::resolveNotifyTone(_msgSvc.chatSound(_reminderKey), typeByte,
+                                         mishmesh::sound::notifyTypeDefault(isChannel), id))
+    _sound.play(id);
 }
 
 void UITask::loop() {
-  // [mishmesh] debounced message-store persistence. Each change pushes the quiet
+  // debounced message-store persistence. Each change pushes the quiet
   // window out, but _msgDirtySince caps total deferral so a continuously-active
   // convo can't starve the write forever (which would lose mark-as-read across a
   // restart). Flush on whichever fires first.
@@ -408,7 +463,7 @@ void UITask::loop() {
   bool capHit = _msgDirtySince && (millis() - _msgDirtySince >= MSG_FLUSH_MAX_DEFER_MS);
   if ((_msgFlushAt && millis() >= _msgFlushAt) || capHit) {
     _msgFlushAt = 0; _msgDirtySince = 0;
-    _msgStore.saveIndex();   // [mishmesh] persist the in-RAM index to flash
+    _msgStore.saveIndex();   // persist the in-RAM index to flash
   }
   // Drain a deferred message notification now that the store is up to date.
   if (_notifyPending) {
@@ -416,35 +471,34 @@ void UITask::loop() {
     dispatchNotification(_notifyEvent);
   }
 
-  // Auto-retry of undelivered direct messages: every ~2s, re-feed the still-
-  // pending DMs to the engine and let it re-transmit / fail the due ones. The
-  // store is the pending list, so this survives reboots for free.
-  // Interval matches the retry cadence (RetryEngine::RETRY_INTERVAL_MS); scanning
-  // faster only re-reads flash for no benefit. The scan walks every chat log, and
-  // each backend read is a full file open on device, so it must stay cheap: one
-  // pass collecting the pending DMs (the engine only tracks MAX_PENDING anyway),
-  // not the O(n^2) count()+get() pattern. Deferred one interval so it never runs
-  // during the boot jingle (a long blocking scan there would freeze the loop and
-  // leave the tone stuck on).
+  // Auto-retry of undelivered direct messages: every ~6s, ask the store which of
+  // the DMs the engine is watching are still pending, then let it re-transmit /
+  // fail the due ones. Entries only ever enter the engine from the send path, so
+  // nothing is retried across a reboot and a tracked message's attempt count is
+  // never reset by whatever else the store holds. The scan runs a little under
+  // RETRY_INTERVAL_MS so a due retry never waits a whole extra interval. Deferred
+  // one interval so it never runs during the boot jingle (a long blocking scan
+  // there would freeze the loop and leave the tone stuck on).
   static const uint32_t RETRY_SCAN_MS = 6000;
   if (_retryScanAt == 0) _retryScanAt = millis() + RETRY_SCAN_MS;
   if (millis() >= _retryScanAt) {
     _retryScanAt = millis() + RETRY_SCAN_MS;
     mishmesh::MessagesConfig mc = _msgSvc.getMessagesConfig();
     _retry.configure(mc.autoRetry, mc.autoResetPath);
-    if (mc.autoRetry) {
+    if (!mc.autoRetry) {
+      _retry.reset();
+    } else if (_retry.trackedCount() > 0) {   // nothing in flight = no flash walk
       uint32_t now = millis();
-      _retry.beginScan();
       mishmesh::ConvoKey pk[mishmesh::RetryEngine::MAX_PENDING];
       uint32_t pt[mishmesh::RetryEngine::MAX_PENDING];
-      int pn = _msgStore.collectPendingDMs(pk, pt, mishmesh::RetryEngine::MAX_PENDING);
-      for (int i = 0; i < pn; i++) _retry.see(pk[i], pt[i], now);
+      bool     pending[mishmesh::RetryEngine::MAX_PENDING];
+      int pn = _retry.snapshot(pk, pt);
+      _msgStore.checkPendingDMs(pk, pt, pending, pn);
+      _retry.beginScan();
+      for (int i = 0; i < pn; i++) if (pending[i]) _retry.see(pk[i], pt[i]);
       _retry.endScan(now, _retryGlue);
-    } else {
-      _retry.reset();
     }
   }
-  // [/mishmesh]
   if (_host != nullptr) {
     // Clock engine: the stopwatch/timer/alarm keep counting while their UI is
     // closed; a fired timer/alarm raises the alert screen from any state.
@@ -457,7 +511,7 @@ void UITask::loop() {
         _host->push(&mishmesh::clockAlertApplet());
       _host->requestRender();
     }
-    // [mishmesh] one-shot "contacts full" banner. getNumContacts() is an O(1)
+    // one-shot "contacts full" banner. getNumContacts() is an O(1)
     // counter read, so polling every loop is cheap. Fires on the not-full -> full
     // transition when auto-add can no longer make room (overwrite off) and the
     // user hasn't disabled the alert; the latch re-arms when the store drops.
@@ -473,9 +527,9 @@ void UITask::loop() {
         _host->requestRender();
       }
     }
-    // [/mishmesh]
-    _sound.tick(millis());   // [mishmesh]
-    // [mishmesh] bank per-minute airtime deltas; cheap, advances buckets only on
+    _sound.tick(millis());
+    tickUnreadReminder();
+    // bank per-minute airtime deltas; cheap, advances buckets only on
     // minute rollover, and runs regardless of the active applet so the graph has
     // history even when it wasn't on screen.
     _airtime.tick(millis(), the_mesh.getTotalAirTime(), the_mesh.getReceiveAirTime());
@@ -490,7 +544,8 @@ int UITask::countByKind(mishmesh::ContactKind k) const {
   int n = the_mesh.getNumContacts();
   int count = 0;
   for (int i = 0; i < n; i++) {
-    if (the_mesh.getContactByIdx(i, _scratch) && _scratch.type == (uint8_t)k) count++;
+    const ContactInfo* c = the_mesh.getContactPtrByIdx(i);
+    if (c && c->type == (uint8_t)k) count++;
   }
   return count;
 }
@@ -500,21 +555,22 @@ void UITask::fillView(const ContactInfo& c, mishmesh::ContactView& out) {
   out.type = c.type;
   out.isFavourite = (c.flags & 0x01) != 0;
   out.hasPath = c.out_path_len != OUT_PATH_UNKNOWN;
-  out.hops = out.hasPath ? c.out_path_len : 0;
+  out.hops = out.hasPath ? (c.out_path_len & 63) : 0;
   out.lastAdvert = c.last_advert_timestamp;
   out.pubKey = c.id.pub_key;
   out.hasLocation = (c.gps_lat != 0 || c.gps_lon != 0);
   out.gpsLat = c.gps_lat;
   out.gpsLon = c.gps_lon;
-  out.heardAt = c.lastmod;   // [mishmesh] our-clock receive time, for the Recent tab
+  out.heardAt = c.lastmod;   // our-clock receive time, for the Recent tab
 }
 
 bool UITask::getByKind(mishmesh::ContactKind k, int index, mishmesh::ContactView& out) const {
   int n = the_mesh.getNumContacts();
   int seen = 0;
   for (int i = 0; i < n; i++) {
-    if (the_mesh.getContactByIdx(i, _scratch) && _scratch.type == (uint8_t)k) {
-      if (seen == index) { fillView(_scratch, out); return true; }
+    const ContactInfo* c = the_mesh.getContactPtrByIdx(i);
+    if (c && c->type == (uint8_t)k) {
+      if (seen == index) { fillView(*c, out); return true; }
       seen++;
     }
   }
@@ -524,8 +580,10 @@ bool UITask::getByKind(mishmesh::ContactKind k, int index, mishmesh::ContactView
 int UITask::countFavourites() const {
   int n = the_mesh.getNumContacts();
   int count = 0;
-  for (int i = 0; i < n; i++)
-    if (the_mesh.getContactByIdx(i, _scratch) && (_scratch.flags & 0x01)) count++;
+  for (int i = 0; i < n; i++) {
+    const ContactInfo* c = the_mesh.getContactPtrByIdx(i);
+    if (c && (c->flags & 0x01)) count++;
+  }
   return count;
 }
 
@@ -533,15 +591,16 @@ bool UITask::getFavourite(int index, mishmesh::ContactView& out) const {
   int n = the_mesh.getNumContacts();
   int seen = 0;
   for (int i = 0; i < n; i++) {
-    if (the_mesh.getContactByIdx(i, _scratch) && (_scratch.flags & 0x01)) {
-      if (seen == index) { fillView(_scratch, out); return true; }
+    const ContactInfo* c = the_mesh.getContactPtrByIdx(i);
+    if (c && (c->flags & 0x01)) {
+      if (seen == index) { fillView(*c, out); return true; }
       seen++;
     }
   }
   return false;
 }
 
-// [mishmesh] Raw random access + change token backing the contacts list row cache.
+// Raw random access + change token backing the contacts list row cache.
 int UITask::contactCount() const { return the_mesh.getNumContacts(); }
 
 bool UITask::contactAt(int idx, mishmesh::ContactView& out) const {
@@ -588,7 +647,23 @@ bool UITask::getDiscovered(int index, mishmesh::ContactView& out) const {
 }
 bool UITask::addDiscovered(const uint8_t* pk) { return the_mesh.uiAddDiscovery(pk); }
 
-// [mishmesh]
+bool UITask::startNodeDiscover(uint8_t advTypeMask) {
+  the_mesh.uiStartNodeDiscover(advTypeMask);
+  return true;
+}
+uint32_t UITask::discoverSeq() const { return the_mesh.uiDiscoverSeq(); }
+bool UITask::discoverScanning() const { return the_mesh.uiDiscoverScanning(); }
+int UITask::discoverResultCount() const { return the_mesh.uiDiscoverResultCount(); }
+bool UITask::getDiscoverResult(int i, mishmesh::ContactsService::DiscoverResultView& out) const {
+  MyMesh::UiDiscoverResult r;
+  if (!the_mesh.uiGetDiscoverResult(i, r)) return false;
+  memcpy(_discoverKey, r.pubkey, mishmesh::PUBKEY_LEN);
+  out.pubKey = _discoverKey;
+  out.type = r.type;
+  out.snrX4 = r.snrX4;
+  return true;
+}
+
 int UITask::countRecentAdverts() const { return the_mesh.uiRecentAdvertCount(); }
 bool UITask::getRecentAdvert(int index, mishmesh::ContactView& out) const {
   if (!the_mesh.uiGetRecentAdvert(index, _scratch)) return false;
@@ -596,7 +671,6 @@ bool UITask::getRecentAdvert(int index, mishmesh::ContactView& out) const {
   return true;
 }
 bool UITask::isContact(const uint8_t* pk) const { return the_mesh.lookupContactByPubKey(pk, 6) != nullptr; }
-// [/mishmesh]
 
 bool UITask::selfLocation(int32_t& lat, int32_t& lon) const {
   if (!_sensors) return false;
@@ -633,7 +707,7 @@ bool UITask::latestPing(const uint8_t* pk, mishmesh::PingView& out) const {
   return true;
 }
 
-// [mishmesh] Room-server login. The result arrives asynchronously via
+// Room-server login. The result arrives asynchronously via
 // onRoomLogin() (from MyMesh::onContactResponse), which bumps _loginSeq.
 bool UITask::login(const uint8_t* pk, const char* password) {
   return the_mesh.mishmeshLogin(pk, password);
@@ -671,7 +745,7 @@ bool UITask::isLoggedIn(const uint8_t* pk) const {
   return false;
 }
 
-// [mishmesh] admin CLI command channel. Reply arrives asynchronously and is latched
+// admin CLI command channel. Reply arrives asynchronously and is latched
 // in MyMesh::_ui_cli ring (bumped in onCommandDataRecv); we poll it like telemetry.
 bool UITask::sendCliCommand(const uint8_t* pk, const char* cmd) {
   return the_mesh.mishmeshSendCli(pk, cmd);
@@ -682,9 +756,8 @@ bool UITask::cliResult(const uint8_t* pk, uint32_t afterSeq, bool& ok, const cha
   ok = true;
   return true;
 }
-// [/mishmesh]
 
-// [mishmesh] repeater status: request via the_mesh, decode the latched 56 raw bytes by
+// repeater status: request via the_mesh, decode the latched 56 raw bytes by
 // offset into the framework-agnostic view (companion + repeater are both little-endian).
 bool UITask::requestStatus(const uint8_t* pk) { return the_mesh.uiRequestStatus(pk); }
 uint32_t UITask::statusSeq() const { return the_mesh.uiLastStatus().seq; }
@@ -714,9 +787,8 @@ bool UITask::latestStatus(const uint8_t* pk, mishmesh::RepeaterStatusView& out) 
   return true;
 }
 uint32_t UITask::loginClock(const uint8_t* pk) const { return the_mesh.uiLoginClock(pk); }
-// [/mishmesh]
 
-// [mishmesh] repeater ACL: request via the_mesh, decode latched 7-byte entries (6 pubkey + 1 perms).
+// repeater ACL: request via the_mesh, decode latched 7-byte entries (6 pubkey + 1 perms).
 bool UITask::requestAccessList(const uint8_t* pk) { return the_mesh.uiRequestAccessList(pk); }
 uint32_t UITask::accessListSeq() const { return the_mesh.uiLastAcl().seq; }
 bool UITask::latestAccessList(const uint8_t* pk, mishmesh::AccessListView& out) const {
@@ -728,13 +800,11 @@ bool UITask::latestAccessList(const uint8_t* pk, mishmesh::AccessListView& out) 
   out.valid = true;
   return true;
 }
-// [/mishmesh]
 
-// [mishmesh] Ed25519 keygen: delegates to the firmware seam (MyMesh::uiMakeIdentityHex).
+// Ed25519 keygen: delegates to the firmware seam (MyMesh::uiMakeIdentityHex).
 bool UITask::makeIdentityHex(const char* seedHex, char* out, int outCap) {
   return the_mesh.uiMakeIdentityHex(seedHex, out, outCap);
 }
-// [/mishmesh]
 
 mishmesh::AutoAddConfig UITask::getAutoAdd() const {
   NodePrefs* p = the_mesh.getNodePrefs();
@@ -774,7 +844,9 @@ int UITask::removeNonChat() {
     found = false;
     int n = the_mesh.getNumContacts();
     for (int i = 0; i < n; i++) {
-      if (the_mesh.getContactByIdx(i, _scratch) && _scratch.type != ADV_TYPE_CHAT) {
+      const ContactInfo* p = the_mesh.getContactPtrByIdx(i);
+      if (p && p->type != ADV_TYPE_CHAT) {
+        _scratch = *p;   // removeContact() mutates the table; work from a copy
         ContactInfo* c = the_mesh.lookupContactByPubKey(_scratch.id.pub_key, 6);
         if (c && the_mesh.removeContact(*c)) { removed++; found = true; }
         break;  // array shifted; restart scan
@@ -792,7 +864,9 @@ int UITask::removeNonFavourites() {
     found = false;
     int n = the_mesh.getNumContacts();
     for (int i = 0; i < n; i++) {
-      if (the_mesh.getContactByIdx(i, _scratch) && (_scratch.flags & 0x01) == 0) {
+      const ContactInfo* p = the_mesh.getContactPtrByIdx(i);
+      if (p && (p->flags & 0x01) == 0) {
+        _scratch = *p;   // removeContact() mutates the table; work from a copy
         ContactInfo* c = the_mesh.lookupContactByPubKey(_scratch.id.pub_key, 6);
         if (c && the_mesh.removeContact(*c)) { removed++; found = true; }
         break;  // array shifted; restart scan
@@ -805,7 +879,10 @@ int UITask::removeNonFavourites() {
 int UITask::removeAll() {
   int removed = 0;
   ContactInfo tmp;
-  while (the_mesh.getNumContacts() > 0 && the_mesh.getContactByIdx(0, tmp)) {
+  while (the_mesh.getNumContacts() > 0) {
+    const ContactInfo* p = the_mesh.getContactPtrByIdx(0);
+    if (!p) break;
+    tmp = *p;   // removeContact() mutates the table; work from a copy
     ContactInfo* c = the_mesh.lookupContactByPubKey(tmp.id.pub_key, 6);
     if (c && the_mesh.removeContact(*c)) removed++; else break;
   }
@@ -813,7 +890,7 @@ int UITask::removeAll() {
   return removed;
 }
 
-// [mishmesh] --- MessagesService implementation ---
+// --- MessagesService implementation ---
 
 const char* UITask::MsgSvc::nameFor(const mishmesh::ConvoKey& k) const {
   static char buf[34];
@@ -939,15 +1016,15 @@ bool UITask::MsgSvc::getRepeat(const mishmesh::ConvoKey& k, int m, int r, mishme
   return true;
 }
 
-bool UITask::MsgSvc::resolveHop(uint8_t hashByte, const char*& name, uint8_t& knownCount) const {
+bool UITask::MsgSvc::resolveHop(const uint8_t* hash, uint8_t hashSize, const char*& name, uint8_t& knownCount) const {
   static char buf[34]; knownCount = 0; name = "";
   int n = the_mesh.getNumContacts();
   bool hasFirst = false;
-  ContactInfo ci;
   for (int i = 0; i < n; i++) {
-    if (!the_mesh.getContactByIdx(i, ci)) continue;
-    if (ci.id.pub_key[0] == hashByte) {
-      if (!hasFirst) { snprintf(buf, sizeof(buf), "%s", ci.name); hasFirst = true; }
+    const ContactInfo* ci = the_mesh.getContactPtrByIdx(i);
+    if (!ci) continue;
+    if (memcmp(ci->id.pub_key, hash, hashSize) == 0) {
+      if (!hasFirst) { snprintf(buf, sizeof(buf), "%s", ci->name); hasFirst = true; }
       knownCount++;
     }
   }
@@ -955,10 +1032,11 @@ bool UITask::MsgSvc::resolveHop(uint8_t hashByte, const char*& name, uint8_t& kn
   // repeater we've seen advertise still resolves to a name instead of a bare hex
   // hash. Contacts win; discoveries don't bump knownCount (it counts contacts).
   if (!hasFirst) {
+    ContactInfo ci;
     int d = the_mesh.uiDiscoveryCount();
     for (int i = 0; i < d; i++) {
       if (!the_mesh.uiGetDiscovery(i, ci)) continue;
-      if (ci.id.pub_key[0] == hashByte) {
+      if (memcmp(ci.id.pub_key, hash, hashSize) == 0) {
         snprintf(buf, sizeof(buf), "%s", ci.name); hasFirst = true; break;
       }
     }
@@ -1058,11 +1136,37 @@ void UITask::MsgSvc::setChatSound(const mishmesh::ConvoKey& k, uint8_t encoded) 
   storage->save(key, &encoded, 1);   // 0 (Default) writes a 0 byte that reads back as Default
 }
 
+// Per-chat wake override key: "wkc<idx>" for channels, "wk_<12 hex>" for DMs.
+// Absent value (0) reads back as Default -> follow the global toggle.
+static void wakeStorageKey(const mishmesh::ConvoKey& k, char* buf, size_t n) {
+  if (k.type == 1) snprintf(buf, n, "wkc%u", (unsigned)k.id[0]);
+  else snprintf(buf, n, "wk_%02x%02x%02x%02x%02x%02x",
+                k.id[0], k.id[1], k.id[2], k.id[3], k.id[4], k.id[5]);
+}
+
+mishmesh::WakeOverride UITask::MsgSvc::chatWake(const mishmesh::ConvoKey& k) const {
+  if (!storage) return mishmesh::WakeOverride::Default;
+  char key[20]; wakeStorageKey(k, key, sizeof(key));
+  uint8_t b = 0;
+  uint8_t got = storage->load(key, &b, 1);
+  if (got == 0 || b > (uint8_t)mishmesh::WakeOverride::Off) return mishmesh::WakeOverride::Default;
+  return (mishmesh::WakeOverride)b;
+}
+
+void UITask::MsgSvc::setChatWake(const mishmesh::ConvoKey& k, mishmesh::WakeOverride v) {
+  if (!storage) return;
+  char key[20]; wakeStorageKey(k, key, sizeof(key));
+  uint8_t b = (uint8_t)v;
+  storage->save(key, &b, 1);   // Default writes a 0 byte that reads back as Default
+}
+
 // Global Messages settings. autoRetry/autoResetPath have no firmware mechanism
 // yet, so they live only as a UI bitmask in AppletStorage ("msgcfg"). directAcks
 // maps onto NodePrefs.multi_acks (0 -> 1 ack, 1 -> 2 acks).
 #define MSGCFG_AUTO_RETRY      0x01
 #define MSGCFG_AUTO_RESET_PATH 0x02
+#define MSGCFG_SUPPRESS_WAKE   0x04
+#define MSGCFG_OPEN_AT_UNREAD  0x08
 
 mishmesh::MessagesConfig UITask::MsgSvc::getMessagesConfig() const {
   if (!_msgFlagsLoaded) {                 // load the file once, then serve from RAM
@@ -1070,11 +1174,19 @@ mishmesh::MessagesConfig UITask::MsgSvc::getMessagesConfig() const {
     if (storage) storage->load("msgcfg", &_msgFlags, 1);
     _msgFlagsLoaded = true;
   }
+  if (!_repeatLoaded) {                   // {interval, ring-out} minutes
+    if (storage) storage->load("rmndr", _repeat, 2);   // absent: defaults stand
+    _repeatLoaded = true;
+  }
   mishmesh::MessagesConfig c;
   c.autoRetry     = (_msgFlags & MSGCFG_AUTO_RETRY) != 0;
   c.autoResetPath = (_msgFlags & MSGCFG_AUTO_RESET_PATH) != 0;
   NodePrefs* p = the_mesh.getNodePrefs();
   c.directAcks = (p && p->multi_acks >= 1) ? 2 : 1;
+  c.wakeOnMessage = (_msgFlags & MSGCFG_SUPPRESS_WAKE) == 0;   // absent bit = wake on (default)
+  c.openAtUnread  = (_msgFlags & MSGCFG_OPEN_AT_UNREAD) != 0;
+  c.repeatMins     = _repeat[0];
+  c.repeatStopMins = _repeat[1];
   return c;
 }
 
@@ -1082,8 +1194,15 @@ void UITask::MsgSvc::setMessagesConfig(const mishmesh::MessagesConfig& c) {
   uint8_t flags = 0;
   if (c.autoRetry)     flags |= MSGCFG_AUTO_RETRY;
   if (c.autoResetPath) flags |= MSGCFG_AUTO_RESET_PATH;
+  if (!c.wakeOnMessage) flags |= MSGCFG_SUPPRESS_WAKE;
+  if (c.openAtUnread)   flags |= MSGCFG_OPEN_AT_UNREAD;
   if (storage) storage->save("msgcfg", &flags, 1);
   _msgFlags = flags; _msgFlagsLoaded = true;   // keep the cache hot
+  uint8_t rep[2] = { c.repeatMins, c.repeatStopMins };
+  if (rep[0] != _repeat[0] || rep[1] != _repeat[1] || !_repeatLoaded) {
+    if (storage) storage->save("rmndr", rep, 2);
+    _repeat[0] = rep[0]; _repeat[1] = rep[1]; _repeatLoaded = true;
+  }
   NodePrefs* p = the_mesh.getNodePrefs();
   if (p) {
     p->multi_acks = (c.directAcks >= 2) ? 1 : 0;
@@ -1116,7 +1235,12 @@ static bool resolveRegionScope(const mishmesh::MessagesService& svc,
 bool UITask::MsgSvc::sendText(const mishmesh::ConvoKey& k, const char* text) {
   uint8_t scope[16];
   bool scoped = resolveRegionScope(*this, k, scope);
-  return the_mesh.mishmeshSendText(k, text, scoped ? scope : nullptr);
+  uint32_t senderTime = 0;
+  if (!the_mesh.mishmeshSendText(k, text, scoped ? scope : nullptr, &senderTime)) return false;
+  // Auto-retry watches only what this session sent: registering here (and never
+  // from a sweep of the logs) is what keeps old undelivered records settled.
+  if (retry && k.type == 0 && senderTime) retry->track(k, senderTime, millis());
+  return true;
 }
 
 const uint8_t* UITask::MsgSvc::publicPsk() {
@@ -1265,4 +1389,3 @@ bool UITask::MishmeshStorage::save(const char* key, const uint8_t* src, uint8_t 
   return w == (size_t)toWrite;
 }
 
-// [/mishmesh]

@@ -12,12 +12,15 @@ void MessagePathApplet::onStart(AppletContext& ctx) {
   rebuild();
 }
 
-void MessagePathApplet::hopLabel(uint8_t b, char* out, size_t cap) const {
+void MessagePathApplet::hopLabel(const uint8_t* hash, uint8_t size, char* out, size_t cap) const {
   const char* name = ""; uint8_t kc = 0;
-  if (_svc && _svc->resolveHop(b, name, kc) && name && name[0])
+  if (_svc && _svc->resolveHop(hash, size, name, kc) && name && name[0]) {
     snprintf(out, cap, "%s", name);
-  else
-    snprintf(out, cap, "%02X", b);
+  } else {
+    size_t used = 0;
+    for (uint8_t i = 0; i < size && used + 2 < cap; i++)
+      used += (size_t)snprintf(out + used, cap - used, "%02X", hash[i]);
+  }
 }
 
 void MessagePathApplet::rebuild() {
@@ -46,8 +49,9 @@ void MessagePathApplet::rebuild() {
       // The repeater we actually heard this echo from is the LAST hop; the path
       // accumulates origin-first, so path[0] is always our nearest repeater and
       // uninformative here.
-      if (rv.pathLen > 0) {
-        char lbl[34]; hopLabel(rv.path[rv.pathLen - 1], lbl, sizeof(lbl));
+      if (rv.hops > 0) {
+        uint8_t size = pathHashSize(rv.pathLen);
+        char lbl[34]; hopLabel(rv.path + (rv.hops - 1) * size, size, lbl, sizeof(lbl));
         _text.addf("  %s", lbl);
       } else {
         _text.addLine("  (direct)");
@@ -56,16 +60,17 @@ void MessagePathApplet::rebuild() {
     }
   } else {
     // inbound (or outbound DM with no path): the flood relay chain
-    if (m.pathLen == 0)   snprintf(_title, sizeof(_title), "Direct");
+    if (m.hops == 0)      snprintf(_title, sizeof(_title), "Direct");
     else if (m.hops == 1) snprintf(_title, sizeof(_title), "Path: 1 hop");
     else                  snprintf(_title, sizeof(_title), "Path: %u hops", (unsigned)m.hops);
     _bar.setTitle(_title);
-    for (int h = 0; h < m.pathLen; h++) {
-      char lbl[20]; hopLabel(m.path[h], lbl, sizeof(lbl));
+    uint8_t size = pathHashSize(m.pathLen);
+    for (int h = 0; h < m.hops; h++) {
+      char lbl[20]; hopLabel(m.path + h * size, size, lbl, sizeof(lbl));
       _text.addf("%d  %s", h + 1, lbl);
       _rows++;
     }
-    if (m.pathLen == 0) _text.addLine("Direct (no path)");
+    if (m.hops == 0) _text.addLine("Direct (no path)");
   }
 }
 

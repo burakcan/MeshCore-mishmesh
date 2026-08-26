@@ -1,6 +1,7 @@
 // mishmesh/applets/ChatNotifyApplet.cpp
 #include "ChatNotifyApplet.h"
 #include <mishmesh/applets/SoundPickerApplet.h>
+#include <mishmesh/applets/WakeOverrideApplet.h>
 #include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
@@ -43,6 +44,9 @@ bool ChatNotifyApplet::onInput(InputEvent ev) {
     if (soundRow(sel)) {
       soundPickerApplet().setChat(_key, _name);
       if (_host) _host->push(&soundPickerApplet());
+    } else if (wakeRow(sel)) {
+      wakeOverrideApplet().setTarget(_key, _name);
+      if (_host) _host->push(&wakeOverrideApplet());
     } else {
       _level = levelForRow(sel);
       if (_svc) _svc->setNotifyLevel(_key, _level);
@@ -54,6 +58,7 @@ bool ChatNotifyApplet::onInput(InputEvent ev) {
 
 const char* ChatNotifyApplet::label(int i) const {
   if (soundRow(i)) return "Sound";
+  if (wakeRow(i))  return "Screen wake";
   if (_isChannel) {
     if (i == 0) return "All";
     if (i == 1) return "Mentions only";
@@ -65,17 +70,21 @@ const char* ChatNotifyApplet::label(int i) const {
 }
 
 const char* ChatNotifyApplet::value(int i) const {
+  if (wakeRow(i)) {
+    mishmesh::WakeOverride w = _svc ? _svc->chatWake(_key) : mishmesh::WakeOverride::Default;
+    return w == mishmesh::WakeOverride::On ? "On" : w == mishmesh::WakeOverride::Off ? "Off" : "Default";
+  }
   if (!soundRow(i)) return nullptr;
   uint8_t e = _svc ? _svc->chatSound(_key) : 0;
   return sound::notifyToneEncodedName(e, /*perChat*/true, sound::notifyTypeDefault(_isChannel));
 }
 
 bool ChatNotifyApplet::isRadio(int i) const {
-  return !soundRow(i);
+  return !soundRow(i) && !wakeRow(i);
 }
 
 bool ChatNotifyApplet::radioOn(int i) const {
-  if (soundRow(i)) return false;
+  if (soundRow(i) || wakeRow(i)) return false;
   return _level == levelForRow(i);
 }
 

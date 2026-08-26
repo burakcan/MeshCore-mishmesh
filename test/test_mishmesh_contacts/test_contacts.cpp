@@ -5,6 +5,7 @@
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/ContactDetailApplet.h>
 #include <mishmesh/applets/ContactPermissionsApplet.h>
+#include <mishmesh/applets/DiscoverApplet.h>
 #include <mishmesh/applets/MessageThreadApplet.h>
 #include <mishmesh/applets/KeypadApplet.h>
 #include <mishmesh/widgets/TelemetryDialog.h>
@@ -484,6 +485,7 @@ TEST(ContactsApplet, DiscoverTabAddsSelectedNode) {
   host.setRoot(&mishmesh::contactsApplet());
   // No favourites: tabs are Contacts,Repeaters,Rooms,Sensors,Discover,Settings -> Discover is index 4.
   for (int i = 0; i < 4; i++) host.dispatch(mishmesh::InputEvent::NavRight);
+  host.dispatch(mishmesh::InputEvent::NavDown);    // row 0 = "Discover nodes" launch; the node is row 1
   host.dispatch(mishmesh::InputEvent::Select);     // open the discovery detail
   EXPECT_EQ(2, host.depth());
   // Detail actions: "Add to contacts" (index 0) is preselected.
@@ -491,6 +493,18 @@ TEST(ContactsApplet, DiscoverTabAddsSelectedNode) {
   EXPECT_EQ(0, svc.countDiscovered());
   EXPECT_EQ(1, svc.countByKind(mishmesh::ContactKind::Chat));
   EXPECT_EQ(2, host.depth());                       // replace()d with contact detail; Back returns to list
+}
+
+TEST(ContactsApplet, DiscoverTabLaunchRowOpensScan) {
+  FakeContactsService svc;
+  FakeDisplayDriver d2;
+  mishmesh::AppletContext ctx; ctx.contacts = &svc;
+  mishmesh::AppletHost host(&d2, ctx);
+  host.setRoot(&mishmesh::contactsApplet());
+  for (int i = 0; i < 4; i++) host.dispatch(mishmesh::InputEvent::NavRight);   // Discover tab
+  host.dispatch(mishmesh::InputEvent::Select);       // row 0 -> scan screen
+  EXPECT_EQ(2, host.depth());
+  EXPECT_EQ((mishmesh::Applet*)&mishmesh::discoverApplet(), host.foreground());
 }
 
 // ---- Task 2: Send message action -------------------------------------------

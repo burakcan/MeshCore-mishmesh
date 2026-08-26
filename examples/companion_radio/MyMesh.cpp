@@ -257,6 +257,9 @@ float MyMesh::getAirtimeBudgetFactor() const {
 int MyMesh::getInterferenceThreshold() const {
   return 0; // disabled for now, until currentRSSI() problem is resolved
 }
+bool MyMesh::getCADEnabled() const {
+  return false; // hardware CAD before TX (disabled by default, until configurable)
+}
 
 int MyMesh::calcRxDelay(float score, uint32_t air_time) const {
   if (_prefs.rx_delay_base <= 0.0f) return 0;
@@ -480,11 +483,10 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   // [mishmesh]
   // Same allowlist as should_display: never store raw CLI_DATA frames as DMs.
   if (_mm_store && (txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN)) {
-    uint8_t hops = 0;
+    uint8_t pathLen = 0;
     const uint8_t* pathPtr = nullptr;
     if (pkt && pkt->isRouteFlood()) {
-      hops = pkt->getPathHashCount();
-      if (hops > mishmesh::MAX_PATH) hops = mishmesh::MAX_PATH;
+      pathLen = (uint8_t)pkt->path_len;
       pathPtr = pkt->path;
     }
     mishmesh::ConvoKey k = mishmesh::directKey(from.id.pub_key);
@@ -507,11 +509,11 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       if (m > (int)mishmesh::MAX_TEXT) m = mishmesh::MAX_TEXT;
       _mm_store->appendInbound(k, roombuf, (uint16_t)m, sender_timestamp,
                                 getRTCClock()->getCurrentTime(),
-                                pkt ? pkt->_snr : 0, pathPtr, hops);
+                                pkt ? pkt->_snr : 0, pathPtr, pathLen);
     } else {
       _mm_store->appendInbound(k, text, (uint16_t)strlen(text), sender_timestamp,
                                 getRTCClock()->getCurrentTime(),
-                                pkt ? pkt->_snr : 0, pathPtr, hops);
+                                pkt ? pkt->_snr : 0, pathPtr, pathLen);
     }
   }
   // [/mishmesh]
@@ -524,7 +526,7 @@ bool MyMesh::filterRecvFloodPacket(mesh::Packet* packet) {
 }
 
 bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
-  return _prefs.client_repeat != 0;
+  return _prefs.isRepeatEn();
 }
 
 void MyMesh::sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis) {
@@ -641,17 +643,16 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
 #endif
   // [mishmesh]
   if (_mm_store) {
-    uint8_t hops = 0;
+    uint8_t pathLen = 0;
     const uint8_t* pathPtr = nullptr;
     if (pkt && pkt->isRouteFlood()) {
-      hops = pkt->getPathHashCount();
-      if (hops > mishmesh::MAX_PATH) hops = mishmesh::MAX_PATH;
+      pathLen = (uint8_t)pkt->path_len;
       pathPtr = pkt->path;
     }
     mishmesh::ConvoKey k = mishmesh::channelKey(channel_idx);
     _mm_store->appendInbound(k, text, (uint16_t)strlen(text), timestamp,
                               getRTCClock()->getCurrentTime(),
-                              pkt ? pkt->_snr : 0, pathPtr, hops);
+                              pkt ? pkt->_snr : 0, pathPtr, pathLen);
   }
   // [/mishmesh]
 }
@@ -723,6 +724,11 @@ uint8_t MyMesh::onContactRequest(const ContactInfo &contact, uint32_t sender_tim
       telemetry.addVoltage(TELEM_CHANNEL_SELF, (float)board.getBattMilliVolts() / 1000.0f);
       // query other sensors -- target specific
       sensors.querySensors(permissions, telemetry);
+
+      float temperature = board.getMCUTemperature();
+      if(!isnan(temperature)) { // Supported boards with built-in temperature sensor. ESP32-C3 may return NAN
+        telemetry.addTemperature(TELEM_CHANNEL_SELF, temperature); // Built-in MCU Temperature
+      }
 
       memcpy(reply, &sender_timestamp,
              4); // reflect sender_timestamp back in response packet (kind of like a 'tag')
@@ -1077,22 +1083,56 @@ bool MyMesh::uiGetRecentAdvert(int index, ContactInfo& out) {
 // [/mishmesh]
 
 bool MyMesh::uiAddDiscovery(const uint8_t* pubkey) {
+  // addContact() allocates a fresh slot without checking for an existing pubkey, so
+  // adding a node that is already a contact would append a second copy. Drop it from
+  // the pool and report success - the caller navigates to its detail page either way.
+  bool known = lookupContactByPubKey(pubkey, 6) != nullptr;
   for (int i = 0; i < _ui_discovery_count; i++) {
     if (memcmp(_ui_discoveries[i].id.pub_key, pubkey, 6) != 0) continue;
-    if (!addContact(_ui_discoveries[i])) return false;
+    if (!known && !addContact(_ui_discoveries[i])) return false;
     for (int j = i; j < _ui_discovery_count - 1; j++) _ui_discoveries[j] = _ui_discoveries[j + 1];
     _ui_discovery_count--;
-    saveContacts();
+    if (!known) saveContacts();
     return true;
   }
-  return false;
+  return known;   // already a contact, just not in the pool (e.g. heard only via active scan)
 }
+
+// [mishmesh]
+#define CTL_TYPE_NODE_DISCOVER_REQ   0x80
+#define CTL_TYPE_NODE_DISCOVER_RESP  0x90
+
+void MyMesh::uiStartNodeDiscover(uint8_t advTypeMask) {
+  _ui_discover_result_count = 0;
+  uint8_t data[10];
+  data[0] = CTL_TYPE_NODE_DISCOVER_REQ;   // low bit = prefix_only = 0 -> full pubkey in replies
+  data[1] = advTypeMask;                  // 1<<ADV_TYPE_REPEATER (0x04) or 1<<ADV_TYPE_SENSOR (0x10)
+  getRNG()->random(&data[2], 4);          // tag
+  memcpy(&_ui_discover_tag, &data[2], 4);
+  uint32_t since = 0;
+  memcpy(&data[6], &since, 4);
+  _ui_discover_until = futureMillis(DISCOVER_WINDOW_MS);
+  auto pkt = createControlData(data, sizeof(data));
+  if (pkt) sendZeroHop(pkt);
+}
+
+bool MyMesh::uiDiscoverScanning() {
+  return _ui_discover_tag != 0 && !millisHasNowPassed(_ui_discover_until);
+}
+
+bool MyMesh::uiGetDiscoverResult(int i, UiDiscoverResult& out) const {
+  if (i < 0 || i >= _ui_discover_result_count) return false;
+  out = _ui_discover_results[i];
+  return true;
+}
+// [/mishmesh]
 
 bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text) {
   return mishmeshSendText(k, text, nullptr);
 }
 
-bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16) {
+bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, const uint8_t* scope_key16,
+                              uint32_t* senderTimeOut) {
   // Apply the per-chat region as a one-send scope override, saving/restoring any
   // session scope the companion app may have set via CMD_SET_FLOOD_SCOPE_KEY.
   // A null key clears the override -> falls back to the node default scope.
@@ -1102,7 +1142,7 @@ bool MyMesh::mishmeshSendText(const mishmesh::ConvoKey& k, const char* text, con
   if (scope_key16) memcpy(send_scope.key, scope_key16, sizeof(send_scope.key));
   else memset(send_scope.key, 0, sizeof(send_scope.key));
 
-  bool ok = mishmeshSendTextImpl(k, text);
+  bool ok = mishmeshSendTextImpl(k, text, senderTimeOut);
 
   send_scope = prev_scope;
   send_unscoped = prev_unscoped;
@@ -1197,7 +1237,8 @@ bool MyMesh::mishmeshIsRoomConvo(const mishmesh::ConvoKey& k) {
   return c && c->type == ADV_TYPE_ROOM;
 }
 
-bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text) {
+bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text,
+                                  uint32_t* senderTimeOut) {
   if (!text || !text[0]) return false;
   uint16_t tlen = (uint16_t)strlen(text);
 
@@ -1219,6 +1260,7 @@ bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text)
                                   getRTCClock()->getCurrentTime(),
                                   expected_ack, _ms->getMillis());
     }
+    if (senderTimeOut) *senderTimeOut = msg_timestamp;
     return true;
   }
 
@@ -1335,6 +1377,41 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
   } else {
     MESH_DEBUG_PRINTLN("onControlDataRecv(), data received while app offline");
   }
+
+  // [mishmesh] Latch active node-discovery responses for the on-device Discover
+  // screen. A NODE_DISCOVER_RESP is (0x90 | node_type); match the echoed tag to our
+  // pending request and record pubkey + our-side SNR. Also feed the shared discovery
+  // pool so the existing add path / Contacts Discover tab surface it.
+  if ((packet->payload[0] & 0xF0) == CTL_TYPE_NODE_DISCOVER_RESP
+      && packet->payload_len >= 6 + PUB_KEY_SIZE
+      && _ui_discover_tag != 0 && !millisHasNowPassed(_ui_discover_until)) {
+    uint32_t tag;
+    memcpy(&tag, &packet->payload[2], 4);
+    if (tag == _ui_discover_tag) {
+      const uint8_t* pubkey = &packet->payload[6];
+      mesh::Identity id(pubkey);
+      bool dup = false;
+      for (int i = 0; i < _ui_discover_result_count; i++)
+        if (memcmp(_ui_discover_results[i].pubkey, pubkey, PUB_KEY_SIZE) == 0) { dup = true; break; }
+      if (!id.matches(self_id) && !dup && _ui_discover_result_count < UI_MAX_DISCOVER_RESULTS) {
+        UiDiscoverResult& r = _ui_discover_results[_ui_discover_result_count++];
+        memcpy(r.pubkey, pubkey, PUB_KEY_SIZE);
+        r.type = packet->payload[0] & 0x0F;
+        r.snrX4 = (int8_t)(_radio->getLastSNR() * 4);
+        _ui_discover_seq++;
+
+        ContactInfo ci;
+        memset(&ci, 0, sizeof(ci));
+        ci.id = id;
+        ci.out_path_len = OUT_PATH_UNKNOWN;   // name stays empty (memset above) until an advert names it
+        ci.type = r.type;
+        ci.last_advert_timestamp = getRTCClock()->getCurrentTime();
+        ci.lastmod = ci.last_advert_timestamp;
+        uiNoteDiscovery(ci);
+      }
+    }
+  }
+  // [/mishmesh]
 }
 
 void MyMesh::onRawDataRecv(mesh::Packet *packet) {
@@ -1412,7 +1489,7 @@ void MyMesh::onSendTimeout() {}
 
 MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store, AbstractUITask* ui)
     : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(16), tables),
-      _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui) {
+      _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui), _iter(0) {
   _iter_started = false;
   _cli_rescue = false;
   offline_queue_len = 0;
@@ -1426,19 +1503,29 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   send_unscoped = false;
 
   // defaults
-  memset(&_prefs, 0, sizeof(_prefs));
   _prefs.airtime_factor = 1.0;
   strcpy(_prefs.node_name, "NONAME");
   _prefs.freq = LORA_FREQ;
   _prefs.tz_city_index = -1;   // [mishmesh] default custom/fixed until a city is chosen
   _prefs.onboarding_state = 0;   // [mishmesh] not started (fresh device before wizard runs)
+  // [mishmesh] non-zero mishmesh defaults must live here too, not only in
+  // DataStore::loadPrefsInt: that path runs only when a prefs file exists, so a
+  // device flashed straight to mishmesh (no file) would otherwise bake these as 0
+  // on onboarding's first savePrefs -> muted with all sound categories off, BLE off.
+  _prefs.sound_volume = 2;          // Mid
+  _prefs.sound_mute_mask = 0x0F;    // all 4 sound categories enabled
+  _prefs.ble_enabled = 1;           // companion link on
+  _prefs.contacts_full_notify = 1;  // "contacts full" alert on
   _prefs.sf = LORA_SF;
   _prefs.bw = LORA_BW;
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
+  _prefs.radio_fem_rxgain = 1;
+  _prefs.radio_fem_txgain = 0;
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
+  _prefs.setRepeatEn(false);
 #if defined(USE_SX1262) || defined(USE_SX1268)
 #ifdef SX126X_RX_BOOSTED_GAIN
   _prefs.rx_boosted_gain = SX126X_RX_BOOSTED_GAIN;
@@ -1484,7 +1571,9 @@ void MyMesh::begin(bool has_display) {
 #endif
 
   // load persisted prefs
-  _store->loadPrefs(_prefs, sensors.node_lat, sensors.node_lon);
+  _store->loadPrefs(_prefs);
+  sensors.node_lat = _prefs.node_lat;
+  sensors.node_lon = _prefs.node_lon;
 
   // sanitise bad pref values
   _prefs.rx_delay_base = constrain(_prefs.rx_delay_base, 0, 20.0f);
@@ -1496,6 +1585,14 @@ void MyMesh::begin(bool has_display) {
   _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);
   _prefs.gps_enabled = constrain(_prefs.gps_enabled, 0, 1);  // Ensure boolean 0 or 1
   _prefs.gps_interval = constrain(_prefs.gps_interval, 0, 86400);  // Max 24 hours
+  // [mishmesh] repair devices that baked a zeroed sound block before the fix above:
+  // no UI ever writes sound_mute_mask, so mask==0 (every category muted -> nothing can
+  // ever play) is an unambiguous corrupted/never-initialized marker, safe to reset.
+  // A user who chose Mute has sound_volume==0 but mask==0x0F, so this leaves them alone.
+  if (_prefs.sound_mute_mask == 0) {
+    _prefs.sound_volume = 2;        // Mid
+    _prefs.sound_mute_mask = 0x0F;  // all 4 sound categories enabled
+  }
 
 #ifdef BLE_PIN_CODE // 123456 by default
   if (_prefs.ble_pin == 0) {
@@ -1525,6 +1622,8 @@ void MyMesh::begin(bool has_display) {
   radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
   radio_driver.setTxPower(_prefs.tx_power_dbm);
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
+  board.setLoRaFemLnaEnabled(_prefs.radio_fem_rxgain);
+  board.setLoRaFemPaGainEnabled(_prefs.radio_fem_txgain);
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
 }
@@ -1611,7 +1710,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     i += 40;
     StrHelper::strzcpy((char *)&out_frame[i], FIRMWARE_VERSION, 20);
     i += 20;
-    out_frame[i++] = _prefs.client_repeat;   // v9+
+    out_frame[i++] = _prefs.isRepeatEn() ? 1 : 0;   // v9+
     out_frame[i++] = _prefs.path_hash_mode;  // v10+
     _serial->writeFrame(out_frame, i);
   } else if (cmd_frame[0] == CMD_APP_START &&
@@ -1989,7 +2088,7 @@ void MyMesh::handleCmdFrame(size_t len) {
       _prefs.cr = cr;
       _prefs.freq = (float)freq / 1000.0;
       _prefs.bw = (float)bw / 1000.0;
-      _prefs.client_repeat = repeat;
+      _prefs.setRepeatEn(repeat != 0);
       savePrefs();
 
       radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
@@ -2146,6 +2245,7 @@ void MyMesh::handleCmdFrame(size_t len) {
       memcpy(anon.id.pub_key, pub_key, PUB_KEY_SIZE);
       anon.out_path_len = 0;   // default to zero-hop direct
       anon.type = ADV_TYPE_NONE;  // unknown
+      anon.lastmod = getRTCClock()->getCurrentTime();
 
       if (addContact(anon)) recipient = &anon;
     }
@@ -2235,6 +2335,11 @@ void MyMesh::handleCmdFrame(size_t len) {
   } else if (cmd_frame[0] == CMD_SEND_TELEMETRY_REQ && len == 4) {  // 'self' telemetry request
     telemetry.reset();
     telemetry.addVoltage(TELEM_CHANNEL_SELF, (float)board.getBattMilliVolts() / 1000.0f);
+    float temperature = board.getMCUTemperature();
+    if(!isnan(temperature)) { // Supported boards with built-in temperature sensor. ESP32-C3 may return NAN
+      telemetry.addTemperature(TELEM_CHANNEL_SELF, temperature); // Built-in MCU Temperature
+    }
+
     // query other sensors -- target specific
     sensors.querySensors(0xFF, telemetry);
 
@@ -2578,6 +2683,7 @@ void MyMesh::handleCmdFrame(size_t len) {
         sendPacket(pkt, priority, 0);
         writeOKFrame();
       } else {
+        releasePacket(pkt);
         writeErrFrame(ERR_CODE_ILLEGAL_ARG);
       }
     } else {
@@ -2783,15 +2889,7 @@ void MyMesh::checkSerialInterface() {
              && !_serial->isWriteBusy() // don't spam the Serial Interface too quickly!
   ) {
     ContactInfo contact;
-    bool found = false;
-    while (_iter.hasNext(this, contact)) {
-      if (contact.type != ADV_TYPE_NONE) {
-        found = true;
-        break;
-      }
-    }
-
-    if (found) {
+    if (_iter.hasNext(this, contact)) {
       if (contact.lastmod > _iter_filter_since) { // apply the 'since' filter
         writeContactRespFrame(RESP_CODE_CONTACT, contact);
         if (contact.lastmod > _most_recent_lastmod) {
@@ -2893,9 +2991,8 @@ void MyMesh::logRx(mesh::Packet* pkt, int len, float score) {
     if (dl < 5) continue;  // need at minimum: 4-byte ts + type byte
     uint32_t ts;
     memcpy(&ts, data, 4);
-    uint8_t hops = pkt->getPathHashCount();
-    if (hops > mishmesh::MAX_PATH) hops = mishmesh::MAX_PATH;
-    _mm_store->addRepeat(mishmesh::channelKey(ch), ts, pkt->_snr, pkt->path, hops);
+    _mm_store->addRepeat(mishmesh::channelKey(ch), ts, pkt->_snr, pkt->path,
+                         (uint8_t)pkt->path_len);
     break;  // first matching channel wins
   }
 #endif

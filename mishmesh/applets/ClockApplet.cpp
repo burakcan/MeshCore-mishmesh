@@ -83,6 +83,28 @@ const char* ClockApplet::PickModel::value(int i) const {
   return buf;
 }
 
+const char* ClockApplet::PomoSetupModel::label(int i) const {
+  switch (i) {
+    case Focus: return "Focus";
+    case Short: return "Short break";
+    case Long:  return "Long break";
+    case SetN:  return "Set";
+    default:    return "Auto-advance";
+  }
+}
+
+const char* ClockApplet::PomoSetupModel::value(int i) const {
+  static char buf[8];
+  ClockService& s = clockService();
+  switch (i) {
+    case Focus: snprintf(buf, sizeof(buf), "%um", s.pmFocusMin()); return buf;
+    case Short: snprintf(buf, sizeof(buf), "%um", s.pmShortMin()); return buf;
+    case Long:  snprintf(buf, sizeof(buf), "%um", s.pmLongMin());  return buf;
+    case SetN:  snprintf(buf, sizeof(buf), "%u",  s.pmSetCount()); return buf;
+    default:    return nullptr;   // toggle row draws its own state
+  }
+}
+
 // ---- applet ----
 
 void ClockApplet::onStart(AppletContext& ctx) {
@@ -94,6 +116,7 @@ void ClockApplet::onStart(AppletContext& ctx) {
   _tabs.clear();
   _tabs.addTab("Stopwatch", (uint16_t)Icon::Clock);
   _tabs.addTab("Timer", (uint16_t)Icon::Hourglass);
+  _tabs.addTab("Pomodoro", (uint16_t)Icon::Tomato);
   _tabs.addTab("Alarm", (uint16_t)Icon::AlarmClock);
   _tabs.addTab("World", (uint16_t)Icon::Globe);
   _tabs.addTab("Settings", (uint16_t)Icon::Settings);
@@ -108,6 +131,11 @@ void ClockApplet::onStart(AppletContext& ctx) {
   _worldList.resetSelection();
   _pickList.setModel(&_pickModel);
   _pickList.setRowHeight(14);
+  _pomoSetupList.setModel(&_pomoSetupModel);
+  _pomoSetupList.setRowHeight(11);
+  _pomoSetupList.resetSelection();
+  _pomoSetupOpen = false;
+  _pomoStepRow = -1;
 }
 
 int ClockApplet::onRender(Canvas& c) {
@@ -123,11 +151,22 @@ int ClockApplet::onRender(Canvas& c) {
     _pickList.draw(c, 0, bodyY, w, bodyH);
     return _pickList.needsAnimation() ? ListMenu::TICK_MS : 500;
   }
+  // Setup is a full-body list, not an overlay: render it INSTEAD of the tab body
+  // so the idle Ready screen does not show through behind the rows.
+  if (_pomoSetupOpen) {
+    _pomoSetupList.draw(c, 0, bodyY, w, bodyH);
+    if (_pomoStepRow >= 0) _pomoStepper.draw(c, 0, 0, w, h);
+    return _pomoStepRow >= 0 ? 100 : (_pomoSetupList.needsAnimation() ? ListMenu::TICK_MS : 500);
+  }
 
   int next;
   switch (_tab) {
     case TAB_STOPWATCH: next = renderStopwatch(c, bodyY, bodyH); break;
     case TAB_TIMER:     next = renderTimer(c, bodyY, bodyH); break;
+    case TAB_POMODORO:
+      next = clockService().pmActive() ? renderPomodoroRunning(c, bodyY, bodyH)
+                                       : renderPomodoroIdle(c, bodyY, bodyH);
+      break;
     case TAB_ALARM:     next = renderAlarm(c, bodyY, bodyH); break;
     default:            next = renderWorld(c, bodyY, bodyH); break;
   }
@@ -216,6 +255,82 @@ int ClockApplet::renderAlarm(Canvas& c, int y, int h) {
 int ClockApplet::renderWorld(Canvas& c, int y, int h) {
   _worldList.draw(c, 0, y, c.width(), h);
   return _worldList.needsAnimation() ? ListMenu::TICK_MS : 1000;
+}
+
+int ClockApplet::renderPomodoroIdle(Canvas& c, int y, int h) {
+  ClockService& s = clockService();
+  int cx = 30, cy = y + (h - c.lineHeight(fontCaption())) / 2, r = 16;
+  int n = s.pmSetCount(), seg = 360 / n, gap = 12;
+  for (int i = 0; i < n; i++)
+    c.drawArc(cx, cy, r, 1, i * seg + gap / 2, (i + 1) * seg - gap / 2,
+              DisplayDriver::LIGHT);                 // faint track = the empty set
+  c.drawGlyph(iconFont(), cx - 6, cy - 6, (uint16_t)Icon::Tomato, DisplayDriver::LIGHT);
+
+  // Keep this block at the SAME coords as renderPomodoroRunning so starting a
+  // session does not visually shift the phase word / countdown.
+  c.drawText(fontCaption(), 82, y + 4, "FOCUS", DisplayDriver::LIGHT, TextAlign::Center);
+  char buf[8]; snprintf(buf, sizeof(buf), "%u:00", s.pmFocusMin());
+  c.drawText(fontNum(), 82, y + 16, buf, DisplayDriver::LIGHT, TextAlign::Center);
+  c.drawText(fontCaption(), c.width() / 2, y + h - c.lineHeight(fontCaption()),
+             "Sel start / hold setup", DisplayDriver::LIGHT, TextAlign::Center);
+  return 1000;
+}
+
+void ClockApplet::drawSessionRing(Canvas& c, int cx, int cy, int r) {
+  ClockService& s = clockService();
+  int n = s.pmSetCount(), seg = 360 / n, gap = 12;
+  PomoPhase ph = s.pmPhase();
+  int block = s.pmBlock();                       // 1..N
+  int doneBlocks = (ph == PomoPhase::Focus) ? block - 1 : block;   // solid segments
+  bool focusing = ph == PomoPhase::Focus;
+  int activePct = focusing ? s.pmElapsedPct(_now) : 0;
+
+  for (int i = 0; i < n; i++) {
+    int a0 = i * seg + gap / 2, a1 = (i + 1) * seg - gap / 2;
+    if (i < doneBlocks) {
+      c.drawArc(cx, cy, r, 3, a0, a1, DisplayDriver::LIGHT);       // done: thick
+    } else if (focusing && i == doneBlocks) {
+      c.drawArc(cx, cy, r, 1, a0, a1, DisplayDriver::LIGHT);       // track under fill
+      int fillEnd = a0 + (a1 - a0) * activePct / 100;
+      if (fillEnd > a0) c.drawArc(cx, cy, r, 3, a0, fillEnd, DisplayDriver::LIGHT);
+    } else {
+      c.drawArc(cx, cy, r, 1, a0, a1, DisplayDriver::LIGHT);       // to-go: thin track
+    }
+  }
+  Icon g = (ph == PomoPhase::Focus) ? Icon::Tomato : Icon::Coffee;
+  c.drawGlyph(iconFont(), cx - 6, cy - 6, (uint16_t)g, DisplayDriver::LIGHT);
+}
+
+int ClockApplet::renderPomodoroRunning(Canvas& c, int y, int h) {
+  ClockService& s = clockService();
+  int capH = c.lineHeight(fontCaption());
+  int cx = 30, cy = y + (h - capH) / 2, r = 16;
+  drawSessionRing(c, cx, cy, r);
+
+  const char* word;
+  switch (s.pmPhase()) {
+    case PomoPhase::ShortBreak: word = "BREAK"; break;
+    case PomoPhase::LongBreak:  word = "LONG BREAK"; break;
+    default:                    word = "FOCUS"; break;
+  }
+  c.drawText(fontCaption(), 82, y + 4, word, DisplayDriver::LIGHT, TextAlign::Center);
+
+  char buf[8];
+  uint32_t sec = (s.pmRemainingMs(_now) + 999u) / 1000u;
+  snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)(sec / 60), (unsigned)(sec % 60));
+  c.drawText(fontNum(), 82, y + 16, buf, DisplayDriver::LIGHT, TextAlign::Center);
+
+  const char* hint = s.pmRunning() ? "Sel pause / hold reset"
+                                    : "Sel start / hold reset";
+  c.drawText(fontCaption(), c.width() / 2, y + h - capH, hint,
+             DisplayDriver::LIGHT, TextAlign::Center);
+  return s.pmRunning() ? 250 : 60000;
+}
+
+void ClockApplet::openPomodoroSetup() {
+  _pomoSetupOpen = true;
+  _pomoStepRow = -1;
+  _pomoSetupList.resetSelection();
 }
 
 void ClockApplet::openAlarmEditor() {
@@ -339,6 +454,8 @@ bool ClockApplet::onInput(InputEvent ev) {
 
   if (_editor.open) return inputEditor(ev);
   if (_pickingCity) return inputWorld(ev);
+  // Setup overlay owns input; the tab strip must not steal NavLeft/NavRight from it.
+  if (_tab == TAB_POMODORO && _pomoSetupOpen) return inputPomodoro(ev);
 
   if (_tabs.onInput(ev)) {
     _tab = _tabs.selected();
@@ -347,6 +464,7 @@ bool ClockApplet::onInput(InputEvent ev) {
   switch (_tab) {
     case TAB_STOPWATCH: return inputStopwatch(ev);
     case TAB_TIMER:     return inputTimer(ev);
+    case TAB_POMODORO:  return inputPomodoro(ev);
     case TAB_ALARM:     return inputAlarm(ev);
     default:            return inputWorld(ev);
   }
@@ -417,6 +535,54 @@ bool ClockApplet::inputWorld(InputEvent ev) {
     if (_host) _host->postToast("City removed");
     return true;
   }
+  return false;
+}
+
+bool ClockApplet::inputPomodoro(InputEvent ev) {
+  ClockService& s = clockService();
+
+  // Setup overlay owns input while open.
+  if (_pomoSetupOpen) {
+    if (_pomoStepRow >= 0) {                 // stepper modal active
+      _pomoStepper.onInput(ev);
+      StepperResult res = _pomoStepper.result();
+      if (res == StepperResult::Confirmed) {
+        int v = _pomoStepper.value();
+        switch (_pomoStepRow) {
+          case PomoSetupModel::Focus: s.setPmFocusMin((uint8_t)v); break;
+          case PomoSetupModel::Short: s.setPmShortMin((uint8_t)v); break;
+          case PomoSetupModel::Long:  s.setPmLongMin((uint8_t)v); break;
+          case PomoSetupModel::SetN:  s.setPmSetCount((uint8_t)v); break;
+        }
+      }
+      if (res != StepperResult::None) { _pomoStepper.reset(); _pomoStepRow = -1; }
+      return true;
+    }
+    if (_pomoSetupList.onInput(ev)) return true;
+    int row = _pomoSetupList.selected();
+    if (ev == InputEvent::Select) {
+      if (row == PomoSetupModel::Auto) { s.setPmAutoAdvance(!s.pmAutoAdvance()); return true; }
+      switch (row) {
+        case PomoSetupModel::Focus: _pomoStepper.configure("Focus min", s.pmFocusMin(), 5, 60); break;
+        case PomoSetupModel::Short: _pomoStepper.configure("Short break min", s.pmShortMin(), 1, 30); break;
+        case PomoSetupModel::Long:  _pomoStepper.configure("Long break min", s.pmLongMin(), 5, 45); break;
+        case PomoSetupModel::SetN:  _pomoStepper.configure("Blocks per set", s.pmSetCount(), 2, 8); break;
+      }
+      _pomoStepRow = row;
+      return true;
+    }
+    if (ev == InputEvent::Back || ev == InputEvent::Cancel) { _pomoSetupOpen = false; return true; }
+    return true;   // swallow everything while in setup
+  }
+
+  // Idle: start, or open setup.
+  if (!s.pmActive()) {
+    if (ev == InputEvent::Select) { s.pmStart(_now); return true; }
+    if (ev == InputEvent::SelectLong) { openPomodoroSetup(); return true; }
+    return false;
+  }
+  if (ev == InputEvent::Select) { s.pmToggle(_now); return true; }
+  if (ev == InputEvent::SelectLong) { s.pmReset(); return true; }
   return false;
 }
 

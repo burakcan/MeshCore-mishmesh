@@ -66,13 +66,18 @@ const char* KeypadApplet::cellLabel(int r, int c) const {
   if (r < 3 && c < 3) {
     int i = r * 3 + c;
     // Symbols, digits, and the punctuation cell fit and are shown verbatim.
-    // Letter cells show only the base Latin labels (like real Nokia keypads) -
-    // the language's accented variants still cycle when typing, they just don't
+    // Letter cells show the layout's key caps; the full national group still
+    // cycles when typing. Latin layouts leave the caps null and fall back to
+    // these base labels, like real Nokia keypads - the accented variants don't
     // fit on the key and aren't drawn.
     if (_symPage || _mode == Mode::Num || i == 0) return groupAt(i);
     static const char* const BASE_L[9] = {"", "abc","def","ghi","jkl","mno","pqrs","tuv","wxyz"};
     static const char* const BASE_U[9] = {"", "ABC","DEF","GHI","JKL","MNO","PQRS","TUV","WXYZ"};
-    return (_mode == Mode::Upper || _mode == Mode::Shift) ? BASE_U[i] : BASE_L[i];
+    const KbdLayout& L = kbdLayoutAt(_langIdx);
+    bool up = (_mode == Mode::Upper || _mode == Mode::Shift);
+    const char* cap = up ? L.capsUpper[i] : L.capsLower[i];
+    if (cap) return cap;
+    return up ? BASE_U[i] : BASE_L[i];
   }
   if (c == 3) {
     if (r == 0) return "DEL";
@@ -579,7 +584,7 @@ void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
     uint16_t n = _cursor - start;
     memcpy(prefix, _buf + start, n); prefix[n] = 0;
     if (line.textWidth(f, prefix) <= w - 2) break;
-    start++;
+    start = nextCodepoint(start);
   }
   line.drawText(f, 0, baseY, _buf + start, DisplayDriver::LIGHT);
 
