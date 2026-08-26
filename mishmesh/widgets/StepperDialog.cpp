@@ -23,7 +23,7 @@ void StepperDialog::draw(Canvas& c, int x, int y, int w, int h) {
   int bw = box.width(), bh = box.height();
   int pad = 4;
 
-  box.drawText(fontBody(), pad, pad + 2, _title, DisplayDriver::LIGHT);
+  box.drawTextEllipsized(fontBody(), pad, pad + 2, bw - 2 * pad, _title, DisplayDriver::LIGHT);
 
   char label[16];
   if (_fmt) _fmt(_value, label, sizeof(label));

@@ -31,6 +31,8 @@ public:
   // [mishmesh] optional panel brightness (contrast); default unsupported
   virtual bool supportsBrightness() const { return false; }
   virtual void setBrightness(uint8_t value) { (void)value; }
+  // lets the UI drain input while an eink panel blocks on a refresh
+  virtual void setBusyPoll(void (*cb)(const void*), const void* ctx) {}
   // [/mishmesh]
   virtual void turnOn() = 0;
   virtual void turnOff() = 0;

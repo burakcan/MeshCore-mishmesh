@@ -180,8 +180,8 @@ void QuickDrawer::draw(Canvas& c) {
 
   char st[28];
   stateLabel(_tiles[_sel], st, sizeof(st));
-  c.drawText(fontBody(), w / 2, top + 4 + TILE + 4, st,
-             DisplayDriver::LIGHT, TextAlign::Center);
+  c.drawTextEllipsized(fontBody(), w / 2, top + 4 + TILE + 4, w - 8, st,
+                       DisplayDriver::LIGHT, TextAlign::Center);
 }
 
 }  // namespace mishmesh

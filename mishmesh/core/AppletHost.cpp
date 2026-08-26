@@ -1,4 +1,5 @@
 #include <mishmesh/core/AppletHost.h>
+#include <mishmesh/core/Anim.h>
 #include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/InputSource.h>
 #include <mishmesh/text/Fonts.h>
@@ -29,8 +30,27 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
   for (int i = 0; i < MAX_STACK; i++) _stack[i] = nullptr;
   for (int i = 0; i < MAX_SOURCES; i++) _sources[i] = nullptr;
   _toast_msg[0] = 0;
+  _busy_count = 0;
   _ctx.host = this;
   _ctx.inputState = &_input_state;
+  if (_display != nullptr) {
+    setReducedMotion(_display->isEink());
+    _display->setBusyPoll(&AppletHost::busyPollThunk, this);
+  }
+}
+
+void AppletHost::busyPollThunk(const void* self) {
+  ((AppletHost*)(uintptr_t)self)->pollDuringBusy();
+}
+
+void AppletHost::pollDuringBusy() {
+  for (int i = 0; i < _nsources; i++) {
+    if (_sources[i] == nullptr) continue;
+    InputReport rep;
+    while ((rep = InputReport(), _sources[i]->poll(rep))) {
+      if (_busy_count < BUSY_QUEUE) _busyQueue[_busy_count++] = rep;
+    }
+  }
 }
 
 void AppletHost::postToast(const char* msg) {
@@ -142,36 +162,43 @@ void AppletHost::dispatch(InputEvent ev, bool repeat) {
   _dirty = true;
 }
 
+void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms) {
+  _last_activity = now_ms;
+#ifdef MISHMESH_INPUT_PROFILE
+  if (!rep.repeat) _prof.recordPolled();   // a discrete press edge was sampled
+#endif
+  if (_display != nullptr && !_display->isOn()) {
+    // A user wake (not the passive notification path). After a long sleep,
+    // reset navigation to home unless the foreground wants to stay put.
+    if (_slept_at != 0 && now_ms - _slept_at > WAKE_HOME_THRESHOLD_MS) {
+      Applet* fg = foreground();
+      if (fg == nullptr || !fg->keepOnWake()) popToRoot();
+    }
+    _slept_at = 0;
+    _display->turnOn();   // first press only wakes; it isn't delivered
+    _dirty = true;
+  } else {
+    bool bounce = _input_seen && rep.event == _last_input_event &&
+                  now_ms - _last_input_ms < INPUT_DEBOUNCE_MS;
+    _last_input_event = rep.event; _last_input_ms = now_ms; _input_seen = true;
+    if (!bounce) {
+#ifdef MISHMESH_INPUT_PROFILE
+      if (!rep.repeat) _prof.recordDispatched();   // survived bounce coalescing
+#endif
+      dispatch(rep.event, rep.repeat);
+    }
+  }
+}
+
 void AppletHost::pumpInput(uint32_t now_ms) {
+  uint8_t queued = _busy_count;
+  _busy_count = 0;
+  for (uint8_t i = 0; i < queued; i++) handleReport(_busyQueue[i], now_ms);
   for (int i = 0; i < _nsources; i++) {
     if (_sources[i] == nullptr) continue;
     InputReport rep;                       // fresh each poll: `repeat` defaults false
     while ((rep = InputReport(), _sources[i]->poll(rep))) {
-      _last_activity = now_ms;
-#ifdef MISHMESH_INPUT_PROFILE
-      if (!rep.repeat) _prof.recordPolled();   // a discrete press edge was sampled
-#endif
-      if (_display != nullptr && !_display->isOn()) {
-        // A user wake (not the passive notification path). After a long sleep,
-        // reset navigation to home unless the foreground wants to stay put.
-        if (_slept_at != 0 && now_ms - _slept_at > WAKE_HOME_THRESHOLD_MS) {
-          Applet* fg = foreground();
-          if (fg == nullptr || !fg->keepOnWake()) popToRoot();
-        }
-        _slept_at = 0;
-        _display->turnOn();   // first press only wakes; it isn't delivered
-        _dirty = true;
-      } else {
-        bool bounce = _input_seen && rep.event == _last_input_event &&
-                      now_ms - _last_input_ms < INPUT_DEBOUNCE_MS;
-        _last_input_event = rep.event; _last_input_ms = now_ms; _input_seen = true;
-        if (!bounce) {
-#ifdef MISHMESH_INPUT_PROFILE
-          if (!rep.repeat) _prof.recordDispatched();   // survived bounce coalescing
-#endif
-          dispatch(rep.event, rep.repeat);
-        }
-      }
+      handleReport(rep, now_ms);
     }
   }
 }
@@ -285,7 +312,8 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
     uint32_t elapsed = now_ms - _bubble_start;
     uint32_t remaining = _bubble_until - now_ms;
     uint32_t wake;
-    if (elapsed < BUBBLE_SLIDE_MS)            wake = BUBBLE_TICK_MS;                  // sliding in
+    if (reducedMotion())                      wake = remaining;
+    else if (elapsed < BUBBLE_SLIDE_MS)       wake = BUBBLE_TICK_MS;                  // sliding in
     else if (remaining > BUBBLE_SLIDE_MS)     wake = remaining - BUBBLE_SLIDE_MS;     // hold, then wake to slide out
     else                                      wake = BUBBLE_TICK_MS;                  // sliding out (+ final clear)
     if (delay < 0 || (uint32_t)delay > wake) delay = (int)wake;
@@ -355,10 +383,12 @@ void AppletHost::drawBubble(uint32_t now_ms) {
   uint32_t remaining = _bubble_until - now_ms;
   int travel = bw + 2;
   int slide = 0;
-  if (elapsed < BUBBLE_SLIDE_MS)
-    slide = (int)((uint32_t)travel * (BUBBLE_SLIDE_MS - elapsed) / BUBBLE_SLIDE_MS);
-  else if (remaining < BUBBLE_SLIDE_MS)
-    slide = (int)((uint32_t)travel * (BUBBLE_SLIDE_MS - remaining) / BUBBLE_SLIDE_MS);
+  if (!reducedMotion()) {
+    if (elapsed < BUBBLE_SLIDE_MS)
+      slide = (int)((uint32_t)travel * (BUBBLE_SLIDE_MS - elapsed) / BUBBLE_SLIDE_MS);
+    else if (remaining < BUBBLE_SLIDE_MS)
+      slide = (int)((uint32_t)travel * (BUBBLE_SLIDE_MS - remaining) / BUBBLE_SLIDE_MS);
+  }
   int bx = baseX + slide;
 
   _canvas.fillRect(bx, by, bw, bh, DisplayDriver::DARK);       // mask the content behind
