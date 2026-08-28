@@ -572,6 +572,142 @@ TEST_F(MSFix, ForEachMessageMatchesGetMessage) {
   }
 }
 
+// ---- index/log reconciliation after an unclean reset ----
+//
+// The log records are written the moment a message arrives; the index blob is
+// written on a debounce (UITask). A reset inside that window keeps the records
+// and loses the count increments, and messageCount() bounds every read - so the
+// newest records become unreachable until later traffic pushes the count past
+// them again. begin() has to reconcile the two.
+
+static ConvoKey chan(uint8_t i) { return channelKey(i); }
+
+// Writes `n` inbound records, flushing the index blob only after the first
+// `flushAfter` of them - i.e. simulating a reset `n - flushAfter` records late.
+static void seedWithStaleIndex(FakeMsgLogBackend& backend, const ConvoKey& k,
+                               int flushAfter, int n) {
+  MessageStore s;
+  s.begin(&backend);
+  s.setActiveConvo(k);            // read as they arrive, so unread stays 0
+  for (int i = 0; i < n; i++) {
+    char t[16]; snprintf(t, sizeof(t), "m%d", i);
+    s.appendInbound(k, t, (uint16_t)strlen(t), 1000 + i, 2000 + i, 0, nullptr, 0);
+    if (i + 1 == flushAfter) s.saveIndex();
+  }
+}
+
+TEST(IndexReconcile, StaleIndexStillSeesEveryRecord) {
+  FakeMsgLogBackend backend;
+  seedWithStaleIndex(backend, chan(0), 5, 8);
+
+  MessageStore s; s.begin(&backend);
+  ASSERT_EQ(8, s.messageCount(chan(0)));
+  MsgRecord r;
+  ASSERT_TRUE(s.getMessage(chan(0), 7, r));
+  EXPECT_EQ(0, memcmp(r.text, "m7", 2));
+}
+
+TEST(IndexReconcile, SendAfterStaleIndexIsImmediatelyVisible) {
+  FakeMsgLogBackend backend;
+  seedWithStaleIndex(backend, chan(0), 5, 8);
+
+  MessageStore s; s.begin(&backend);
+  s.appendOutboundChannel(chan(0), "hello", 5, 3000, 3000);
+  int n = s.messageCount(chan(0));
+  MsgRecord r;
+  ASSERT_TRUE(s.getMessage(chan(0), n - 1, r));
+  EXPECT_EQ(KIND_OUT_CHAN, r.kind);
+  EXPECT_EQ(0, memcmp(r.text, "hello", 5));
+}
+
+TEST(IndexReconcile, RecoveredInboundCountsAsUnread) {
+  FakeMsgLogBackend backend;
+  seedWithStaleIndex(backend, chan(0), 5, 8);   // 3 records arrived after the flush
+
+  MessageStore s; s.begin(&backend);
+  ConvoSummary c;
+  ASSERT_TRUE(s.getConvo(0, c));
+  EXPECT_EQ(3, c.unread);
+}
+
+TEST(IndexReconcile, RecoveredOutboundIsNotUnread) {
+  FakeMsgLogBackend backend;
+  {
+    MessageStore s; s.begin(&backend);
+    s.appendInbound(chan(0), "a", 1, 1000, 1000, 0, nullptr, 0);
+    s.setActiveConvo(chan(0));
+    s.saveIndex();
+    s.appendOutboundChannel(chan(0), "mine", 4, 2000, 2000);
+  }
+  MessageStore s; s.begin(&backend);
+  ConvoSummary c;
+  ASSERT_TRUE(s.getConvo(0, c));
+  EXPECT_EQ(2, c.count);
+  EXPECT_EQ(0, c.unread);
+}
+
+TEST(IndexReconcile, InSyncChatKeepsItsReadStateAndPreview) {
+  FakeMsgLogBackend backend;
+  {
+    MessageStore s; s.begin(&backend);
+    s.appendInbound(dm("ALICE!"), "read me", 7, 1000, 1000, 0, nullptr, 0);
+    s.setActiveConvo(dm("ALICE!"));               // clears Alice's unread
+    s.appendInbound(dm("ALICE!"), "and me", 6, 1100, 1100, 0, nullptr, 0);
+    s.saveIndex();                                // Alice is in sync on disk
+  }
+  MessageStore s; s.begin(&backend);
+  ConvoSummary c;
+  ASSERT_TRUE(s.getConvo(0, c));
+  EXPECT_EQ(2, c.count);
+  EXPECT_EQ(0, c.unread) << "an in-sync chat must not be rescanned into unread";
+  EXPECT_STREQ("and me", c.preview);
+}
+
+TEST(IndexReconcile, DriftDoesNotAccumulateAcrossResets) {
+  FakeMsgLogBackend backend;
+  for (int boot = 0; boot < 3; boot++) {
+    MessageStore s; s.begin(&backend);
+    for (int i = 0; i < 6; i++) {
+      char t[16]; snprintf(t, sizeof(t), "b%dm%d", boot, i);
+      s.appendInbound(chan(0), t, (uint16_t)strlen(t), 1000 + boot * 100 + i,
+                      1000 + boot * 100 + i, 0, nullptr, 0);
+      if (i == 3) s.saveIndex();     // last 2 of each boot never reach the blob
+    }
+  }
+  MessageStore s; s.begin(&backend);
+  EXPECT_EQ(18, s.messageCount(chan(0)));
+}
+
+TEST(IndexReconcile, LogWithNoIndexSlotIsAdopted) {
+  FakeMsgLogBackend backend;
+  {
+    MessageStore s; s.begin(&backend);
+    s.appendInbound(dm("ALICE!"), "hi", 2, 1000, 1000, 0, nullptr, 0);
+    s.saveIndex();
+    s.appendInbound(chan(3), "new chat", 8, 1100, 1100, 0, nullptr, 0);  // chat born after the flush
+  }
+  MessageStore s; s.begin(&backend);
+  EXPECT_EQ(2, s.convoCount());
+  EXPECT_EQ(1, s.messageCount(chan(3)));
+}
+
+TEST(IndexReconcile, CountAheadOfLogIsClampedDown) {
+  FakeMsgLogBackend backend;
+  {
+    MessageStore s; s.begin(&backend);
+    s.appendInbound(chan(0), "a", 1, 1000, 1000, 0, nullptr, 0);
+    s.appendInbound(chan(0), "b", 1, 1100, 1100, 0, nullptr, 0);
+    s.saveIndex();
+  }
+  char name[15]; codec::keyToName(chan(0), name);
+  backend.files[name].resize(0);        // log lost, blob still claims 2
+
+  MessageStore s; s.begin(&backend);
+  EXPECT_EQ(0, s.messageCount(chan(0)));
+  MsgRecord r;
+  EXPECT_FALSE(s.getMessage(chan(0), 0, r));
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -31,6 +31,7 @@ void MessageStore::begin(MsgLogBackend* b) {
     bool ok = n && _index.deserialize(_idxBuf, n);
     MM_PLOG("begin: loadIndex=%lu deserialize=%d", (unsigned long)n, ok ? 1 : 0);
     if (!ok) { rebuildIndex(); MM_PLOG("begin: REBUILT from logs"); }
+    else reconcileIndex();
     MM_PLOG("begin: convos=%d totalUnread=%u totalNotify=%u",
             _index.count(), (unsigned)totalUnread(), (unsigned)totalNotifyUnread());
   }
@@ -138,6 +139,37 @@ bool MessageStore::findRecordOffset(const char* name, int targetIdx,
 
 // ---- index rebuild ----
 
+void MessageStore::scanLog(const char* name, int after, LogScan& out) const {
+  out.liveCount = 0; out.inboundAfter = 0;
+  out.maxTime = 0; out.validEnd = 0; out.previewLen = 0;
+  if (!_backend) return;
+  uint32_t fileSize = _backend->size(name);
+  uint32_t pos = 0;
+  while (pos < fileSize) {
+    uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
+    if (got < (uint32_t)codec::REC_HDR) break;
+    uint32_t sz = (uint32_t)codec::recSize(_recBuf);
+    if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
+    if (pos + sz > fileSize) break;  // torn tail: record overruns the file
+    if (!codec::recDead(_recBuf)) {
+      if (out.liveCount >= after && codec::recKind(_recBuf) == KIND_INBOUND) out.inboundAfter++;
+      out.liveCount++;
+      uint32_t lt = codec::rd32(_recBuf + 12);
+      uint32_t st = codec::rd32(_recBuf + 8);
+      uint32_t t  = lt ? lt : st;
+      if (t > out.maxTime) out.maxTime = t;
+      uint16_t tlen = codec::recTextLen(_recBuf);
+      if (tlen) {
+        uint16_t cap = (uint16_t)(PREVIEW_LEN - 1);
+        out.previewLen = tlen < cap ? tlen : cap;
+        memcpy(out.preview, _recBuf + codec::REC_HDR, out.previewLen);
+      }
+    }
+    pos += sz;
+    out.validEnd = pos;
+  }
+}
+
 void MessageStore::rebuildIndex() {
   _index.reset();
   if (!_backend) return;
@@ -148,47 +180,68 @@ void MessageStore::rebuildIndex() {
     // Bad filename -> stray file; remove it and move on.
     if (!codec::nameToKey(infos[i].name, k)) { _backend->remove(infos[i].name); continue; }
     uint32_t fileSize = _backend->size(infos[i].name);
-    int liveCount = 0;
-    uint32_t maxT = 0;
-    uint32_t pos = 0;
-    uint32_t validEnd = 0;  // byte offset past the last fully-verified record
-    // Track last live record's text for preview; slot doesn't exist until after the loop.
-    char previewBuf[PREVIEW_LEN];
-    uint16_t previewLen = 0;
-    while (pos < fileSize) {
-      uint32_t got = _backend->read(infos[i].name, pos, _recBuf, (uint32_t)codec::MAX_REC);
-      if (got < (uint32_t)codec::REC_HDR) break;
-      uint32_t sz = (uint32_t)codec::recSize(_recBuf);
-      if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
-      if (pos + sz > fileSize) break;  // torn tail: record overruns the file
-      if (!codec::recDead(_recBuf)) {
-        liveCount++;
-        uint32_t lt = codec::rd32(_recBuf + 12);
-        uint32_t st = codec::rd32(_recBuf + 8);
-        uint32_t t  = lt ? lt : st;
-        if (t > maxT) maxT = t;
-        uint16_t tlen = codec::recTextLen(_recBuf);
-        if (tlen) {
-          uint16_t cap = (uint16_t)(PREVIEW_LEN - 1);
-          previewLen = tlen < cap ? tlen : cap;
-          memcpy(previewBuf, _recBuf + codec::REC_HDR, previewLen);
-        }
-      }
-      pos += sz;
-      validEnd = pos;
-    }
+    LogScan sc;
+    scanLog(infos[i].name, 0, sc);
     // No live records -> nothing to index; remove the dead/empty file.
     // [note] Cleared chats (0-byte files) are also removed here and not preserved in the
     // conversation list after a rebuild - this is intentional; do not change this behavior.
-    if (liveCount == 0) { _backend->remove(infos[i].name); continue; }
+    if (sc.liveCount == 0) { _backend->remove(infos[i].name); continue; }
     // Heal a torn tail: truncate to the last complete record boundary.
     // truncate() is buffer-free (no size limit), so this works for any file size.
-    if (validEnd < fileSize) _backend->truncate(infos[i].name, validEnd);
+    if (sc.validEnd < fileSize) _backend->truncate(infos[i].name, sc.validEnd);
     ConvoSummary& c = ensureSlot(k);
-    c.count    = (uint16_t)liveCount;
-    c.lastTime = maxT;
-    c.logBytes = validEnd;  // valid-record bytes only (torn tail excluded)
-    if (previewLen) _index.setPreview(k, previewBuf, previewLen);
+    c.count    = (uint16_t)sc.liveCount;
+    c.lastTime = sc.maxTime;
+    c.logBytes = sc.validEnd;  // valid-record bytes only (torn tail excluded)
+    if (sc.previewLen) _index.setPreview(k, sc.preview, sc.previewLen);
+  }
+}
+
+// Records reach flash the moment they are appended; the index blob is written on
+// a debounce (see UITask::loop), so a reset inside that window leaves the blob
+// short. messageCount() bounds every read, so a short count strands the newest
+// records - they only resurface once later traffic pushes the count past them
+// again, which is minutes on a busy channel. logBytes mirrors the file length
+// exactly (append, rotate and delete all adjust both), so one size() stat per
+// chat finds the drifted ones without reading them.
+void MessageStore::reconcileIndex() {
+  if (!_backend) return;
+  MsgLogInfo infos[MAX_CONVOS];
+  int m = _backend->list(infos, MAX_CONVOS);
+  for (int i = 0; i < m; i++) {
+    ConvoKey k;
+    if (!codec::nameToKey(infos[i].name, k)) continue;   // stray file; rebuild sweeps these
+    uint32_t fileSize = _backend->size(infos[i].name);
+    int ci = _index.find(k);
+    if (ci >= 0 && _index.logBytes(ci) == fileSize) continue;   // in step, leave it alone
+    uint16_t known = ci >= 0 ? _index.rawCount(ci) : 0;
+    LogScan sc;
+    scanLog(infos[i].name, (int)known, sc);
+    if (sc.validEnd < fileSize) _backend->truncate(infos[i].name, sc.validEnd);
+    ConvoSummary& c = ensureSlot(k);
+    // Anything past the persisted count landed after the last blob write, so it
+    // was never seen. Our own sends among them are not unread.
+    if (sc.liveCount > (int)known) c.unread = (uint16_t)(c.unread + sc.inboundAfter);
+    c.count    = (uint16_t)sc.liveCount;
+    c.logBytes = sc.validEnd;
+    if (sc.maxTime > c.lastTime) c.lastTime = sc.maxTime;
+    if (sc.previewLen) _index.setPreview(k, sc.preview, sc.previewLen);
+    if (c.unread > c.count) c.unread = c.count;
+    if (c.notifyUnread > c.unread) c.notifyUnread = c.unread;
+    invalidateWindow(k);
+  }
+  // A slot whose log is gone entirely (reset between deleteConvo/clearConvo and
+  // the blob write) is not in the listing above, so clamp it here - otherwise the
+  // chat lists a message count nothing can be read for.
+  for (int r = 0; r < _index.count(); r++) {
+    ConvoSummary v;
+    if (!_index.get(r, v)) continue;
+    if (v.count == 0 && v.logBytes == 0) continue;
+    char name[15]; codec::keyToName(v.key, name);
+    if (_backend->size(name) != 0) continue;
+    ConvoSummary& c = _index.ensure(v.key);
+    c.count = 0; c.logBytes = 0; c.unread = 0; c.notifyUnread = 0;
+    invalidateWindow(v.key);
   }
 }
 
