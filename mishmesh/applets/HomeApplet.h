@@ -3,6 +3,7 @@
 #include <mishmesh/core/Anim.h>
 
 #include <mishmesh/core/Applet.h>
+#include <mishmesh/text/Fonts.h>
 #include <mishmesh/widgets/BatteryIndicator.h>
 #include <mishmesh/widgets/QuickDrawer.h>
 
@@ -24,6 +25,12 @@ class HomeApplet : public Applet {
   struct MessagesService* _msgs = nullptr;
 
   // Triple-Back (three presses in quick succession) locks the screen.
+  // The hint bar is the recessive tier on a 64px panel, but caption type is too
+  // faint to read on a larger one - promote it where there is room to spare.
+  static const Font* hintFont(int canvasH) {
+    return canvasH >= 100 ? fontBody() : fontCaption();
+  }
+
   static const uint32_t LOCK_TAP_WINDOW_MS = 700;   // max gap between the taps
   // A pip only appears once the frame reaches the panel, so on e-ink the taps are
   // paced by the flush, not by the user. Same reasoning as KeypadApplet::tapTimeout.

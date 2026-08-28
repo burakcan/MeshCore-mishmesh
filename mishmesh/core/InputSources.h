@@ -43,6 +43,7 @@ public:
   }
   bool poll(InputReport& out) override;
   uint16_t heldMask() const override;
+  void setRotation(int quarters) override { _rotation = ((quarters % 4) + 4) % 4; }
 };
 
 // A 5-way joystick / D-pad. Each direction fires on the press edge; holding Up
@@ -58,6 +59,7 @@ class DirectionalSource : public InputSource {
   uint32_t _nextRepeat[5];
   bool     _rawPressed[5];   // last raw read, for debouncing
   uint32_t _rawSince[5];     // when the raw read last changed
+  int      _rotation = 0;    // quarter turns, see InputSource::setRotation
 public:
   DirectionalSource(int8_t up, int8_t down, int8_t left, int8_t right, int8_t press,
                     const DirectionalMap& map = DirectionalMap(), int long_press_ms = 1000,

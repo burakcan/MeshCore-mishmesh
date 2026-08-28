@@ -174,38 +174,47 @@ int ClockApplet::onRender(Canvas& c) {
   return next;
 }
 
+// A 64px panel has room for one type size and a 16px readout; a taller one can
+// afford the body tier for prose and a magnified readout, which is what makes the
+// numbers legible from arm's length.
+static int numScale(Canvas& c) { return c.height() >= 100 ? 2 : 1; }
+static const Font* hintFont(Canvas& c) { return c.height() >= 100 ? fontBody() : fontCaption(); }
+
 int ClockApplet::renderStopwatch(Canvas& c, int y, int h) {
   ClockService& svc = clockService();
   uint32_t ms = svc.swElapsedMs(_now);
   char buf[16];
   fmtStopwatch(buf, sizeof(buf), ms);
-  int nh = c.fontHeight(fontNum());
-  int capH = c.lineHeight(fontCaption());
+  const int ns = numScale(c);
+  const Font* hf = hintFont(c);
+  int nh = c.fontHeightScaled(fontNum(), ns);
+  int capH = c.lineHeight(hf);
+  int lapH = c.lineHeight(fontCaption());   // the lap list stays in the dense tier
   int avail = h - capH - 2;               // body above the hint line
   int ny = y + (avail - nh) / 2;          // vertically centred readout
   int laps = svc.swLapCount();
   if (laps == 0) {
-    c.drawText(fontNum(), c.width() / 2, ny, buf, DisplayDriver::LIGHT, TextAlign::Center);
+    c.drawTextScaled(fontNum(), c.width() / 2, ny, buf, DisplayDriver::LIGHT, ns, TextAlign::Center);
   } else {
     // Two columns: readout centred in the left column, lap list (newest first)
     // down the right edge - fits several laps instead of two.
     const int lapW = 40;                  // "8 88:88.8" in the caption tier
     int lx = c.width() - lapW;
-    c.drawText(fontNum(), lx / 2, ny, buf, DisplayDriver::LIGHT, TextAlign::Center);
-    int maxRows = (avail - 1) / capH;
+    c.drawTextScaled(fontNum(), lx / 2, ny, buf, DisplayDriver::LIGHT, ns, TextAlign::Center);
+    int maxRows = (avail - 1) / lapH;
     int ly = y + 1;
     for (int i = 0; i < laps && i < maxRows; i++) {
       char lap[16], line[20];
       fmtStopwatch(lap, sizeof(lap), svc.swLapMs(i));
       snprintf(line, sizeof(line), "%d %s", svc.swLapNumber(i), lap);
       c.drawText(fontCaption(), lx, ly, line, DisplayDriver::LIGHT);
-      ly += capH;
+      ly += lapH;
     }
   }
 
   const char* hint = svc.swRunning() ? "Sel stop / up lap / hold reset"
                     : ms ? "Sel resume / hold reset" : "Select to start";
-  c.drawText(fontCaption(), c.width() / 2, y + h - capH, hint,
+  c.drawText(hf, c.width() / 2, y + h - capH, hint,
              DisplayDriver::LIGHT, TextAlign::Center);
   return svc.swRunning() ? 50 : 60000;
 }
@@ -214,21 +223,23 @@ int ClockApplet::renderTimer(Canvas& c, int y, int h) {
   ClockService& svc = clockService();
   char buf[16];
   fmtCountdown(buf, sizeof(buf), svc.tmRemainingMs(_now));
-  int nh = c.fontHeight(fontNum());
-  int capH = c.lineHeight(fontCaption());
+  const int ns = numScale(c);
+  const Font* hf = hintFont(c);
+  int nh = c.fontHeightScaled(fontNum(), ns);
+  int capH = c.lineHeight(hf);
   int avail = h - capH - 2;
   bool paused = svc.tmPaused();
   int block = paused ? nh + 2 + capH : nh;   // centre readout (+ "Paused") as one block
   int ny = y + (avail - block) / 2;
-  c.drawText(fontNum(), c.width() / 2, ny, buf, DisplayDriver::LIGHT, TextAlign::Center);
+  c.drawTextScaled(fontNum(), c.width() / 2, ny, buf, DisplayDriver::LIGHT, ns, TextAlign::Center);
   if (paused)
-    c.drawText(fontCaption(), c.width() / 2, ny + nh + 2, "Paused",
+    c.drawText(hf, c.width() / 2, ny + nh + 2, "Paused",
                DisplayDriver::LIGHT, TextAlign::Center);
 
   const char* hint = svc.tmRunning() ? "Sel pause / hold reset"
                     : paused ? "Sel resume / hold reset"
                              : "Up/down set / sel start";
-  c.drawText(fontCaption(), c.width() / 2, y + h - capH, hint,
+  c.drawText(hf, c.width() / 2, y + h - capH, hint,
              DisplayDriver::LIGHT, TextAlign::Center);
   return svc.tmRunning() ? 200 : 60000;
 }
@@ -257,21 +268,45 @@ int ClockApplet::renderWorld(Canvas& c, int y, int h) {
   return _worldList.needsAnimation() ? ListMenu::TICK_MS : 1000;
 }
 
+// Pomodoro geometry. The ring hugs the left edge and the phase word + readout sit
+// centred in whatever column is left, so the pair stays put as the canvas widens
+// instead of clinging to coordinates picked for a 128px screen. Idle and running
+// both go through this: starting a session must not shift the text.
+struct PomoLayout {
+  int cx, cy, r;      // ring
+  int tx, labelY, numY;
+  int hintH;
+};
+
+static PomoLayout pomoLayout(Canvas& c, int y, int h) {
+  PomoLayout p;
+  p.r = c.height() >= 100 ? 26 : 16;   // hold its own against a magnified readout
+  p.cx = 4 + p.r;
+  p.hintH = c.lineHeight(hintFont(c));
+  p.cy = y + (h - p.hintH) / 2;
+  const int colX = p.cx + p.r + 6;
+  p.tx = colX + (c.width() - colX) / 2;
+  const int labelH = c.lineHeight(fontCaption());
+  const int numH = c.fontHeightScaled(fontNum(), numScale(c));
+  const int blockH = labelH + 2 + numH;
+  p.labelY = y + (h - p.hintH - blockH) / 2;
+  p.numY = p.labelY + labelH + 2;
+  return p;
+}
+
 int ClockApplet::renderPomodoroIdle(Canvas& c, int y, int h) {
   ClockService& s = clockService();
-  int cx = 30, cy = y + (h - c.lineHeight(fontCaption())) / 2, r = 16;
+  const PomoLayout p = pomoLayout(c, y, h);
   int n = s.pmSetCount(), seg = 360 / n, gap = 12;
   for (int i = 0; i < n; i++)
-    c.drawArc(cx, cy, r, 1, i * seg + gap / 2, (i + 1) * seg - gap / 2,
+    c.drawArc(p.cx, p.cy, p.r, 1, i * seg + gap / 2, (i + 1) * seg - gap / 2,
               DisplayDriver::LIGHT);                 // faint track = the empty set
-  c.drawGlyph(iconFont(), cx - 6, cy - 6, (uint16_t)Icon::Tomato, DisplayDriver::LIGHT);
+  c.drawGlyph(iconFont(), p.cx - 6, p.cy - 6, (uint16_t)Icon::Tomato, DisplayDriver::LIGHT);
 
-  // Keep this block at the SAME coords as renderPomodoroRunning so starting a
-  // session does not visually shift the phase word / countdown.
-  c.drawText(fontCaption(), 82, y + 4, "FOCUS", DisplayDriver::LIGHT, TextAlign::Center);
+  c.drawText(fontCaption(), p.tx, p.labelY, "FOCUS", DisplayDriver::LIGHT, TextAlign::Center);
   char buf[8]; snprintf(buf, sizeof(buf), "%u:00", s.pmFocusMin());
-  c.drawText(fontNum(), 82, y + 16, buf, DisplayDriver::LIGHT, TextAlign::Center);
-  c.drawText(fontCaption(), c.width() / 2, y + h - c.lineHeight(fontCaption()),
+  c.drawTextScaled(fontNum(), p.tx, p.numY, buf, DisplayDriver::LIGHT, numScale(c), TextAlign::Center);
+  c.drawText(hintFont(c), c.width() / 2, y + h - p.hintH,
              "Sel start / hold setup", DisplayDriver::LIGHT, TextAlign::Center);
   return 1000;
 }
@@ -303,9 +338,8 @@ void ClockApplet::drawSessionRing(Canvas& c, int cx, int cy, int r) {
 
 int ClockApplet::renderPomodoroRunning(Canvas& c, int y, int h) {
   ClockService& s = clockService();
-  int capH = c.lineHeight(fontCaption());
-  int cx = 30, cy = y + (h - capH) / 2, r = 16;
-  drawSessionRing(c, cx, cy, r);
+  const PomoLayout p = pomoLayout(c, y, h);
+  drawSessionRing(c, p.cx, p.cy, p.r);
 
   const char* word;
   switch (s.pmPhase()) {
@@ -313,16 +347,16 @@ int ClockApplet::renderPomodoroRunning(Canvas& c, int y, int h) {
     case PomoPhase::LongBreak:  word = "LONG BREAK"; break;
     default:                    word = "FOCUS"; break;
   }
-  c.drawText(fontCaption(), 82, y + 4, word, DisplayDriver::LIGHT, TextAlign::Center);
+  c.drawText(fontCaption(), p.tx, p.labelY, word, DisplayDriver::LIGHT, TextAlign::Center);
 
   char buf[8];
   uint32_t sec = (s.pmRemainingMs(_now) + 999u) / 1000u;
   snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)(sec / 60), (unsigned)(sec % 60));
-  c.drawText(fontNum(), 82, y + 16, buf, DisplayDriver::LIGHT, TextAlign::Center);
+  c.drawTextScaled(fontNum(), p.tx, p.numY, buf, DisplayDriver::LIGHT, numScale(c), TextAlign::Center);
 
   const char* hint = s.pmRunning() ? "Sel pause / hold reset"
                                     : "Sel start / hold reset";
-  c.drawText(fontCaption(), c.width() / 2, y + h - capH, hint,
+  c.drawText(hintFont(c), c.width() / 2, y + h - p.hintH, hint,
              DisplayDriver::LIGHT, TextAlign::Center);
   return s.pmRunning() ? 250 : 60000;
 }

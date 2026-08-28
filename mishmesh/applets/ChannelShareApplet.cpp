@@ -53,26 +53,30 @@ void ChannelShareApplet::buildUri() {
 
 int ChannelShareApplet::onRender(Canvas& c) {
   const int w = c.width(), h = c.height();
-  // No title bar: the QR (or key) fills a full-height square anchored top-left,
-  // and the channel name + toggle hint sit in the leftover column on the right.
-  const int side = (h <= w) ? h : w;
-  const int rightX = side + 3;
-  const bool hasRight = rightX < w;
+  // No title bar: the QR (or key) takes a square off the short edge and the
+  // channel name + toggle hint fill what is left - a column beside it in
+  // landscape, a band underneath in portrait, where splitting sideways would
+  // leave them no width at all.
+  const bool stacked = h > w;
+  const int side = stacked ? w : h;
+  const int rightX = stacked ? 0 : side + 3;
+  const int rightY = stacked ? side + 3 : 0;
+  const bool hasRight = rightX < w && rightY < h;
 
   if (!_keyHex[0]) {
-    c.drawText(fontBody(), side / 2, h / 2 - 4, "No key",
+    c.drawText(fontBody(), side / 2, side / 2 - 4, "No key",
                DisplayDriver::LIGHT, TextAlign::Center);
   } else if (_showKey) {
     c.drawTextWrapped(fontBody(), 1, 2, side - 2, _keyHex, DisplayDriver::LIGHT);
   } else if (_qr.valid()) {
     _qr.draw(c, 0, 0, side, side);
   } else {
-    c.drawText(fontBody(), side / 2, h / 2 - 4, "QR too big",
+    c.drawText(fontBody(), side / 2, side / 2 - 4, "QR too big",
                DisplayDriver::LIGHT, TextAlign::Center);
   }
 
   if (hasRight) {
-    Canvas right = c.region(rightX, 0, w - rightX, h);
+    Canvas right = c.region(rightX, rightY, w - rightX, h - rightY);
     int ry = 2;
     if (_name[0])
       ry = right.drawTextWrapped(fontBody(), 1, ry, right.width() - 2, _name,

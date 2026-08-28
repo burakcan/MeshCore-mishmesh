@@ -126,15 +126,20 @@ int HomeApplet::onRender(Canvas& c) {
   // render it in fontBody, or it comes out as missing-glyph blocks.
   char* suffix = strchr(clock, ' ');
   if (suffix) *suffix++ = 0;
-  // Vertical budget assumes the compact 16px fontNum: clock+date+unread must clear the hint bar.
+  // fontNum is 16px, sized for a 64px-tall panel. On a taller one it reads as an
+  // afterthought, so magnify it - whole multiples of a bitmap glyph are exact, so
+  // the clock stays as sharp as everything around it. The vertical budget still
+  // has to clear the hint bar: clock + date + unread all sit above it.
+  const int numScale = c.height() >= 100 ? 2 : 1;
+  const int numH = c.fontHeightScaled(fontNum(), numScale);
   int cy = BAR_H + 4;
-  c.drawText(fontNum(), MARGIN, cy, clock, DisplayDriver::LIGHT);
+  c.drawTextScaled(fontNum(), MARGIN, cy, clock, DisplayDriver::LIGHT, numScale);
   if (suffix) {
-    int sx = MARGIN + c.textWidth(fontNum(), clock) + 3;
-    int sy = cy + c.fontHeight(fontNum()) - c.fontHeight(fontBody());   // baseline-align
+    int sx = MARGIN + c.textWidthScaled(fontNum(), clock, numScale) + 3;
+    int sy = cy + numH - c.fontHeight(fontBody());   // baseline-align
     c.drawText(fontBody(), sx, sy, suffix, DisplayDriver::LIGHT);
   }
-  int dy = cy + c.fontHeight(fontNum()) + 2;
+  int dy = cy + numH + 2;
   if (t) {
     char date[24];
     DateFormat df = _app ? (DateFormat)_app->dateFormat() : DateFormat::DMY;
@@ -145,16 +150,16 @@ int HomeApplet::onRender(Canvas& c) {
     char b[8];
     snprintf(b, sizeof(b), "%u", _msgs->totalNotifyUnread());
     int uy = dy + c.fontHeight(fontBody()) + 2;
-    int hintY = h - c.fontHeight(fontCaption()) - 1;
+    int hintY = h - c.fontHeight(hintFont(h)) - 1;
     if (uy + 13 <= hintY) {   // 12px glyph + 1px breathing room above the hint bar
       c.drawGlyph(iconFont(), MARGIN, uy, (uint16_t)Icon::Mail, DisplayDriver::LIGHT);
       c.drawText(fontBody(), MARGIN + 16, uy + 2, b, DisplayDriver::LIGHT);
     }
   }
 
-  // --- hint bar: <Left  .Apps  vTgls  Right> in the caption tier ---
+  // --- hint bar: <Left  .Apps  vTgls  Right> ---
   {
-    const Font* f = fontCaption();
+    const Font* f = hintFont(h);
     char l4[5] = {0}, r4[5] = {0};
     const AppletRegistration* lr = uiPrefs().quickAction(UiPrefs::SLOT_LEFT);
     const AppletRegistration* rr = uiPrefs().quickAction(UiPrefs::SLOT_RIGHT);
@@ -176,24 +181,29 @@ int HomeApplet::onRender(Canvas& c) {
     total += gaps * GAP;
     int x = (w - total) / 2;
     if (x < 0) x = 0;
-    int y = h - c.fontHeight(f) - 1;
+    const int fh = c.fontHeight(f);
+    int y = h - fh - 1;
+    // The markers are drawn at a fixed 5px (3px for the press square) while the
+    // label height follows the font, so centre them or they ride high.
+    const int gy = y + (fh - 5) / 2;
+    const int sy = y + (fh - 3) / 2;
     if (lr) {
-      triLeft(c, x, y);
+      triLeft(c, x, gy);
       c.drawText(f, x + 3 + PAD, y, l4, DisplayDriver::LIGHT);
       x += wl + GAP;
     }
     if (_menu) {
-      c.fillRect(x, y + 1, 3, 3, DisplayDriver::LIGHT);   // press marker
+      c.fillRect(x, sy, 3, 3, DisplayDriver::LIGHT);   // press marker
       c.drawText(f, x + 3 + PAD, y, "Apps", DisplayDriver::LIGHT);
       x += wa + GAP;
     }
-    triDown(c, x, y);
+    triDown(c, x, gy);
     c.drawText(f, x + GLYPH + PAD, y, "Tgls", DisplayDriver::LIGHT);
     x += wt;
     if (rr) {
       x += GAP;
       c.drawText(f, x, y, r4, DisplayDriver::LIGHT);
-      triRight(c, x + c.textWidth(f, r4) + PAD, y);
+      triRight(c, x + c.textWidth(f, r4) + PAD, gy);
     }
   }
 

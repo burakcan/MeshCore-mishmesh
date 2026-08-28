@@ -49,12 +49,21 @@
 // [/mishmesh]
 
 class GxEPDDisplay : public DisplayDriver {
+public:
+  static const int MAX_UI_SCALE = 2;   // [mishmesh] 3x leaves too little canvas
+private:
 
   GxEPD2_BW<EINK_DISPLAY_MODEL, EINK_DISPLAY_MODEL::HEIGHT> display;
-  const float scale_x  = EINK_SCALE_X;
-  const float scale_y  = EINK_SCALE_Y;
+  float scale_x  = EINK_SCALE_X;   // [mishmesh] mutable: see setUiScale()
+  float scale_y  = EINK_SCALE_Y;
   const float offset_x = EINK_X_OFFSET;
   const float offset_y = EINK_Y_OFFSET;
+  // [mishmesh] geometry the UI asked for; applyGeometry() turns it into the
+  // logical canvas size and the logical-to-panel scale.
+  int  _ui_scale = 1;
+  int  _rotation = 0;       // quarter turns clockwise from the variant default
+  void applyGeometry();
+  // [/mishmesh]
   bool _init = false;
   bool _isOn = false;
   uint16_t _curr_color;
@@ -80,6 +89,13 @@ public:
 
   bool isOn() override { return _isOn; }
   bool isEink() override { return true; }
+  // [mishmesh] window_bkg is GxEPD_WHITE here; see DisplayDriver::hasLightBackground
+  bool hasLightBackground() const override { return true; }
+  bool supportsUiScale() const override { return true; }
+  void setUiScale(int mult) override;
+  bool supportsOrientation() const override { return true; }
+  void setDisplayRotation(int quarters) override;
+  // [/mishmesh]
   // [mishmesh] a panel refresh blocks for hundreds of ms; hand GxEPD2's busy
   // callback through so the UI can keep sampling buttons meanwhile.
   void setBusyPoll(void (*cb)(const void*), const void* ctx) override;

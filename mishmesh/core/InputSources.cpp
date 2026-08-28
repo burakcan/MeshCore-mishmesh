@@ -68,13 +68,16 @@ bool DirectionalSource::poll(InputReport& out) {
     bool pressed = _wasPressed[i];
     if ((uint32_t)(now - _rawSince[i]) >= DEBOUNCE_MS) pressed = _rawPressed[i];
 
-    InputEvent ev = mapDirection(_map, it.dir);
+    // Repeat follows what the press MEANS, not which pin it came from: with the
+    // map or a rotation in play, the physical up/down keys are not necessarily
+    // the ones that scroll a list.
+    InputEvent ev = rotateDirection(mapDirection(_map, it.dir), _rotation);
     if (pressed && !_wasPressed[i]) {              // press edge: fire immediately, arm repeat
       _wasPressed[i] = true;
       _nextRepeat[i] = now + REPEAT_DELAY_MS;
       if (ev != InputEvent::None) { out.event = ev; out.ch = 0; return true; }
     } else if (pressed) {                          // held: Up/Down auto-repeat (fast scroll)
-      bool repeats = (it.dir == Direction::Up || it.dir == Direction::Down);
+      bool repeats = (ev == InputEvent::NavUp || ev == InputEvent::NavDown);
       if (repeats && (int32_t)(now - _nextRepeat[i]) >= 0) {
         _nextRepeat[i] = now + REPEAT_INTERVAL_MS;
         if (ev != InputEvent::None) { out.event = ev; out.ch = 0; return true; }
@@ -108,7 +111,7 @@ uint16_t DirectionalSource::heldMask() const {
   uint16_t mask = 0;
   for (int i = 0; i < 4; i++) {
     if (!_wasPressed[i]) continue;
-    InputEvent ev = mapDirection(_map, dirs[i]);
+    InputEvent ev = rotateDirection(mapDirection(_map, dirs[i]), _rotation);
     if (ev != InputEvent::None) mask |= maskBit(ev);
   }
   return mask;

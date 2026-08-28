@@ -26,7 +26,7 @@ private:
     uint16_t       icon;
     bool           (*available)(const AppletContext&);
   };
-  static const int ENTRY_COUNT = 10;
+  static const int ENTRY_COUNT = 11;
   static const Entry ENTRIES[ENTRY_COUNT];
 
   struct Model : ListModel {

@@ -25,8 +25,18 @@ DisplayDriver::Color themeSwapped(DisplayDriver::Color c) {
   return c == DisplayDriver::DARK ? DisplayDriver::LIGHT : DisplayDriver::DARK;
 }
 
+static bool& lightBackgroundFlag() { static bool v = false; return v; }
+bool lightBackgroundPanel() { return lightBackgroundFlag(); }
+void setLightBackgroundPanel(bool on) { lightBackgroundFlag() = on; }
+
 ColorVal themedColor(DisplayDriver::Color c) {
-  return themeSwapped(c) == DisplayDriver::DARK ? UIColor::window_bkg : UIColor::primary_txt;
+  DisplayDriver::Color s = themeSwapped(c);
+  // window_bkg is the dark end on a mono OLED and the light end on e-ink, so on
+  // e-ink the two semantic colors have to trade places or the whole theme comes
+  // out inverted - dark mode painting white and light mode painting black.
+  if (lightBackgroundPanel())
+    s = (s == DisplayDriver::DARK) ? DisplayDriver::LIGHT : DisplayDriver::DARK;
+  return s == DisplayDriver::DARK ? UIColor::window_bkg : UIColor::primary_txt;
 }
 
 // Intersect a local rect with the clip window [cl,cr) x [ct,cb); false if
@@ -123,12 +133,26 @@ struct TextState {
   const mf_font_s* font;
   DisplayDriver::Color col;
   int16_t x, y;
+  int scale;              // integer glyph magnification, see emit()
+  int16_t ax, ay;         // anchor the scaling is measured from
 };
+
+// Everything mcufont emits goes through here. At scale 1 it is a plain fillRect;
+// above that, every coordinate is multiplied out from the anchor - which scales
+// the glyph advances as well as the glyph bodies, since mcufont lays the line out
+// in unscaled space and we transform the result. Whole multiples of a bitmap glyph
+// are exact, so this stays as sharp as the 1:1 case.
+void emit(TextState* s, int x, int y, int w, int h) {
+  if (s->scale <= 1) { s->c->fillRect(x, y, w, h, s->col); return; }
+  const int sx = s->ax + (x - s->ax) * s->scale;
+  const int sy = s->ay + (y - s->ay) * s->scale;
+  s->c->fillRect(sx, sy, w * s->scale, h * s->scale, s->col);
+}
 
 void mm_pixel(int16_t x, int16_t y, uint8_t count, uint8_t alpha, void* state) {
   if (alpha < 128) return;
   TextState* s = (TextState*)state;
-  s->c->fillRect(x, y, count, 1, s->col);
+  emit(s, x, y, count, 1);
 }
 
 uint8_t mm_char(int16_t x, int16_t y, mf_char ch, void* state) {
@@ -155,7 +179,7 @@ uint8_t mm_char(int16_t x, int16_t y, mf_char ch, void* state) {
     if (adv == 0) return 0;
     int16_t top = 1, h = (int16_t)s->font->height - 2;   // 1px inset top/bottom
     int16_t w = adv > 1 ? adv - 1 : adv;                  // 1px gap to next glyph
-    if (h > 0 && w > 0) s->c->fillRect(x, y + top, w, h, s->col);
+    if (h > 0 && w > 0) emit(s, x, y + top, w, h);
     return adv;
   }
   return mf_render_character(s->font, x, y, ch, mm_pixel, state);
@@ -211,24 +235,49 @@ int Canvas::fontHeight(const mf_font_s* font) const {
 void Canvas::drawText(const mf_font_s* font, int x, int y, const char* str,
                       DisplayDriver::Color c, TextAlign align) {
   if (!font || !str) return;
-  TextState st = { this, font, c, (int16_t)x, (int16_t)y };
+  TextState st = { this, font, c, (int16_t)x, (int16_t)y, 1, (int16_t)x, (int16_t)y };
   enum mf_align_t a = align == TextAlign::Center ? MF_ALIGN_CENTER
                     : align == TextAlign::Right  ? MF_ALIGN_RIGHT
                                                  : MF_ALIGN_LEFT;
   mf_render_aligned(font, x, y, a, str, 0, mm_char, &st);
 }
 
+int Canvas::textWidthScaled(const mf_font_s* font, const char* str, int scale) const {
+  if (scale < 1) scale = 1;
+  return textWidth(font, str) * scale;
+}
+
+int Canvas::fontHeightScaled(const mf_font_s* font, int scale) const {
+  if (scale < 1) scale = 1;
+  return fontHeight(font) * scale;
+}
+
+void Canvas::drawTextScaled(const mf_font_s* font, int x, int y, const char* str,
+                            DisplayDriver::Color c, int scale, TextAlign align) {
+  if (!font || !str) return;
+  if (scale < 1) scale = 1;
+  if (scale == 1) { drawText(font, x, y, str, c, align); return; }
+  // Alignment has to be resolved against the scaled width and then handed to
+  // mcufont as a left-aligned run: it would otherwise centre the unscaled line.
+  int w = textWidthScaled(font, str, scale);
+  int ox = align == TextAlign::Center ? x - w / 2
+         : align == TextAlign::Right  ? x - w
+                                      : x;
+  TextState st = { this, font, c, (int16_t)ox, (int16_t)y, scale, (int16_t)ox, (int16_t)y };
+  mf_render_aligned(font, ox, y, MF_ALIGN_LEFT, str, 0, mm_char, &st);
+}
+
 int Canvas::drawTextWrapped(const mf_font_s* font, int x, int y, int w,
                             const char* str, DisplayDriver::Color c) {
   if (!font || !str) return y;
-  TextState st = { this, font, c, (int16_t)x, (int16_t)y };
+  TextState st = { this, font, c, (int16_t)x, (int16_t)y, 1, (int16_t)x, (int16_t)y };
   mf_wordwrap(font, w, str, mm_line, &st);
   return st.y;
 }
 
 int Canvas::measureTextWrapped(const mf_font_s* font, int w, const char* str) const {
   if (!font || !str) return 0;
-  TextState st = { const_cast<Canvas*>(this), font, DisplayDriver::LIGHT, 0, 0 };
+  TextState st = { const_cast<Canvas*>(this), font, DisplayDriver::LIGHT, 0, 0, 1, 0, 0 };
   mf_wordwrap(font, w, str, mm_measure_line, &st);
   return st.y;
 }
@@ -236,7 +285,7 @@ int Canvas::measureTextWrapped(const mf_font_s* font, int w, const char* str) co
 void Canvas::drawGlyph(const mf_font_s* font, int x, int y, uint16_t codepoint,
                        DisplayDriver::Color c) {
   if (!font) return;
-  TextState st = { this, font, c, (int16_t)x, (int16_t)y };
+  TextState st = { this, font, c, (int16_t)x, (int16_t)y, 1, (int16_t)x, (int16_t)y };
   mf_render_character(font, x, y, (mf_char)codepoint, mm_pixel, &st);
 }
 

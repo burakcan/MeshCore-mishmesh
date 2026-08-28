@@ -11,6 +11,12 @@ public:
   struct Rect { int x, y, w, h; };
 
   bool on = true;
+  bool eink = false;                  // bistable panel: keeps the last flush
+  bool lightBackground = false;       // window_bkg sits at the light end
+  bool uiScalable = false;            // can magnify the UI by a whole number
+  int  uiScale = 1;
+  bool orientable = false;            // can be turned
+  int  rotation = 0;
   std::vector<std::string> calls;     // ordered log of high-level calls
   std::vector<Rect> fills;            // fillRect args (device coords)
   std::vector<Rect> rects;            // drawRect args (device coords)
@@ -26,6 +32,12 @@ public:
   FakeDisplayDriver(int w = 128, int h = 64) : DisplayDriver(w, h) {}
 
   bool isOn() override { return on; }
+  bool isEink() override { return eink; }
+  bool hasLightBackground() const override { return lightBackground; }
+  bool supportsUiScale() const override { return uiScalable; }
+  void setUiScale(int mult) override { uiScale = mult; }
+  bool supportsOrientation() const override { return orientable; }
+  void setDisplayRotation(int quarters) override { rotation = quarters; }
   void turnOn() override { on = true; }
   void turnOff() override { on = false; }
   void clear() override { calls.push_back("clear"); }

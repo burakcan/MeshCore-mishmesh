@@ -326,6 +326,42 @@ TEST(CanvasArc, OuterEdgeHasNoGaps) {
   }
 }
 
+
+// A mono OLED puts window_bkg at the dark end, e-ink at the light end. Resolving
+// semantic colors without accounting for that inverted the whole theme on e-ink:
+// dark mode painted white on black text and light mode did the reverse.
+TEST(ThemePolarity, DarkResolvesToTheDarkEndOnEitherPanel) {
+  mishmesh::uiPrefs().setDarkMode(true);
+
+  mishmesh::setLightBackgroundPanel(false);            // mono OLED
+  const ColorVal oled_bg = mishmesh::themedColor(DisplayDriver::DARK);
+  const ColorVal oled_fg = mishmesh::themedColor(DisplayDriver::LIGHT);
+
+  mishmesh::setLightBackgroundPanel(true);             // e-ink
+  const ColorVal eink_bg = mishmesh::themedColor(DisplayDriver::DARK);
+  const ColorVal eink_fg = mishmesh::themedColor(DisplayDriver::LIGHT);
+  mishmesh::setLightBackgroundPanel(false);
+
+  EXPECT_EQ(UIColor::window_bkg, oled_bg);     // window_bkg IS dark here
+  EXPECT_EQ(UIColor::primary_txt, oled_fg);
+  EXPECT_EQ(UIColor::primary_txt, eink_bg);    // and the light end there, so swap
+  EXPECT_EQ(UIColor::window_bkg, eink_fg);
+  EXPECT_NE(oled_bg, oled_fg);
+  EXPECT_NE(eink_bg, eink_fg);
+}
+
+TEST(ThemePolarity, LightModeStillInvertsOnTopOfPanelPolarity) {
+  mishmesh::setLightBackgroundPanel(true);
+  mishmesh::uiPrefs().setDarkMode(true);
+  const ColorVal dark_mode_bg = mishmesh::themedColor(DisplayDriver::DARK);
+  mishmesh::uiPrefs().setDarkMode(false);
+  const ColorVal light_mode_bg = mishmesh::themedColor(DisplayDriver::DARK);
+  mishmesh::setLightBackgroundPanel(false);
+  mishmesh::uiPrefs().setDarkMode(true);
+
+  EXPECT_NE(dark_mode_bg, light_mode_bg);   // the two themes must not look alike
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

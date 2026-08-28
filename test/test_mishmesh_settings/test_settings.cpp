@@ -367,7 +367,7 @@ TEST(SettingsApplet, SelectPushesDetailWithChosenPanel) {
 
   mishmesh::SettingsApplet menu;
   host.setRoot(&menu);
-  EXPECT_EQ(9, menu.entryCountForTest());  // Home, Battery, Contacts, Messages, Advert, Radio, Time, Experimental, System Info
+  EXPECT_EQ(10, menu.entryCountForTest());  // Home, Display, Battery, Contacts, Messages, Advert, Radio, Time, Experimental, System Info
 
   // Row 0 = Home: Select pushes the detail bound to homeSettings().
   host.dispatch(mishmesh::InputEvent::Select);
@@ -376,7 +376,7 @@ TEST(SettingsApplet, SelectPushesDetailWithChosenPanel) {
   host.dispatch(mishmesh::InputEvent::Back);   // pop back to the menu
   EXPECT_EQ(&menu, host.foreground());
 
-  // Row 1 = Battery.
+  // Row 1 = Display.
   host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::Select);
   EXPECT_EQ(&mishmesh::settingsDetailApplet(), host.foreground());
@@ -391,7 +391,7 @@ TEST(SettingsApplet, RendersStatusBarHeader) {
   mishmesh::Canvas c(&d);
   menu.onRender(c);
   EXPECT_GT(d.fills.size(), 0u);                 // header + list drew something
-  EXPECT_EQ(9, menu.entryCountForTest());        // Home/Battery/Contacts/Messages/Advert/Radio/Time/Experimental/SystemInfo all available
+  EXPECT_EQ(10, menu.entryCountForTest());       // Home/Display/Battery/Contacts/Messages/Advert/Radio/Time/Experimental/SystemInfo all available
 }
 
 #include <mishmesh/applets/settings/SystemInfoPanel.h>
@@ -465,9 +465,9 @@ TEST(SettingsApplet, ListsAllSections) {
   mishmesh::AppletContext ctx;
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu; host.setRoot(&menu);
-  // Home/Battery/Contacts/Messages/Advert/Radio/Time/Experimental/System Info. Bluetooth
-  // moved to the home-screen quick toggle, so it is no longer a settings section.
-  EXPECT_EQ(9, menu.entryCountForTest());
+  // Home/Display/Battery/Contacts/Messages/Advert/Radio/Time/Experimental/System Info.
+  // Bluetooth moved to the home-screen quick toggle, so it is not a section.
+  EXPECT_EQ(10, menu.entryCountForTest());
 }
 
 TEST(SettingsPanelLifecycle, DetailAppletCallsOnHideOnStop) {
@@ -604,10 +604,10 @@ TEST(SettingsApplet, ExperimentalSectionPushesPanel) {
   mishmesh::AppletHost host(&d, ctx);
   mishmesh::SettingsApplet menu;
   host.setRoot(&menu);
-  EXPECT_EQ(9, menu.entryCountForTest());
+  EXPECT_EQ(10, menu.entryCountForTest());
 
-  // Experimental is index 7 (after Home,Battery,Contacts,Messages,Advert,Radio,Time).
-  for (int i = 0; i < 7; i++) host.dispatch(mishmesh::InputEvent::NavDown);
+  // Experimental is index 8 (Home,Display,Battery,Contacts,Messages,Advert,Radio,Time).
+  for (int i = 0; i < 8; i++) host.dispatch(mishmesh::InputEvent::NavDown);
   host.dispatch(mishmesh::InputEvent::Select);
   EXPECT_EQ(&mishmesh::settingsDetailApplet(), host.foreground());
 }

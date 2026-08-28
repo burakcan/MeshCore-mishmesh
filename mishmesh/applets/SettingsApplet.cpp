@@ -1,6 +1,7 @@
 #include <mishmesh/applets/SettingsApplet.h>
 #include <mishmesh/applets/SettingsDetailApplet.h>
 #include <mishmesh/applets/settings/HomeSettingsPanel.h>
+#include <mishmesh/applets/settings/DisplaySettingsPanel.h>
 #include <mishmesh/applets/settings/BatterySettingsPanel.h>
 #include <mishmesh/applets/settings/ContactsSettingsPanel.h>
 #include <mishmesh/applets/settings/MessagesSettingsPanel.h>
@@ -18,6 +19,7 @@
 namespace mishmesh {
 
 static SettingsPanel* homePanelPtr()        { return &homeSettings(); }
+static SettingsPanel* displayPanelPtr()      { return &displaySettings(); }
 static SettingsPanel* batteryPanelPtr()     { return &batterySettings(); }
 static SettingsPanel* contactsPanelPtr()    { return &contactsSettings(); }
 static SettingsPanel* messagesPanelPtr()    { return &messagesSettings(); }
@@ -39,6 +41,7 @@ static bool devBuildOnly(const AppletContext&) {
 
 const SettingsApplet::Entry SettingsApplet::ENTRIES[ENTRY_COUNT] = {
   { "Home",        homePanelPtr,       (uint16_t)Icon::Home,      always    },
+  { "Display",     displayPanelPtr,    (uint16_t)Icon::Sun,       always    },
   { "Battery",     batteryPanelPtr,    (uint16_t)Icon::BatteryFull, always },
   { "Contacts",    contactsPanelPtr,   (uint16_t)Icon::Users,     always    },
   { "Messages",    messagesPanelPtr,   (uint16_t)Icon::Message,   always    },

@@ -533,6 +533,44 @@ TEST(AppletHost, ReducedMotionNeverDelaysInputRepaints) {
   EXPECT_EQ(1, after);   // a press repaints now, spacing or not
 }
 
+// A bistable panel keeps its last flush, so going to sleep has to leave a blank
+// frame behind - otherwise the dead UI stays on the glass and the next press,
+// which wakes to home, looks like the screen was lost.
+TEST(AppletHost, SleepBlanksABistablePanel) {
+  FakeDisplayDriver d;
+  d.eink = true;
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setRoot(&root);
+  host.setAutoOffMillis(1000);
+
+  host.loop(0);
+  d.calls.clear();
+  host.loop(5000);                     // idle past the auto-off deadline
+
+  int frames = 0;
+  for (const auto& c : d.calls) if (c == "endFrame") frames++;
+  EXPECT_FALSE(d.on);                  // asleep
+  EXPECT_GE(frames, 1);                // and something was flushed on the way out
+}
+
+TEST(AppletHost, SleepDoesNotRepaintAPanelThatBlanksItself) {
+  FakeDisplayDriver d;                 // eink defaults false
+  AppletHost host(&d, emptyCtx());
+  FakeApplet root("root");
+  host.setRoot(&root);
+  host.setAutoOffMillis(1000);
+
+  host.loop(0);
+  d.calls.clear();
+  host.loop(5000);
+
+  int frames = 0;
+  for (const auto& c : d.calls) if (c == "endFrame") frames++;
+  EXPECT_FALSE(d.on);
+  EXPECT_EQ(0, frames);                // turnOff() is enough on an OLED
+}
+
 TEST(InputState, IsDownReflectsHeldBits) {
   InputState s;
   EXPECT_FALSE(s.isDown(InputEvent::NavLeft));

@@ -20,6 +20,12 @@ DisplayDriver::Color themeSwapped(DisplayDriver::Color c);
 // for the frame-clear background. Raw blits (games) intentionally bypass it.
 ColorVal themedColor(DisplayDriver::Color c);
 
+// Panel polarity, set once from DisplayDriver::hasLightBackground(). Kept as a
+// module flag rather than passed around because themedColor() is reached from
+// places that hold no driver.
+bool lightBackgroundPanel();
+void setLightBackgroundPanel(bool on);
+
 // A clipped drawing surface over a DisplayDriver: a value type carrying a
 // drawing origin, a clip window, and the current frame time. The origin and the
 // clip are tracked separately so a sub-region requested at a negative offset
@@ -81,6 +87,16 @@ public:
   int fontHeight(const mf_font_s* font) const;   // bounding-box height, for centering
   void drawText(const mf_font_s* font, int x, int y, const char* str,
                 DisplayDriver::Color c, TextAlign align = TextAlign::Left);
+  // Integer-magnified single-line text. Bitmap glyphs replicate exactly at whole
+  // multiples, so this is pixel-crisp where a fractional scale smears - it is how
+  // one widget gets bigger type without a second atlas or a second coordinate
+  // space. Wrapping is not scaled; use it for a headline, not a paragraph.
+  void drawTextScaled(const mf_font_s* font, int x, int y, const char* str,
+                      DisplayDriver::Color c, int scale,
+                      TextAlign align = TextAlign::Left);
+  int textWidthScaled(const mf_font_s* font, const char* str, int scale) const;
+  int fontHeightScaled(const mf_font_s* font, int scale) const;
+
   // Word-wraps within w; returns the y just below the last line.
   int drawTextWrapped(const mf_font_s* font, int x, int y, int w,
                       const char* str, DisplayDriver::Color c);

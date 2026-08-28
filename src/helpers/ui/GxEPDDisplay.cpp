@@ -9,6 +9,9 @@
 #ifndef DISPLAY_ROTATION
   #define DISPLAY_ROTATION 3
 #endif
+// [mishmesh] GxEPD2 counts rotation in quarter turns, so our own quarter turns
+// just add on to whatever the variant chose as its default.
+#define EINK_ROTATION(quarters) (((DISPLAY_ROTATION) + (quarters)) % 4)
 
 #ifdef ESP32
   SPIClass SPI1 = SPIClass(FSPI);
@@ -34,7 +37,7 @@ bool GxEPDDisplay::begin() {
   SPI1.begin();
 #endif
   display.init(115200, true, 2, false);
-  display.setRotation(DISPLAY_ROTATION);
+  display.setRotation(EINK_ROTATION(_rotation));   // [mishmesh] honour a turned panel
   setTextSize(1);  // Default to size 1
   display.setPartialWindow(0, 0, display.width(), display.height());
 
@@ -131,6 +134,42 @@ void GxEPDDisplay::setBusyPoll(void (*cb)(const void*), const void* ctx) {
   s_busy_poll = cb;
   s_busy_ctx = ctx;
   display.epd2.setBusyCallback(cb ? pacedBusyPoll : nullptr, nullptr);
+}
+// [/mishmesh]
+
+// [mishmesh] The variant's EINK_LOGICAL_* describes the panel at 1x in its default
+// orientation. A higher multiple divides that down and magnifies to match, which
+// for bitmap glyphs is exact; portrait swaps the two axes. Driven off the macros
+// rather than display.width() so it is safe to call before begin(), where the
+// rotation has not been applied yet.
+void GxEPDDisplay::applyGeometry() {
+  const bool portrait = (_rotation % 2) != 0;   // odd turns put the panel on its side
+  const int lw = portrait ? EINK_LOGICAL_HEIGHT : EINK_LOGICAL_WIDTH;
+  const int lh = portrait ? EINK_LOGICAL_WIDTH  : EINK_LOGICAL_HEIGHT;
+  scale_x = (portrait ? EINK_SCALE_Y : EINK_SCALE_X) * _ui_scale;
+  scale_y = (portrait ? EINK_SCALE_X : EINK_SCALE_Y) * _ui_scale;
+  setLogicalSize(lw / _ui_scale, lh / _ui_scale);
+}
+
+void GxEPDDisplay::setUiScale(int mult) {
+  if (mult < 1) mult = 1;
+  if (mult > MAX_UI_SCALE) mult = MAX_UI_SCALE;
+  _ui_scale = mult;
+  applyGeometry();
+}
+
+void GxEPDDisplay::setDisplayRotation(int quarters) {
+  quarters = ((quarters % 4) + 4) % 4;
+  if (_rotation == quarters) return;
+  _rotation = quarters;
+  applyGeometry();
+  if (_init) {   // before begin() the rotation is applied there instead
+    display.setRotation(EINK_ROTATION(_rotation));
+    display.setPartialWindow(0, 0, display.width(), display.height());
+    display.fillScreen(GxEPD_WHITE);
+    display.display(true);       // the old orientation is still on the glass
+    last_display_crc_value = 0;
+  }
 }
 // [/mishmesh]
 

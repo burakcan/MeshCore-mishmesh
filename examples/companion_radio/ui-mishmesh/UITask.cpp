@@ -255,9 +255,16 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   mishmesh::quickReplyStore().begin(&_theStorage);   // load canned replies
   mishmesh::uiPrefs().begin(&_theStorage);   // battery style + home shortcuts
   mishmeshBatteryCalFactor = mishmesh::uiPrefs().battCalPercent() / 100.0f;   // apply persisted trim
+  // Magnification changes what width()/height() report, so it has to be settled
+  // before the host builds its canvas around them.
+  if (_display && _display->supportsUiScale())
+    _display->setUiScale(mishmesh::uiPrefs().uiScale());
+  if (_display && _display->supportsOrientation())
+    _display->setDisplayRotation(mishmesh::uiPrefs().rotation());
   mishmesh::clockService().begin(&_theStorage);   // alarm / world cities / timer duration
   ctx.sound = &_sound;
   _host = new mishmesh::AppletHost(_display, ctx);
+  _host->setInputRotation(mishmesh::uiPrefs().effectiveInputRotation());
   _host->setAutoOffMillis(mishmesh::screenSleepMillis(screenSleepIndex()));   // honor saved sleep pref
 
   _menu = new mishmesh::AppMenuApplet();

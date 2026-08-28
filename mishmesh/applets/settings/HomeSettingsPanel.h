@@ -4,7 +4,6 @@
 #include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/widgets/ListMenu.h>
-#include <mishmesh/widgets/StepperDialog.h>
 
 namespace mishmesh {
 
@@ -38,30 +37,27 @@ private:
 
 QuickActionPickerPanel& quickActionPicker();
 
-// Home-face settings: screen sleep, the two shortcut slots, and screen brightness.
+// Home-face settings: the two shortcut slots. Screen sleep and brightness moved
+// to the Display panel - they are about the panel, not this screen.
 class HomeSettingsPanel : public SettingsPanel {
 public:
   const char* title() const override { return "Home"; }
   void begin(AppletContext& ctx) override;
   int  renderBody(Canvas& c, int x, int y, int w, int h) override;
   bool onInput(InputEvent ev) override;
-  bool modalActive() const override { return _editingSleep || _editingBrightness; }
+  bool modalActive() const override { return false; }
 
 private:
   struct Model : ListModel {
     AppServices* app = nullptr;
-    enum Row : int { ScreenSleep, LeftAction, RightAction, ScreenBrightness, ROW_COUNT };
-    int count() const override { return app && app->screenBrightnessSupported() ? ROW_COUNT : ROW_COUNT - 1; }
+    enum Row : int { LeftAction, RightAction, ROW_COUNT };
+    int count() const override { return ROW_COUNT; }
     const char* label(int i) const override;
-    const char* value(int i) const override;   // shortcut labels + sleep label
+    const char* value(int i) const override;   // configured shortcut labels
   } _model;
 
   AppletHost* _host = nullptr;
   ListMenu _list;
-  StepperDialog _stepper;
-  bool _editingSleep = false;
-  bool _editingBrightness = false;
-  uint8_t _brightnessRestore = 4;  // saved index to revert to if the stepper is cancelled
 };
 
 HomeSettingsPanel& homeSettings();

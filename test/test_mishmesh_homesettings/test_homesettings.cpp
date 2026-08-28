@@ -4,6 +4,8 @@
 #include <mishmesh/core/UiPrefs.h>
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/applets/settings/HomeSettingsPanel.h>
+#include <mishmesh/applets/settings/DisplaySettingsPanel.h>
+#include <mishmesh/core/AppletHost.h>
 #include "FakeDisplayDriver.h"
 
 using namespace mishmesh;
@@ -68,14 +70,15 @@ TEST(HomeSettingsPanel, RendersWithoutHost) {
   EXPECT_GT(d.fills.size(), 0u);
 }
 
-TEST(HomeSettingsPanel, ScreenSleepStepperAppliesSelection) {
+TEST(DisplaySettingsPanel, ScreenSleepStepperAppliesSelection) {
   prime();
   FakeSleepApp app;
   AppletContext ctx; ctx.app = &app;
-  HomeSettingsPanel& p = homeSettings();
+  DisplaySettingsPanel& p = displaySettings();
   p.begin(ctx);
   EXPECT_FALSE(p.modalActive());
-  // Row 0 = Screen sleep now (battery row moved to the Battery panel).
+  // Row 0 = Screen sleep: the interface-size row exists only on a panel that can
+  // magnify, and FakeDisplayDriver reports that it cannot.
   EXPECT_TRUE(p.onInput(InputEvent::Select));        // open stepper at idx 1 (30s)
   EXPECT_TRUE(p.modalActive());
   EXPECT_TRUE(p.onInput(InputEvent::NavRight));       // 30s -> 1m (idx 2)
@@ -85,14 +88,14 @@ TEST(HomeSettingsPanel, ScreenSleepStepperAppliesSelection) {
 }
 
 
-TEST(HomeSettingsPanel, ScreenBrightnessStepperAppliesSelection) {
+TEST(DisplaySettingsPanel, ScreenBrightnessStepperAppliesSelection) {
   prime();
   FakeSleepApp app;
   AppletContext ctx; ctx.app = &app;
-  HomeSettingsPanel& p = homeSettings();
+  DisplaySettingsPanel& p = displaySettings();
   p.begin(ctx);
-  // Brightness is the fourth row, after Screen sleep + the two shortcut rows.
-  for (int i = 0; i < 3; i++) EXPECT_TRUE(p.onInput(InputEvent::NavDown));
+  // Brightness sits directly below Screen sleep here.
+  EXPECT_TRUE(p.onInput(InputEvent::NavDown));
   EXPECT_TRUE(p.onInput(InputEvent::Select));         // open at High (idx 2)
   EXPECT_TRUE(p.modalActive());
   EXPECT_TRUE(p.onInput(InputEvent::NavLeft));        // High -> Medium
@@ -101,13 +104,13 @@ TEST(HomeSettingsPanel, ScreenBrightnessStepperAppliesSelection) {
   EXPECT_EQ(1, app.brightness);
 }
 
-TEST(HomeSettingsPanel, ScreenBrightnessPreviewsWhileStepping) {
+TEST(DisplaySettingsPanel, ScreenBrightnessPreviewsWhileStepping) {
   prime();
   FakeSleepApp app;
   AppletContext ctx; ctx.app = &app;
-  HomeSettingsPanel& p = homeSettings();
+  DisplaySettingsPanel& p = displaySettings();
   p.begin(ctx);
-  for (int i = 0; i < 3; i++) EXPECT_TRUE(p.onInput(InputEvent::NavDown));
+  EXPECT_TRUE(p.onInput(InputEvent::NavDown));
   EXPECT_TRUE(p.onInput(InputEvent::Select));         // open at High (idx 2)
   EXPECT_TRUE(p.onInput(InputEvent::NavLeft));        // -> Medium (idx 1)
   EXPECT_EQ(1, app.previewed);                        // applied live...
@@ -118,6 +121,78 @@ TEST(HomeSettingsPanel, ScreenBrightnessPreviewsWhileStepping) {
   EXPECT_FALSE(p.modalActive());
   EXPECT_EQ(2, app.brightness);                       // still the saved value
   EXPECT_EQ(2, app.previewed);                        // display reverted to saved
+}
+
+
+// The interface-size row is offered only where the driver can magnify, and Select
+// toggles it rather than opening a stepper for a choice of two.
+TEST(DisplaySettingsPanel, InterfaceSizeRowOnlyOnPanelsThatMagnify) {
+  prime();
+  FakeSleepApp app;
+  FakeDisplayDriver plain;                 // supportsUiScale() == false
+  AppletHost host(&plain, AppletContext{});
+  AppletContext ctx; ctx.app = &app; ctx.host = &host;
+  DisplaySettingsPanel& p = displaySettings();
+  p.begin(ctx);
+  EXPECT_STREQ("Screen sleep", p.rowLabelForTest(0));
+
+  FakeDisplayDriver big;
+  big.uiScalable = true;
+  AppletHost host2(&big, AppletContext{});
+  AppletContext ctx2; ctx2.app = &app; ctx2.host = &host2;
+  p.begin(ctx2);
+  EXPECT_STREQ("Interface size", p.rowLabelForTest(0));
+  EXPECT_STREQ("Large", p.rowValueForTest(0));   // Large is the default
+
+  EXPECT_TRUE(p.onInput(InputEvent::Select));
+  EXPECT_STREQ("Standard", p.rowValueForTest(0));
+  EXPECT_EQ(1, uiPrefs().uiScale());
+  EXPECT_EQ(1, big.uiScale);               // and the driver was actually told
+  EXPECT_TRUE(p.onInput(InputEvent::Select));
+  EXPECT_STREQ("Large", p.rowValueForTest(0));
+  EXPECT_EQ(2, uiPrefs().uiScale());
+}
+
+// Orientation is its own capability: a panel may magnify without turning, and
+// the row opens a pick-one list rather than cycling four values in place.
+TEST(DisplaySettingsPanel, OrientationRowsOnlyWhereTheDriverCanTurn) {
+  prime();
+  FakeSleepApp app;
+  FakeDisplayDriver fixed;
+  fixed.uiScalable = true;                 // magnifies, but cannot turn
+  AppletHost host(&fixed, AppletContext{});
+  AppletContext ctx; ctx.app = &app; ctx.host = &host;
+  DisplaySettingsPanel& p = displaySettings();
+  p.begin(ctx);
+  EXPECT_STREQ("Screen sleep", p.rowLabelForTest(1));   // no Orientation, no Controls
+
+  FakeDisplayDriver turns;
+  turns.uiScalable = true;
+  turns.orientable = true;
+  AppletHost host2(&turns, AppletContext{});
+  AppletContext ctx2; ctx2.app = &app; ctx2.host = &host2;
+  p.begin(ctx2);
+  EXPECT_STREQ("Orientation", p.rowLabelForTest(1));
+  EXPECT_STREQ("Landscape", p.rowValueForTest(1));
+  EXPECT_STREQ("Controls", p.rowLabelForTest(2));
+  EXPECT_STREQ("Auto", p.rowValueForTest(2));
+}
+
+TEST(UiPrefsRotation, ControlsFollowTheScreenUntilOverridden) {
+  prime();
+  EXPECT_EQ(int(UiPrefs::INPUT_AUTO), uiPrefs().inputRotation());
+  uiPrefs().setRotation(1);
+  EXPECT_EQ(1, uiPrefs().effectiveInputRotation());   // auto tracks the panel
+  uiPrefs().setRotation(3);
+  EXPECT_EQ(3, uiPrefs().effectiveInputRotation());
+
+  uiPrefs().setInputRotation(0);                      // pin the controls
+  EXPECT_EQ(0, uiPrefs().effectiveInputRotation());
+  uiPrefs().setRotation(2);
+  EXPECT_EQ(0, uiPrefs().effectiveInputRotation());   // and the screen no longer moves them
+
+  uiPrefs().setInputRotation(UiPrefs::INPUT_AUTO);
+  EXPECT_EQ(2, uiPrefs().effectiveInputRotation());
 }
 
 int main(int argc, char** argv) {

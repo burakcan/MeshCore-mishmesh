@@ -3,8 +3,6 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
-#include <mishmesh/core/ScreenSleep.h>
-#include <mishmesh/widgets/StepperDialog.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -53,30 +51,14 @@ QuickActionPickerPanel& quickActionPicker() {
 
 // --- HomeSettingsPanel ---
 
-static void sleepStepLabel(int idx, char* out, uint16_t cap) {
-  snprintf(out, cap, "%s", screenSleepLabel(idx));
-}
-
-static const char* brightnessLabel(int idx) {
-  static const char* const LABELS[] = { "Low", "Medium", "High" };
-  return LABELS[idx < 3 ? idx : 2];
-}
-
-static void brightnessStepLabel(int idx, char* out, uint16_t cap) {
-  snprintf(out, cap, "%s", brightnessLabel(idx));
-}
-
 const char* HomeSettingsPanel::Model::label(int i) const {
-  static const char* const LABELS[ROW_COUNT] = {
-    "Screen sleep", "Left shortcut", "Right shortcut", "Screen brightness" };
+  static const char* const LABELS[ROW_COUNT] = { "Left shortcut", "Right shortcut" };
   return (i >= 0 && i < ROW_COUNT) ? LABELS[i] : "";
 }
 
 const char* HomeSettingsPanel::Model::value(int i) const {
-  if (i == ScreenSleep) return app ? screenSleepLabel(app->screenSleepIndex()) : "";
   if (i == LeftAction)  return uiPrefs().quickActionLabel(UiPrefs::SLOT_LEFT);
   if (i == RightAction) return uiPrefs().quickActionLabel(UiPrefs::SLOT_RIGHT);
-  if (i == ScreenBrightness && app) return brightnessLabel(app->screenBrightnessIndex());
   return nullptr;
 }
 
@@ -86,69 +68,21 @@ void HomeSettingsPanel::begin(AppletContext& ctx) {
   _list.setRowHeight(14);
   _list.setModel(&_model);
   _list.resetSelection();   // singleton reuse: setModel skips reset on same-ptr rebind
-  _editingSleep = false;
-  _editingBrightness = false;
 }
 
 int HomeSettingsPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
   _list.draw(c, x, y, w, h);
-  if (_editingSleep || _editingBrightness) {
-    _stepper.draw(c, 0, 0, c.width(), c.height());
-    return 100;
-  }
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 
 bool HomeSettingsPanel::onInput(InputEvent ev) {
-  if (_editingSleep || _editingBrightness) {
-    if (_stepper.onInput(ev)) {
-      StepperResult r = _stepper.result();
-      if (r == StepperResult::None) {
-        // Live preview: apply each stepped level so the user sees the actual
-        // brightness before confirming (no persist until Confirm).
-        if (_editingBrightness && _model.app)
-          _model.app->previewScreenBrightnessIndex((uint8_t)_stepper.value());
-      } else {
-        if (_model.app) {
-          if (_editingSleep) {
-            if (r == StepperResult::Confirmed)
-              _model.app->setScreenSleepIndex((uint8_t)_stepper.value());
-          } else if (r == StepperResult::Confirmed) {
-            _model.app->setScreenBrightnessIndex((uint8_t)_stepper.value());
-          } else {
-            _model.app->previewScreenBrightnessIndex(_brightnessRestore);   // revert
-          }
-        }
-        _editingSleep = _editingBrightness = false;
-        _stepper.reset();
-      }
-    }
-    return true;   // swallow everything while modal
-  }
-
   if (_list.onInput(ev)) return true;
-  if (ev == InputEvent::Select) {
-    int i = _list.selected();
-    if (i == Model::ScreenSleep) {
-      if (_model.app) {
-        _stepper.configure("Screen sleep", _model.app->screenSleepIndex(),
-                           0, SCREEN_SLEEP_COUNT - 1, sleepStepLabel);
-        _editingSleep = true;
-      }
-    } else if (i == Model::ScreenBrightness) {
-      if (_model.app) {
-        _brightnessRestore = _model.app->screenBrightnessIndex();
-        _stepper.configure("Screen brightness", _brightnessRestore,
-                           0, 2, brightnessStepLabel);
-        _editingBrightness = true;
-      }
-    } else if (_host) {
-      static SettingsDetailApplet detail;   // one level below the shared detail
-      quickActionPicker().setSlot(i == Model::LeftAction ? UiPrefs::SLOT_LEFT
-                                                         : UiPrefs::SLOT_RIGHT);
-      detail.setPanel(&quickActionPicker());
-      _host->push(&detail);
-    }
+  if (ev == InputEvent::Select && _host) {
+    static SettingsDetailApplet detail;   // one level below the shared detail
+    quickActionPicker().setSlot(_list.selected() == Model::LeftAction ? UiPrefs::SLOT_LEFT
+                                                                     : UiPrefs::SLOT_RIGHT);
+    detail.setPanel(&quickActionPicker());
+    _host->push(&detail);
     return true;
   }
   return false;   // Back bubbles

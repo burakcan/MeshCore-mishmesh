@@ -43,6 +43,7 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
   _ctx.inputState = &_input_state;
   if (_display != nullptr) {
     setReducedMotion(_display->isEink());
+    setLightBackgroundPanel(_display->hasLightBackground());
     _display->setBusyPoll(&AppletHost::busyPollThunk, this);
   }
 }
@@ -59,6 +60,41 @@ void AppletHost::pollDuringBusy() {
       if (_busy_count < BUSY_QUEUE) _busyQueue[_busy_count++] = rep;
     }
   }
+}
+
+bool AppletHost::displaySupportsUiScale() const {
+  return _display != nullptr && _display->supportsUiScale();
+}
+
+void AppletHost::applyUiScale(int mult) {
+  if (_display == nullptr || !_display->supportsUiScale()) return;
+  _display->setUiScale(mult);
+  rebuildCanvas();
+}
+
+bool AppletHost::displaySupportsOrientation() const {
+  return _display != nullptr && _display->supportsOrientation();
+}
+
+void AppletHost::setInputRotation(int quarters) {
+  _input_rotation = ((quarters % 4) + 4) % 4;
+  for (int i = 0; i < _nsources; i++) {
+    if (_sources[i] != nullptr) _sources[i]->setRotation(_input_rotation);
+  }
+}
+
+void AppletHost::applyDisplayRotation(int quarters) {
+  if (_display == nullptr || !_display->supportsOrientation()) return;
+  _display->setDisplayRotation(quarters);
+  rebuildCanvas();
+}
+
+// width()/height() have moved under us; anything cached against the old size is
+// re-derived on the next frame.
+void AppletHost::rebuildCanvas() {
+  _canvas = Canvas(_display, _loop_now);
+  _display->clear();            // the old layout is still on a bistable panel
+  _dirty = true;
 }
 
 void AppletHost::postToast(const char* msg) {
@@ -88,6 +124,7 @@ void AppletHost::wakeDisplay() {
 
 void AppletHost::addSource(InputSource* src) {
   if (src == nullptr || _nsources >= MAX_SOURCES) return;
+  src->setRotation(_input_rotation);   // sources are added after the pref is read
   _sources[_nsources++] = src;
 }
 
@@ -260,6 +297,13 @@ void AppletHost::loop(uint32_t now_ms) {
     } else if (now_ms - _last_activity > _auto_off_ms) {
       _slept_at = now_ms;               // for the wake-to-home decision
       if (fg != nullptr) fg->onSleep();
+      // A bistable panel holds whatever was last flushed, so the screen keeps
+      // showing a UI that is no longer live - and the next press wakes to home,
+      // which reads as the screen having been lost. Blank it so off looks off.
+      if (_display->isEink()) {
+        _display->startFrame(themedColor(DisplayDriver::DARK));
+        _display->endFrame();
+      }
       _display->turnOff();
     }
   }

@@ -15,6 +15,9 @@ class DisplayDriver {
   int _w, _h;
 protected:
   DisplayDriver(int w, int h) { _w = w; _h = h; }
+  // [mishmesh] a driver that magnifies the UI reports a smaller logical canvas
+  void setLogicalSize(int w, int h) { _w = w; _h = h; }
+  // [/mishmesh]
 public:
   //enum Color { DARK=0, LIGHT, RED, GREEN, BLUE, YELLOW, ORANGE }; // on b/w screen, colors will be !=0 synonym of light
   // [mishmesh] mishmesh draws in these semantic colors and resolves them to the
@@ -33,6 +36,22 @@ public:
   virtual void setBrightness(uint8_t value) { (void)value; }
   // lets the UI drain input while an eink panel blocks on a refresh
   virtual void setBusyPoll(void (*cb)(const void*), const void* ctx) {}
+  // True when this driver's palette puts window_bkg at the light end (black on
+  // white, as e-ink does) instead of the mono-OLED's white on black. mishmesh
+  // draws in semantic DARK/LIGHT and needs the polarity to resolve them.
+  virtual bool hasLightBackground() const { return false; }
+  // Panels with pixels to spare can trade resolution for size: the UI draws into
+  // a smaller logical canvas and the driver magnifies it by a whole number, which
+  // for bitmap glyphs is exact. width()/height() change, so whoever holds a canvas
+  // has to rebuild it afterwards.
+  virtual bool supportsUiScale() const { return false; }
+  virtual void setUiScale(int mult) { (void)mult; }
+  // Panels that can be turned, in quarter turns clockwise from the variant's
+  // default. Like setUiScale this changes width()/height(), so a held canvas has
+  // to be rebuilt. Rotating the controls to match is the UI's business, not this
+  // layer's.
+  virtual bool supportsOrientation() const { return false; }
+  virtual void setDisplayRotation(int quarters) { (void)quarters; }
   // [/mishmesh]
   virtual void turnOn() = 0;
   virtual void turnOff() = 0;

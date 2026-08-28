@@ -90,7 +90,10 @@ int NotificationApplet::onRender(Canvas& c) {
   // Footer: a dotted divider above either the unread tally or the dismiss hint.
   const int FOOT = 12;
   int footY = H - FOOT;
-  int cap = card.fontHeight(fontCaption()); if (cap <= 0) cap = 6;
+  // The footer is caption-sized because a 64px panel has nothing to spare; a
+  // taller card can carry the body tier, which is what the rest of the card uses.
+  const mf_font_s* footFont = c.height() >= 100 ? fontBody() : fontCaption();
+  int cap = card.fontHeight(footFont); if (cap <= 0) cap = 6;
 
   // Preview body, wrapped in the band between the sender and footer. Snap the
   // band to whole lines - a half-clipped text row reads as pixel garbage.
@@ -108,9 +111,9 @@ int NotificationApplet::onRender(Canvas& c) {
     char b[24];
     snprintf(b, sizeof(b), "%u more unread", (unsigned)_otherUnread);
     card.drawGlyph(iconFont(), 3, footY + (FOOT - gh) / 2, (uint16_t)Icon::Mail, DisplayDriver::LIGHT);
-    card.drawText(fontCaption(), 16, footY + (FOOT - cap) / 2, b, DisplayDriver::LIGHT);
+    card.drawText(footFont, 16, footY + (FOOT - cap) / 2, b, DisplayDriver::LIGHT);
   } else {
-    card.drawText(fontCaption(), 3, footY + (FOOT - cap) / 2, "Back to dismiss", DisplayDriver::LIGHT);
+    card.drawText(footFont, 3, footY + (FOOT - cap) / 2, "Back to dismiss", DisplayDriver::LIGHT);
   }
 
   card.drawRoundRect(0, 0, W, H, DisplayDriver::LIGHT);   // rounded outer frame on top

@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <mishmesh/core/Applet.h>
+#include <mishmesh/text/Fonts.h>
 #include <mishmesh/core/EmojiCatalog.h>
 #include <mishmesh/widgets/GridView.h>
 #include <mishmesh/widgets/ConfirmDialog.h>

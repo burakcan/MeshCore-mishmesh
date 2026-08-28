@@ -32,30 +32,39 @@ void AboutApplet::onStart(AppletContext& ctx) {
 int AboutApplet::onRender(Canvas& c) {
   const int w = c.width(), h = c.height();
 
-  // QR fills a full-height square anchored top-left; the wordmark + support text
-  // ride in the leftover right column (same split as ChannelShareApplet).
-  const int side = (h <= w) ? h : w;
+  // The QR takes a square off the short edge and the wordmark + support text fill
+  // what is left. On a landscape canvas that leftover is a column beside it; on a
+  // portrait one it is a band underneath, and splitting sideways there left the
+  // text with no width at all.
+  const bool stacked = h > w;
+  const int side = stacked ? w : h;
   if (_qr.valid()) _qr.draw(c, 0, 0, side, side);
-  else c.drawTextCentered(fontBody(), 0, 0, side, h, "QR too big", DisplayDriver::LIGHT);
+  else c.drawTextCentered(fontBody(), 0, 0, side, side, "QR too big", DisplayDriver::LIGHT);
 
-  const int rx = side + 4;
-  if (rx < w) {
-    Canvas r = c.region(rx, 0, w - rx, h);
+  const int rx = stacked ? 0 : side + 4;
+  const int ry = stacked ? side + 4 : 0;
+  if (rx < w && ry < h) {
+    Canvas r = c.region(rx, ry, w - rx, h - ry);
     const int rw = r.width();
     int lx = (rw > MISHMESH_LOGO_W) ? (rw - MISHMESH_LOGO_W) / 2 : 0;
     r.drawXbm(lx, 2, MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H);
 
-    int y = 2 + MISHMESH_LOGO_H + 3;
-    y = r.drawTextWrapped(fontCaption(), 0, y, rw, "Support development",
-                          DisplayDriver::LIGHT) + 2;
-    r.drawText(fontCaption(), 0, y, "ko-fi.com/", DisplayDriver::LIGHT); y += 6;
-    r.drawText(fontCaption(), 0, y, "burak_can", DisplayDriver::LIGHT);
+    // Caption is the recessive tier, which on a 64px panel is the only thing that
+    // fits. A taller one has room for body type, and this is a screen people read
+    // rather than glance at.
+    const Font* f = (r.height() >= 100 || rw >= 100) ? fontBody() : fontCaption();
+    const int lh = r.fontHeight(f) + 1;
 
-    // Both versions pinned to the bottom, recessive: mishmesh on the last row,
-    // firmware just above it.
-    int vy = h - 6;
-    if (_mmVersion[0]) { r.drawText(fontCaption(), 0, vy, _mmVersion, DisplayDriver::LIGHT); vy -= 6; }
-    if (_version[0])     r.drawText(fontCaption(), 0, vy, _version, DisplayDriver::LIGHT);
+    int y = 2 + MISHMESH_LOGO_H + 3;
+    y = r.drawTextWrapped(f, 0, y, rw, "Support development", DisplayDriver::LIGHT) + 2;
+    r.drawText(f, 0, y, "ko-fi.com/", DisplayDriver::LIGHT); y += lh;
+    r.drawText(f, 0, y, "burak_can", DisplayDriver::LIGHT);
+
+    // Both versions pinned to the bottom: mishmesh on the last row, firmware
+    // just above it.
+    int vy = r.height() - lh;
+    if (_mmVersion[0]) { r.drawText(f, 0, vy, _mmVersion, DisplayDriver::LIGHT); vy -= lh; }
+    if (_version[0])     r.drawText(f, 0, vy, _version, DisplayDriver::LIGHT);
   }
   return 1000;
 }

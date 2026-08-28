@@ -86,6 +86,43 @@ TEST(InputDebounce, CoalescesBouncedRepeatButKeepsRealPresses) {
   EXPECT_EQ(3u, app.got.size());
 }
 
+
+// Rotation belongs to the source, not to the event stream: a joystick is mounted
+// in a direction, a button that emits NavDown is a labelled function. Doing it
+// once in the host rotated both, because by then they look identical.
+TEST(InputRotation, TurnsTheRingAndLeavesEverythingElseAlone) {
+  EXPECT_EQ(InputEvent::NavLeft,  rotateDirection(InputEvent::NavUp, 1));
+  EXPECT_EQ(InputEvent::NavUp,    rotateDirection(InputEvent::NavRight, 1));
+  EXPECT_EQ(InputEvent::NavDown,  rotateDirection(InputEvent::NavUp, 2));
+  EXPECT_EQ(InputEvent::NavRight, rotateDirection(InputEvent::NavUp, 3));
+  EXPECT_EQ(InputEvent::NavUp,    rotateDirection(InputEvent::NavUp, 0));
+
+  for (int q = 0; q < 4; q++) {   // no direction to turn
+    EXPECT_EQ(InputEvent::Select, rotateDirection(InputEvent::Select, q));
+    EXPECT_EQ(InputEvent::Back,   rotateDirection(InputEvent::Back, q));
+    EXPECT_EQ(InputEvent::BackLong, rotateDirection(InputEvent::BackLong, q));
+  }
+}
+
+TEST(InputRotation, AButtonThatEmitsADirectionIsNotTurned) {
+  // QueueSource stands in for ButtonGestureSource: it takes the default
+  // setRotation(), which ignores it. The Wio L1's user button emits NavDown as a
+  // labelled shortcut, and turning the screen must not repoint it.
+  FakeDisplayDriver d;
+  RecordingApplet app;
+  AppletContext ctx;
+  AppletHost host(&d, ctx);
+  QueueSource src;
+  host.addSource(&src);
+  host.setRoot(&app);
+  host.setInputRotation(1);
+
+  src.q = {InputEvent::NavDown};
+  host.loop(10);
+  ASSERT_EQ(1u, app.got.size());
+  EXPECT_EQ(InputEvent::NavDown, app.got[0]);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
