@@ -9,6 +9,11 @@ its heading with `## v<version>`.
 
 ## Unreleased
 
+## v1.4.1
+
+- Fix: messages could go missing from a chat in some cases.
+- Affected devices repair themselves on the next boot after update.
+
 ## v1.4.0
 
 - Cyrillic rendering and keyboard support for Ukrainian, Russian, Belarussian, Bulgarian, Serbian and Macedonian languages. Thanks to @nxstd for the base of this work.
