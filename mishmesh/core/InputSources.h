@@ -7,21 +7,22 @@
 namespace mishmesh {
 
 // One button mapped to its GestureMap.click event. Edge-triggered: fires once on
-// the press edge (immediate, no release latency), and - when hold-repeat is enabled
-// for the foreground applet - auto-repeats while held (delay, then steady, like the
-// joystick's Up/Down). `reverse`/`pulldownup` describe the wiring (active-low
-// pull-up boards pass reverse=true). The GestureMap's long/double/triple fields are
-// inert: mishmesh needs 2-axis nav, so a single button can't drive the UI, and a
-// hold means "repeat", not a distinct gesture. A button still held across a
-// foreground change is ignored until released, so its hold can't leak into the
-// newly revealed screen.
+// the press edge (immediate, no release latency), and - when its click event is
+// in the foreground applet's repeat mask - auto-repeats while held (delay, then
+// steady interval; the mask decides, so a click mapped to NavDown repeats under
+// the same rule a joystick direction would). `reverse`/`pulldownup` describe the
+// wiring (active-low pull-up boards pass reverse=true). The GestureMap's
+// long/double/triple fields are inert: mishmesh needs 2-axis nav, so a single
+// button can't drive the UI, and a hold means "repeat", not a distinct gesture.
+// A button still held across a foreground change is ignored until released, so
+// its hold can't leak into the newly revealed screen.
 class ButtonGestureSource : public InputSource {
   static const uint32_t REPEAT_DELAY_MS = 350;     // hold this long before repeats start
   static const uint32_t REPEAT_INTERVAL_MS = 90;   // then one repeat per this many ms
   static const uint32_t DEBOUNCE_MS = 25;          // a level must be stable this long to count
   MomentaryButton _btn;
   GestureMap _map;
-  bool _holdRepeat;      // host-set: auto-repeat the click while held (e.g. delete)
+  uint16_t _repeatMask;  // host-set: which events repeat while held
   bool _wasPressed;      // debounced press state
   bool _rawPressed;      // last raw read
   bool _suppress;        // ignore the in-progress hold until released (set on context change)
@@ -31,23 +32,24 @@ public:
   ButtonGestureSource(int8_t pin, const GestureMap& map, int long_press_ms = 1000,
                       bool reverse = false, bool pulldownup = false)
       : _btn(pin, long_press_ms, reverse, pulldownup, /*multiclick*/false), _map(map),
-        _holdRepeat(false), _wasPressed(false), _rawPressed(false), _suppress(false),
+        _repeatMask(0), _wasPressed(false), _rawPressed(false), _suppress(false),
         _rawSince(0), _nextRepeat(0) {}
   void begin() { _btn.begin(); }
   // Called by the host on every foreground change with the new applet's preference.
   // If the button is held at that moment, swallow the rest of this press so it
   // can't act on the revealed screen.
-  void setHoldRepeat(bool enabled) override {
-    _holdRepeat = enabled;
+  void setRepeatMask(uint16_t mask) override {
+    _repeatMask = mask;
     if (_wasPressed) _suppress = true;
   }
   bool poll(InputReport& out) override;
   uint16_t heldMask() const override;
 };
 
-// A 5-way joystick / D-pad. Each direction fires on the press edge; holding Up
-// or Down auto-repeats (fast scroll). Bounce is absorbed by the host's input
-// debounce, so the buttons here are read directly (isPressed), not via gestures.
+// A 5-way joystick / D-pad. Each direction fires on the press edge; holding a
+// direction whose (mapped, rotated) event is in the repeat mask auto-repeats
+// (fast scroll). Debounce is this source's own job (DEBOUNCE_MS level filter
+// below), so the buttons here are read directly (isPressed), not via gestures.
 class DirectionalSource : public InputSource {
   static const uint32_t REPEAT_DELAY_MS = 350;     // hold this long before repeats start
   static const uint32_t REPEAT_INTERVAL_MS = 90;   // then one step per this many ms
@@ -59,6 +61,7 @@ class DirectionalSource : public InputSource {
   bool     _rawPressed[5];   // last raw read, for debouncing
   uint32_t _rawSince[5];     // when the raw read last changed
   int      _rotation = 0;    // quarter turns, see InputSource::setRotation
+  uint16_t _repeatMask = 0;  // host-set, see InputSource::setRepeatMask
 public:
   DirectionalSource(int8_t up, int8_t down, int8_t left, int8_t right, int8_t press,
                     const DirectionalMap& map = DirectionalMap(), int long_press_ms = 1000,
@@ -77,6 +80,7 @@ public:
   uint16_t heldMask() const override;
   // Mounted hardware: the stick turns with the screen. See InputSource::setRotation.
   void setRotation(int quarters) override { _rotation = ((quarters % 4) + 4) % 4; }
+  void setRepeatMask(uint16_t mask) override { _repeatMask = mask; }
 };
 
 }  // namespace mishmesh

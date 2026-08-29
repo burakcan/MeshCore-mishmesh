@@ -19,8 +19,9 @@ public:
 
   void noteArrival(uint32_t now);   // an alerting message just played its tone
 
-  // Call every loop pass. lastInputMs is the host's last dispatched input; any
-  // input newer than the arming instant counts as "user saw it, stop nagging".
+  // Call every loop pass. lastInputMs is the host's last input activity (a wake
+  // press counts); any input newer than the arming instant counts as "user saw
+  // it, stop nagging".
   bool tick(uint32_t now, uint16_t notifyUnread, uint32_t lastInputMs);
 
   bool armed() const { return _armed; }

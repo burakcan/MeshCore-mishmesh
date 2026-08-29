@@ -14,8 +14,8 @@ static Gesture toGesture(int buttonEvent) {
 
 bool ButtonGestureSource::poll(InputReport& out) {
   // Level-driven and edge-triggered: the click fires once on the press edge, then
-  // (if hold-repeat is on) auto-repeats while held. A press carried over a
-  // foreground change is swallowed until released (_suppress).
+  // (when its click event is in the repeat mask) auto-repeats while held. A press
+  // carried over a foreground change is swallowed until released (_suppress).
   uint32_t now = millis();
   bool raw = _btn.isPressed();
   if (raw != _rawPressed) { _rawPressed = raw; _rawSince = now; }
@@ -37,7 +37,8 @@ bool ButtonGestureSource::poll(InputReport& out) {
     return true;
   }
   if (_suppress) return false;
-  if (_holdRepeat && (int32_t)(now - _nextRepeat) >= 0) {   // held: repeat
+  if ((_repeatMask & maskBit(_map.click)) &&
+      (int32_t)(now - _nextRepeat) >= 0) {   // held: repeat
     _nextRepeat = now + REPEAT_INTERVAL_MS;
     out.event = _map.click; out.ch = 0; out.repeat = true;
     return true;
@@ -76,8 +77,8 @@ bool DirectionalSource::poll(InputReport& out) {
       _wasPressed[i] = true;
       _nextRepeat[i] = now + REPEAT_DELAY_MS;
       if (ev != InputEvent::None) { out.event = ev; out.ch = 0; return true; }
-    } else if (pressed) {                          // held: Up/Down auto-repeat (fast scroll)
-      bool repeats = (ev == InputEvent::NavUp || ev == InputEvent::NavDown);
+    } else if (pressed) {                          // held: repeat if ev is in the repeat mask
+      bool repeats = ev != InputEvent::None && (_repeatMask & maskBit(ev)) != 0;
       if (repeats && (int32_t)(now - _nextRepeat[i]) >= 0) {
         _nextRepeat[i] = now + REPEAT_INTERVAL_MS;
         if (ev != InputEvent::None) { out.event = ev; out.ch = 0; return true; }

@@ -31,8 +31,8 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
     : _display(display), _canvas(display), _ctx(ctx),
       _depth(0), _nsources(0),
       _next_render_at(0), _last_flush_ms(0), _has_rendered(false), _dirty(true),
-      _loop_now(0), _auto_off_ms(30000), _last_activity(0), _activity_init(false), _slept_at(0),
-      _last_input_event(InputEvent::None), _last_input_ms(0), _input_seen(false),
+      _loop_now(0), _auto_off_ms(30000), _last_activity(0), _activity_init(false),
+      _last_input_ms(0), _slept_at(0),
       _toast_until(0), _toast_pending(false),
       _bubble_start(0), _bubble_until(0), _bubble_pending(false), _bubble_unread(0) {
   for (int i = 0; i < MAX_STACK; i++) _stack[i] = nullptr;
@@ -135,6 +135,8 @@ void AppletHost::wakeDisplay() {
 void AppletHost::addSource(InputSource* src) {
   if (src == nullptr || _nsources >= MAX_SOURCES) return;
   src->setRotation(inputRotation());   // sources are added after the prefs are read
+  Applet* fg = foreground();
+  src->setRepeatMask(fg != nullptr ? fg->repeatMask() : 0);
   _sources[_nsources++] = src;
 }
 
@@ -144,9 +146,9 @@ Applet* AppletHost::foreground() const {
 
 void AppletHost::applyInputContext() {
   Applet* fg = foreground();
-  bool backRepeat = fg != nullptr && fg->wantsBackRepeat();
+  const uint16_t mask = fg != nullptr ? fg->repeatMask() : 0;
   for (int i = 0; i < _nsources; i++) {
-    if (_sources[i] != nullptr) _sources[i]->setHoldRepeat(backRepeat);
+    if (_sources[i] != nullptr) _sources[i]->setRepeatMask(mask);
   }
 }
 
@@ -217,8 +219,9 @@ void AppletHost::dispatch(InputEvent ev, bool repeat) {
   _dirty = true;
 }
 
-void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms, bool bypass_bounce) {
+void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms) {
   _last_activity = now_ms;
+  _last_input_ms = now_ms;   // unconditional: a wake press still counts as input
 #ifdef MISHMESH_INPUT_PROFILE
   if (!rep.repeat) _prof.recordPolled();   // a discrete press edge was sampled
 #endif
@@ -233,27 +236,22 @@ void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms, bool bypa
     _display->turnOn();   // first press only wakes; it isn't delivered
     _dirty = true;
   } else {
-    bool bounce = !bypass_bounce && _input_seen && rep.event == _last_input_event &&
-                  now_ms - _last_input_ms < INPUT_DEBOUNCE_MS;
-    _last_input_event = rep.event; _last_input_ms = now_ms; _input_seen = true;
-    if (!bounce) {
 #ifdef MISHMESH_INPUT_PROFILE
-      if (!rep.repeat) _prof.recordDispatched();   // survived bounce coalescing
+    if (!rep.repeat) _prof.recordDispatched();
 #endif
-      dispatch(rep.event, rep.repeat);
-    }
+    dispatch(rep.event, rep.repeat);
   }
 }
 
-void AppletHost::pumpInput(uint32_t now_ms, bool bypass_bounce) {
+void AppletHost::pumpInput(uint32_t now_ms) {
   uint8_t queued = _busy_count;
   _busy_count = 0;
-  for (uint8_t i = 0; i < queued; i++) handleReport(_busyQueue[i], now_ms, bypass_bounce);
+  for (uint8_t i = 0; i < queued; i++) handleReport(_busyQueue[i], now_ms);
   for (int i = 0; i < _nsources; i++) {
     if (_sources[i] == nullptr) continue;
     InputReport rep;                       // fresh each poll: `repeat` defaults false
     while ((rep = InputReport(), _sources[i]->poll(rep))) {
-      handleReport(rep, now_ms, bypass_bounce);
+      handleReport(rep, now_ms);
     }
   }
 }
@@ -280,7 +278,6 @@ void AppletHost::loop(uint32_t now_ms) {
   if (now_ms - _prof_last_paint >= 300) { _prof_last_paint = now_ms; _dirty = true; }
 #endif
 
-  _flushed_this_loop = false;
   pumpInput(now_ms);
 
   refreshInputState();   // [add] live held-button snapshot for real-time applets
@@ -322,19 +319,12 @@ void AppletHost::loop(uint32_t now_ms) {
 
   // Rendering is synchronous and a frame can take many ms to compose and flush to
   // the panel (a full-screen modal scrim is the worst case). Polling once more right
-  // after the frame keeps that render time from becoming an input-blind gap wider
-  // than the button debounce window, which would silently drop short taps. This is
-  // framework-wide: any applet/modal, however heavy its draw, stays responsive
-  // without needing per-screen tuning. Idle cost is nil - sources just report no
-  // change. Events caught here paint on the next loop (_dirty), one frame later.
-  //
-  // On a panel where the flush itself takes hundreds of ms (e-ink), now_ms is the
-  // pre-render stamp, so every report drained here looks simultaneous with the one
-  // dispatched before the frame and the 60ms coalescing eats it - a repeated tap
-  // (multi-tap keypad, list nav) silently vanishes. Sources debounce in hardware
-  // already, and a whole flush separates these from the last dispatch, so drop the
-  // second layer for this drain only. Fast panels keep it: nothing changes there.
-  pumpInput(now_ms, _flushed_this_loop && reducedMotion());
+  // after the frame keeps that render time from becoming an input-blind gap wide
+  // enough to silently drop short taps. This is framework-wide: any applet/modal,
+  // however heavy its draw, stays responsive without needing per-screen tuning.
+  // Idle cost is nil - sources just report no change. Events caught here paint on
+  // the next loop (_dirty), one frame later.
+  pumpInput(now_ms);
 }
 
 void AppletHost::renderIfDue(uint32_t now_ms) {
@@ -405,7 +395,6 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
     drawProfileOverlay();
 #endif
     _display->endFrame();
-    _flushed_this_loop = true;
     _last_flush_ms = now_ms;
 #ifdef MISHMESH_INPUT_PROFILE
     _prof.recordRender(millis() - _pt0);
@@ -419,9 +408,10 @@ void AppletHost::renderIfDue(uint32_t now_ms) {
 
 #ifdef MISHMESH_INPUT_PROFILE
 // S<maxStall> R<maxRender> B<blindGaps>  /  p<polled> d<dispatched>, ms. Compare
-// p (edges sampled) and d (edges acted on) against your own press count: fingers>p
-// = starvation/hardware (watch B climb), p>d = software bounce ate it. See
-// InputProfiler for the full triage.
+// p (edges sampled) and d (edges routed to a screen) against your own press
+// count: fingers>p = starvation/hardware (watch B climb); p is normally one
+// ahead of d because a wake press is sampled but not routed. See InputProfiler
+// for the full triage.
 void AppletHost::drawProfileOverlay() {
   const mf_font_s* f = fontBody();
   int fh = _canvas.fontHeight(f); if (fh <= 0) fh = 8;

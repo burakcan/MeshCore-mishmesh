@@ -282,12 +282,12 @@ TEST(Keypad, ConfirmTogglesPopAndToast) {
 }
 
 namespace {
-// Records the host's setHoldRepeat() calls so we can assert the per-applet
-// Back-repeat preference is propagated on foreground changes.
+// Records the host's setRepeatMask() calls so we can assert the per-applet
+// repeat preference is propagated on foreground changes.
 struct RecordingSource : InputSource {
-  bool holdRepeat = false;
+  uint16_t mask = 0xFFFF;
   bool poll(InputReport&) override { return false; }
-  void setHoldRepeat(bool e) override { holdRepeat = e; }
+  void setRepeatMask(uint16_t m) override { mask = m; }
 };
 // A plain screen that does NOT want Back to repeat (the default).
 struct PlainApplet : Applet {
@@ -314,9 +314,9 @@ TEST(Keypad, KeypadDoesNotRequestBackRepeat) {
   FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
   RecordingSource src; host.addSource(&src);
   PlainApplet root; host.setRoot(&root);
-  EXPECT_FALSE(src.holdRepeat);          // normal screen: Back must not repeat
+  EXPECT_FALSE(src.mask & maskBit(InputEvent::Back));   // normal screen: Back must not repeat
   KeypadApplet kp; host.push(&kp);
-  EXPECT_FALSE(src.holdRepeat);          // Back is exit now, not repeat-delete
+  EXPECT_FALSE(src.mask & maskBit(InputEvent::Back));   // Back is exit now, not repeat-delete
 }
 
 TEST(Keypad, FreshBackOnEmptyExits) {

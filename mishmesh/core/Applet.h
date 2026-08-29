@@ -216,10 +216,12 @@ public:
   // Return true if the event was consumed; otherwise it bubbles up to the host.
   virtual bool onInput(InputEvent) { return false; }
 
-  // Whether the Back button should auto-repeat while held during this applet.
-  // Default false: most screens must NOT repeat Back, or one hold would pop
-  // through several of them. A text editor overrides this to delete on hold.
-  virtual bool wantsBackRepeat() const { return false; }
+  // Which events auto-repeat while held on this screen. The default scrolls on a
+  // held direction, which is what every list wants. Return 0 to repeat nothing;
+  // add maskBit(InputEvent::Back) in a text editor so a hold deletes.
+  virtual uint16_t repeatMask() const {
+    return maskBit(InputEvent::NavUp) | maskBit(InputEvent::NavDown);
+  }
 
   // Opt into real-time "game mode": while this applet is foreground the host
   // calls onRender every main-loop pass (no dirty/delay gating) and the returned

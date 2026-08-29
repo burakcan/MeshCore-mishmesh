@@ -13,13 +13,14 @@ namespace mishmesh {
 // Triage for a "the button didn't register" report - compare against your own
 // physical press count:
 //   polled     - events the sources emitted (a press edge was actually sampled)
-//   dispatched - of those, ones acted on; (polled - dispatched) is what software
-//                bounce/debounce coalescing dropped
+//   dispatched - of those, ones delivered to the foreground applet; a wake press
+//                counts as polled but not dispatched (handleReport turns the
+//                display on instead of routing it), so polled > dispatched by
+//                one per wake is normal, not a dropped edge
 //   blindGaps  - loop passes whose gap was wide enough to swallow a whole tap; a
 //                press landing entirely inside one is never sampled at all
-// fingers > polled     => starvation or hardware: the edge was missed (blindGaps
-//                         should be climbing in step)
-// polled  > dispatched => software gating ate an edge that was sampled fine
+// fingers > polled => starvation or hardware: the edge was missed (blindGaps
+//                     should be climbing in step)
 struct InputProfiler {
   // A loop gap at least this wide can miss a short tap that goes down-and-up
   // entirely between two polls. ~50ms is a brisk-but-real tap length.

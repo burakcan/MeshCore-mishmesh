@@ -470,24 +470,9 @@ TEST(AppletHost, RepeatedTapSurvivesASlowFlush) {
   TapTwiceSource src(InputEvent::Select);
   host.addSource(&src);
 
-  setReducedMotion(true);   // what an e-ink driver turns on via isEink()
   host.loop(10);
-  setReducedMotion(false);
 
   EXPECT_EQ(2, root.inputs);
-}
-
-TEST(AppletHost, RepeatedTapIsStillCoalescedOnAFastPanel) {
-  FakeDisplayDriver d;
-  AppletHost host(&d, emptyCtx());
-  FakeApplet root("root");
-  host.setRoot(&root);
-  TapTwiceSource src(InputEvent::Select);
-  host.addSource(&src);
-
-  host.loop(10);
-
-  EXPECT_EQ(1, root.inputs);   // same event inside the debounce window
 }
 
 // A repaint nothing asked for is held to the minimum flush spacing; one the user
@@ -668,6 +653,28 @@ TEST(AppletHost, LastInputMsTracksTheMostRecentDispatch) {
 
   host.loop(4000);                        // no new input: stamp stays put
   EXPECT_EQ(2500u, host.lastInputMs());
+}
+
+// The bug this guards: _last_activity also advances on every loop pass while a
+// blocksSleep() applet holds the screen awake (e.g. a running stopwatch), which
+// is not input. lastInputMs() must not follow that - or the unread reminder's
+// "keep nagging until a key is pressed" is defeated by the screen simply staying
+// on, with nobody having looked at it.
+TEST(AppletHost, LastInputMsIgnoresTheBlocksSleepKeepAlive) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  host.setAutoOffMillis(30000);
+  FakeApplet root("root");
+  root.blockSleep = true;               // e.g. a running stopwatch
+  host.setRoot(&root);
+
+  host.loop(1000);
+  EXPECT_EQ(0u, host.lastInputMs());
+
+  host.loop(31000);
+  host.loop(61000);
+  host.loop(91000);
+  EXPECT_EQ(0u, host.lastInputMs());     // still no real input, despite the keep-alive
 }
 
 int main(int argc, char** argv) {

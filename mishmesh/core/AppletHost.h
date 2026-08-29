@@ -52,8 +52,8 @@ public:
   // gestures (onInput carries no timestamp) without reaching for Arduino millis().
   uint32_t nowMs() const { return _loop_now; }
 
-  // When the last input was actually dispatched (post-debounce), 0 before the
-  // first one. Feeds the unread reminder's "any key stops the nagging" rule.
+  // When input was last seen, 0 before the first one. Feeds the unread
+  // reminder's "any key stops the nagging" rule.
   uint32_t lastInputMs() const { return _last_input_ms; }
 
   void dispatch(InputEvent ev, bool repeat = false);
@@ -109,17 +109,14 @@ private:
   InputProfiler _prof;
   uint32_t _prof_last_paint = 0;   // last time the overlay forced a refresh
 #endif
-  // Push the foreground applet's input preferences (currently wantsBackRepeat())
+  // Push the foreground applet's input preferences (currently repeatMask())
   // to every source. Called after each foreground change.
   void applyInputContext();
-  // Drain every input source once, dispatching (and bounce-coalescing) what they
-  // report. Called both before and after rendering each loop so a slow frame can't
-  // open an input-blind gap - see loop().
-  // bypass_bounce drops the 60ms coalescing for one drain: see the post-render
-  // call in loop(), where every report is separated from the previous one by a
-  // whole panel flush and now_ms is the pre-render stamp, not the arrival time.
-  void pumpInput(uint32_t now_ms, bool bypass_bounce = false);
-  void handleReport(const InputReport& rep, uint32_t now_ms, bool bypass_bounce);
+  // Drain every input source once, dispatching what they report. Called both
+  // before and after rendering each loop so a slow frame cannot open an
+  // input-blind gap - see loop().
+  void pumpInput(uint32_t now_ms);
+  void handleReport(const InputReport& rep, uint32_t now_ms);
   void pushInputRotation();   // mount + user, out to every source
   void rebuildCanvas();       // after the driver's logical size changes
   void refreshInputState();   // OR every source's heldMask() into _input_state
@@ -138,7 +135,6 @@ private:
 
   int  _input_mount = 0;            // see setInputMountRotation()
   int  _input_user = 0;             // see setInputRotation()
-  bool _flushed_this_loop = false;   // a frame actually reached the panel
 
   static const int BUSY_QUEUE = 8;
   InputReport _busyQueue[BUSY_QUEUE];
@@ -153,19 +149,16 @@ private:
   uint32_t _auto_off_ms;
   uint32_t _last_activity;
   bool _activity_init;
+  // Separate from _last_activity: activity also advances while a blocksSleep()
+  // applet holds the screen awake (see loop()), which is not input. The unread
+  // reminder must not be dismissed just because a screen is staying on - see
+  // lastInputMs().
+  uint32_t _last_input_ms;
 
   // A user wake this long after the panel blanked resets navigation to home
   // (unless the foreground opts out via keepOnWake). Short naps keep your place.
   static const uint32_t WAKE_HOME_THRESHOLD_MS = 60000;
   uint32_t _slept_at;   // now_ms when auto-off last blanked the panel (0 = not slept)
-
-  // Contact-bounce coalescing: a noisy joystick press can emit the same event
-  // twice within a few ms (multi-click debounce is off for snappy nav). Drop a
-  // repeat of the same event inside this window - far below the human repeat rate.
-  static const uint32_t INPUT_DEBOUNCE_MS = 60;
-  InputEvent _last_input_event;
-  uint32_t _last_input_ms;
-  bool _input_seen;
 
   char _toast_msg[28];
   uint32_t _toast_until;
