@@ -264,6 +264,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   mishmesh::clockService().begin(&_theStorage);   // alarm / world cities / timer duration
   ctx.sound = &_sound;
   _host = new mishmesh::AppletHost(_display, ctx);
+  _host->setInputMountRotation(MISHMESH_INPUT_MOUNT_ROTATION);
   _host->setInputRotation(mishmesh::uiPrefs().effectiveInputRotation());
   _host->setAutoOffMillis(mishmesh::screenSleepMillis(screenSleepIndex()));   // honor saved sleep pref
 

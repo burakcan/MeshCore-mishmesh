@@ -43,7 +43,6 @@ public:
   }
   bool poll(InputReport& out) override;
   uint16_t heldMask() const override;
-  void setRotation(int quarters) override { _rotation = ((quarters % 4) + 4) % 4; }
 };
 
 // A 5-way joystick / D-pad. Each direction fires on the press edge; holding Up
@@ -76,6 +75,8 @@ public:
   }
   bool poll(InputReport& out) override;
   uint16_t heldMask() const override;
+  // Mounted hardware: the stick turns with the screen. See InputSource::setRotation.
+  void setRotation(int quarters) override { _rotation = ((quarters % 4) + 4) % 4; }
 };
 
 }  // namespace mishmesh

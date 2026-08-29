@@ -84,6 +84,12 @@ public:
   // Quarter turns the screen has been rotated by, pushed down to every source so
   // the spatially-mounted ones turn with it. Sources added later pick it up too.
   void setInputRotation(int quarters);
+  // Fixed offset between the control surface and the panel, which is a property
+  // of how the board is built rather than anything the user chose. Composes with
+  // setInputRotation, so "follow the screen" stays correct on a board whose stick
+  // is not mounted square to its display.
+  void setInputMountRotation(int quarters);
+  int  inputRotation() const { return (_input_mount + _input_user) % 4; }
 
   // Test/inspection accessor: current toast text (empty if no toast has been posted).
   const char* toastForTest() const { return _toast_msg; }
@@ -114,6 +120,7 @@ private:
   // whole panel flush and now_ms is the pre-render stamp, not the arrival time.
   void pumpInput(uint32_t now_ms, bool bypass_bounce = false);
   void handleReport(const InputReport& rep, uint32_t now_ms, bool bypass_bounce);
+  void pushInputRotation();   // mount + user, out to every source
   void rebuildCanvas();       // after the driver's logical size changes
   void refreshInputState();   // OR every source's heldMask() into _input_state
   static void busyPollThunk(const void* self);
@@ -129,7 +136,8 @@ private:
   InputSource* _sources[MAX_SOURCES];
   int _nsources;
 
-  int  _input_rotation = 0;         // see setInputRotation()
+  int  _input_mount = 0;            // see setInputMountRotation()
+  int  _input_user = 0;             // see setInputRotation()
   bool _flushed_this_loop = false;   // a frame actually reached the panel
 
   static const int BUSY_QUEUE = 8;

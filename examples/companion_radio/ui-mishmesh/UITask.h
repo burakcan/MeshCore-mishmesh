@@ -3,6 +3,13 @@
 // lets main.cpp swap the generic "Loading..." boot text for our splash
 #define MISHMESH_UI 1
 
+// Quarter turns from the joystick's silkscreen to the panel's "up". Zero on a
+// board whose stick is mounted square to its display; the variant overrides it
+// where it is not. Measured, not guessed - see the Controls setting.
+#ifndef MISHMESH_INPUT_MOUNT_ROTATION
+  #define MISHMESH_INPUT_MOUNT_ROTATION 0
+#endif
+
 #include <MeshCore.h>
 #include <helpers/ui/DisplayDriver.h>
 #include <helpers/SensorManager.h>

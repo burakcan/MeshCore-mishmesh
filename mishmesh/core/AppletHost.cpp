@@ -77,9 +77,19 @@ bool AppletHost::displaySupportsOrientation() const {
 }
 
 void AppletHost::setInputRotation(int quarters) {
-  _input_rotation = ((quarters % 4) + 4) % 4;
+  _input_user = ((quarters % 4) + 4) % 4;
+  pushInputRotation();
+}
+
+void AppletHost::setInputMountRotation(int quarters) {
+  _input_mount = ((quarters % 4) + 4) % 4;
+  pushInputRotation();
+}
+
+void AppletHost::pushInputRotation() {
+  const int total = inputRotation();
   for (int i = 0; i < _nsources; i++) {
-    if (_sources[i] != nullptr) _sources[i]->setRotation(_input_rotation);
+    if (_sources[i] != nullptr) _sources[i]->setRotation(total);
   }
 }
 
@@ -124,7 +134,7 @@ void AppletHost::wakeDisplay() {
 
 void AppletHost::addSource(InputSource* src) {
   if (src == nullptr || _nsources >= MAX_SOURCES) return;
-  src->setRotation(_input_rotation);   // sources are added after the pref is read
+  src->setRotation(inputRotation());   // sources are added after the prefs are read
   _sources[_nsources++] = src;
 }
 
