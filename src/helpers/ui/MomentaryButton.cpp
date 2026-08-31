@@ -1,6 +1,8 @@
 #include "MomentaryButton.h"
 
 #define MULTI_CLICK_WINDOW_MS  280
+// [mishmesh] see _last_edge in the header
+#define EDGE_DEBOUNCE_MS  25
 
 MomentaryButton::MomentaryButton(int8_t pin, int long_press_millis, bool reverse, bool pulldownup, bool multiclick) { 
   _pin = pin;
@@ -15,6 +17,7 @@ MomentaryButton::MomentaryButton(int8_t pin, int long_press_millis, bool reverse
   _last_click_time = 0;
   _multi_click_window = multiclick ? MULTI_CLICK_WINDOW_MS : 0;
   _pending_click = false;
+  _last_edge = 0;   // [mishmesh]
 }
 
 MomentaryButton::MomentaryButton(int8_t pin, int long_press_millis, int analog_threshold) {
@@ -30,6 +33,7 @@ MomentaryButton::MomentaryButton(int8_t pin, int long_press_millis, int analog_t
   _last_click_time = 0;
   _multi_click_window = MULTI_CLICK_WINDOW_MS;
   _pending_click = false;
+  _last_edge = 0;   // [mishmesh]
 }
 
 void MomentaryButton::begin() {
@@ -67,7 +71,13 @@ int MomentaryButton::check(bool repeat_click) {
 
   int event = BUTTON_EVENT_NONE;
   int btn = _threshold > 0 ? (analogRead(_pin) < _threshold) : digitalRead(_pin);
+  // [mishmesh] Ignore an edge landing inside the lockout from the last accepted
+  // one; the level is treated as unchanged until the contact settles. The first
+  // edge still fires immediately, so a real press gains no latency.
+  if (btn != prev && (unsigned long)(millis() - _last_edge) < EDGE_DEBOUNCE_MS) btn = prev;
+  // [/mishmesh]
   if (btn != prev) {
+    _last_edge = millis();   // [mishmesh] arm the lockout
     if (isPressed(btn)) {
       down_at = millis();
     } else {
