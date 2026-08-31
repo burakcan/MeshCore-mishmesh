@@ -79,6 +79,13 @@ public:
   // scroll offsets) re-derives it on the next frame.
   void applyUiScale(int mult);
   bool displaySupportsUiScale() const;
+  // Work the adapter needs serviced while a slow panel blocks the loop. Input is
+  // drained here already; the sound sequencer is the other case, since a note
+  // whose duration expires during a flush keeps sounding until the loop resumes.
+  // It belongs to the adapter rather than to the host because servicing it needs
+  // real time, and the host has no clock - _loop_now is the pre-render stamp.
+  void setBusyHook(void (*fn)(void*), void* arg) { _busy_hook = fn; _busy_hook_arg = arg; }
+
   void applyDisplayRotation(int quarters);
   bool displaySupportsOrientation() const;
   // Quarter turns the screen has been rotated by, pushed down to every source so
@@ -135,6 +142,9 @@ private:
 
   int  _input_mount = 0;            // see setInputMountRotation()
   int  _input_user = 0;             // see setInputRotation()
+
+  void (*_busy_hook)(void*) = nullptr;
+  void* _busy_hook_arg = nullptr;
 
   static const int BUSY_QUEUE = 8;
   InputReport _busyQueue[BUSY_QUEUE];

@@ -60,6 +60,7 @@ void AppletHost::pollDuringBusy() {
       if (_busy_count < BUSY_QUEUE) _busyQueue[_busy_count++] = rep;
     }
   }
+  if (_busy_hook) _busy_hook(_busy_hook_arg);
 }
 
 bool AppletHost::displaySupportsUiScale() const {

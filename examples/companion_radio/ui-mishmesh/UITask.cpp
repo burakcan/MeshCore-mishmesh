@@ -170,6 +170,10 @@ void UITask::finishOnboardingToHome() {
   if (_host && _home) _host->replace(_home);
 }
 
+void UITask::busyTick(void* self) {
+  ((UITask*)self)->_sound.tick(millis());
+}
+
 void UITask::drawBootSplash(DisplayDriver* disp) {
   using namespace mishmesh;
   const int gap = 5;   // matches the onboarding Welcome stacking
@@ -264,6 +268,10 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   mishmesh::clockService().begin(&_theStorage);   // alarm / world cities / timer duration
   ctx.sound = &_sound;
   _host = new mishmesh::AppletHost(_display, ctx);
+  // A panel flush blocks this loop for hundreds of ms, and the sequencer only
+  // ends a note when it is ticked - so without this a note that falls due mid
+  // flush plays until the flush finishes, and the one after it starts late.
+  _host->setBusyHook(&UITask::busyTick, this);
   _host->setInputMountRotation(MISHMESH_INPUT_MOUNT_ROTATION);
   _host->setInputRotation(mishmesh::uiPrefs().effectiveInputRotation());
   _host->setAutoOffMillis(mishmesh::screenSleepMillis(screenSleepIndex()));   // honor saved sleep pref

@@ -62,6 +62,7 @@ class UITask : public AbstractUITask, public mishmesh::AppServices, public mishm
   mutable uint8_t _discoverKey[mishmesh::PUBKEY_LEN];   // stable storage for getDiscoverResult().pubKey
 
   static void fillView(const ContactInfo& c, mishmesh::ContactView& out);
+  static void busyTick(void* self);   // AppletHost busy hook: keeps sound on time
 
   mishmesh::ExtraFsMsgBackend _backend;  // flash backend; wired to store in begin()
   mishmesh::MessageStore _msgStore;
