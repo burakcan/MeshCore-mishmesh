@@ -4,6 +4,9 @@
 #include <Arduino.h>
 #include <helpers/NRF52Board.h>
 
+// [mishmesh]
+extern float mishmeshBatteryCalFactor;
+// [/mishmesh]
 
 class GAT56230SMeshKitBoard : public NRF52BoardDCDC {
 protected:
@@ -26,7 +29,7 @@ public:
     }
     raw = raw / BATTERY_SAMPLES;
 
-    return (ADC_MULTIPLIER * raw) / 4096;
+    return (ADC_MULTIPLIER * raw) / 4096 * mishmeshBatteryCalFactor;  // [mishmesh] trim
   }
 
   const char* getManufacturerName() const override {
