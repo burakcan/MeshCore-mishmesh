@@ -19,6 +19,8 @@ class Canvas;
 class IconGrid : public Widget {
   const ListModel* _model;
   int _rowH;
+  // Authored row height plus the roomy-canvas bonus; resolved per draw().
+  int _effRowH;
   int _sel, _lastSel;
   // Scroll offset and highlight top both ease toward their targets so movement
   // glides instead of snapping.
@@ -33,7 +35,7 @@ public:
   static const int TICK_MS = 33;   // ~30 fps while animating
 
   IconGrid()
-      : _model(nullptr), _rowH(20), _sel(0), _lastSel(-1),
+      : _model(nullptr), _rowH(20), _effRowH(20), _sel(0), _lastSel(-1),
         _scrollPx(0), _scrollTarget(0), _barY(0),
         _animReady(false), _animating(false) {}
 

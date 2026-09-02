@@ -1,5 +1,6 @@
 #include <mishmesh/applets/AppletChrome.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/core/StrUtil.h>
 #include <mishmesh/widgets/StatusBar.h>
@@ -17,6 +18,7 @@ int drawTopBar(Canvas& c, StatusBar& bar, const char* title, AppServices* app, i
   bar.setTitle(title);
   bar.setBattery(app ? app->batteryMillivolts() : 0);
   int bw = 0, bh = 0; bar.measure(bw, bh);
+  bh = barHeight(c, bh);
   bar.draw(c, 0, 0, w, bh);
   return bh;
 }

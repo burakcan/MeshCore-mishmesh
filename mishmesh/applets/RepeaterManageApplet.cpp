@@ -6,6 +6,7 @@
 #include <mishmesh/applets/RepeaterSettingsApplet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/text/Fonts.h>
 #include <string.h>
 
@@ -54,8 +55,9 @@ int RepeaterManageApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   static const int BAR_H = 13;
   _tabs.setBattery(_app ? _app->batteryMillivolts() : 0);
-  _tabs.draw(c, 0, 0, w, BAR_H);
-  int bodyY = BAR_H + 1;
+  const int barH = barHeight(c, BAR_H);
+  _tabs.draw(c, 0, 0, w, barH);
+  int bodyY = barH + 1;
   int bodyH = h - bodyY;
   switch (_tab) {
     case 0: return statusApplet().renderBody(c, 0, bodyY, w, bodyH);

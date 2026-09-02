@@ -1,6 +1,7 @@
 // mishmesh/applets/MessagePathApplet.cpp
 #include "MessagePathApplet.h"
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/widgets/ListMenu.h>   // TICK_MS
 #include <cstdio>
 
@@ -76,6 +77,7 @@ void MessagePathApplet::rebuild() {
 
 int MessagePathApplet::onRender(Canvas& c) {
   int bw = 0, bh = 0; _bar.measure(bw, bh);
+  bh = barHeight(c, bh);
   _bar.setBattery(_app ? _app->batteryMillivolts() : 0);
   _bar.draw(c, 0, 0, c.width(), bh);
   Canvas body = c.region(0, bh, c.width(), c.height() - bh);

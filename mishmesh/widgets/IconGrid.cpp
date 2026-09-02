@@ -1,5 +1,6 @@
 #include <mishmesh/widgets/IconGrid.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/core/Anim.h>
 #include <mishmesh/text/Fonts.h>
 
@@ -49,20 +50,21 @@ void IconGrid::draw(Canvas& c, int x, int y, int w, int h) {
 
   uint32_t now = c.now();
   Canvas view = c.region(x, y, w, h);
-  int contentH = n * _rowH;
+  _effRowH = _rowH + rowHeightBonus(view);
+  int contentH = n * _effRowH;
   int maxScroll = contentH > h ? contentH - h : 0;
 
   // Keep the selected row visible (computed from the committed target, not the
   // eased value, so it doesn't chatter while settling).
-  int selTop = _sel * _rowH;
-  if (selTop + _rowH > _scrollTarget + h) _scrollTarget = selTop + _rowH - h;
+  int selTop = _sel * _effRowH;
+  if (selTop + _effRowH > _scrollTarget + h) _scrollTarget = selTop + _effRowH - h;
   if (selTop < _scrollTarget) _scrollTarget = selTop;
   if (_scrollTarget > maxScroll) _scrollTarget = maxScroll;
   if (_scrollTarget < 0) _scrollTarget = 0;
 
   if (!_animReady) { _scrollPx = _scrollTarget; _barY = selTop; _animReady = true; }
   else {
-    int minStep = _rowH / 2; if (minStep < 3) minStep = 3;
+    int minStep = _effRowH / 2; if (minStep < 3) minStep = 3;
     _scrollPx = approach(_scrollPx, _scrollTarget, minStep);
     _barY = approach(_barY, selTop, minStep);
   }
@@ -73,19 +75,19 @@ void IconGrid::draw(Canvas& c, int x, int y, int w, int h) {
 
   // Base pass: every visible row, un-highlighted.
   for (int i = 0; i < n; i++) {
-    int ry = i * _rowH - _scrollPx;
-    if (ry + _rowH <= 0 || ry >= h) continue;
+    int ry = i * _effRowH - _scrollPx;
+    if (ry + _effRowH <= 0 || ry >= h) continue;
     drawRowContent(view, i, ry, cw, DisplayDriver::LIGHT, now);
   }
 
   // Rounded highlight pill at the eased bar position, then the row(s) it covers
   // re-drawn inverted and clipped to it, so content inverts as the pill glides.
   int barY = _barY - _scrollPx;
-  view.fillRoundRect(1, barY + 1, cw - 2, _rowH - 2, DisplayDriver::LIGHT);
+  view.fillRoundRect(1, barY + 1, cw - 2, _effRowH - 2, DisplayDriver::LIGHT);
   for (int i = 0; i < n; i++) {
-    int ry = i * _rowH - _scrollPx;
-    if (ry + _rowH <= barY || ry >= barY + _rowH) continue;   // no overlap with the pill
-    Canvas bar = view.region(0, barY, cw, _rowH);
+    int ry = i * _effRowH - _scrollPx;
+    if (ry + _effRowH <= barY || ry >= barY + _effRowH) continue;   // no overlap with the pill
+    Canvas bar = view.region(0, barY, cw, _effRowH);
     drawRowContent(bar, i, ry - barY, cw, DisplayDriver::DARK, now);
   }
 
@@ -104,7 +106,7 @@ void IconGrid::drawRowContent(Canvas& view, int i, int ry, int cw,
   bool inverted = (col == DisplayDriver::DARK);   // drawing over the light pill
 
   int boxX = MARGIN;
-  int boxY = ry + (_rowH - BOX) / 2;
+  int boxY = ry + (_effRowH - BOX) / 2;
   if (inverted) view.fillRoundRect(boxX, boxY, BOX, BOX, DisplayDriver::DARK);
   else          view.drawRoundRect(boxX, boxY, BOX, BOX, DisplayDriver::LIGHT);
   uint16_t ic = _model->icon(i);
@@ -121,7 +123,7 @@ void IconGrid::drawRowContent(Canvas& view, int i, int ry, int cw,
     int bw = view.textWidth(fontCaption(), val) + 3;
     int bh = view.fontHeight(fontCaption()) + 2;
     int bx = cw - MARGIN - bw;
-    int by = ry + (_rowH - bh) / 2;
+    int by = ry + (_effRowH - bh) / 2;
     view.fillRect(bx, by, bw, bh, col);
     view.drawText(fontCaption(), bx + 2, by + 1, val, bubText);
     rightW = bw + 4;
@@ -131,7 +133,7 @@ void IconGrid::drawRowContent(Canvas& view, int i, int ry, int cw,
   if (lbl && lbl[0]) {
     int availW = cw - MARGIN - rightW - textX; if (availW < 0) availW = 0;
     int capH = view.fontHeight(fontBody());
-    int capY = ry + (_rowH - capH) / 2;
+    int capY = ry + (_effRowH - capH) / 2;
     // Selected + overflow marquees; everything else is left-aligned + ellipsized.
     if (i == _sel && view.textWidth(fontBody(), lbl) > availW)
       _marquee.draw(view, fontBody(), textX, capY, availW, capH, lbl, col, now);

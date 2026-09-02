@@ -2,6 +2,7 @@
 #pragma once
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/core/StrUtil.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/widgets/ConfirmDialog.h>
 #include <mishmesh/core/MessagesService.h>
 
@@ -42,6 +43,7 @@ public:
     _pending = Result::None; _toast = nullptr;
   }
   bool needsAnimation() const { return _menu.needsAnimation(); }
+  int contentHeight(const Canvas& c) const { return _model.count() * (ROW_H + rowHeightBonus(c)); }
   void draw(Canvas& c, int x, int y, int w, int h) {
     _menu.setModel(&_model); _menu.setRowHeight(ROW_H); _menu.draw(c, x, y, w, h);
   }

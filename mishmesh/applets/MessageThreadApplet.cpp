@@ -380,7 +380,7 @@ int MessageThreadApplet::onRender(Canvas& c) {
     // Quick replies open from the empty-thread action bar, so the modal must
     // still paint here - the main modal draw below is past this early return.
     if (_qrOpen) {
-      Canvas box = drawModalChrome(c);
+      Canvas box = drawModalChrome(c, 0, _menu.contentHeight(c) + 4);
       _menu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
       return _menu.needsAnimation() ? ListMenu::TICK_MS : 250;
     }
@@ -484,12 +484,12 @@ int MessageThreadApplet::onRender(Canvas& c) {
 
   // Per-message action menu: a bare box over the live conversation.
   if (_menuOpen) {
-    Canvas box = drawModalChrome(c);
+    Canvas box = drawModalChrome(c, 0, _menu.contentHeight(c) + 4);
     _menu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
     return _menu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }
   if (_qrOpen) {
-    Canvas box = drawModalChrome(c);
+    Canvas box = drawModalChrome(c, 0, _menu.contentHeight(c) + 4);
     _menu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
     return _menu.needsAnimation() ? ListMenu::TICK_MS : 250;
   }

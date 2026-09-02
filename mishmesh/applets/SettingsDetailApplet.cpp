@@ -1,5 +1,6 @@
 #include <mishmesh/applets/SettingsDetailApplet.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 
 namespace mishmesh {
 
@@ -21,6 +22,7 @@ void SettingsDetailApplet::onForeground() {
 
 int SettingsDetailApplet::onRender(Canvas& c) {
   int bw = 0, bh = 0; _bar.measure(bw, bh);
+  bh = barHeight(c, bh);
   _bar.setBattery(_app ? _app->batteryMillivolts() : 0);
   _bar.draw(c, 0, 0, c.width(), bh);
   if (!_panel) return 1000;

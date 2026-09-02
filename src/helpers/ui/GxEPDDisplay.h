@@ -51,6 +51,8 @@
 class GxEPDDisplay : public DisplayDriver {
 public:
   static const int MAX_UI_SCALE = 2;   // [mishmesh] 3x leaves too little canvas
+  // [mishmesh] narrowest logical canvas the widget set still lays out in
+  static const int MIN_LOGICAL_WIDTH = 100;
 private:
 
   GxEPD2_BW<EINK_DISPLAY_MODEL, EINK_DISPLAY_MODEL::HEIGHT> display;
@@ -63,6 +65,7 @@ private:
   int  _ui_scale = 1;
   int  _rotation = 0;       // quarter turns clockwise from the variant default
   void applyGeometry();
+  int  effectiveUiScale() const;
   // [/mishmesh]
   bool _init = false;
   bool _isOn = false;
@@ -91,7 +94,7 @@ public:
   bool isEink() override { return true; }
   // [mishmesh] window_bkg is GxEPD_WHITE here; see DisplayDriver::hasLightBackground
   bool hasLightBackground() const override { return true; }
-  bool supportsUiScale() const override { return true; }
+  bool supportsUiScale() const override;
   void setUiScale(int mult) override;
   bool supportsOrientation() const override { return true; }
   void setDisplayRotation(int quarters) override;

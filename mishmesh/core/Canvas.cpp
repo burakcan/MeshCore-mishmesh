@@ -252,6 +252,16 @@ int Canvas::fontHeightScaled(const mf_font_s* font, int scale) const {
   return fontHeight(font) * scale;
 }
 
+int Canvas::fitScale(const mf_font_s* font, const char* str, int maxW, int maxScale) const {
+  if (maxScale < 1) maxScale = 1;
+  if (!font || !str || maxW <= 0) return 1;
+  int w1 = textWidth(font, str);
+  if (w1 <= 0) return maxScale;
+  int fits = maxW / w1;
+  if (fits < 1) return 1;
+  return fits < maxScale ? fits : maxScale;
+}
+
 void Canvas::drawTextScaled(const mf_font_s* font, int x, int y, const char* str,
                             DisplayDriver::Color c, int scale, TextAlign align) {
   if (!font || !str) return;

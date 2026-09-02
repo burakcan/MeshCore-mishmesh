@@ -180,7 +180,7 @@ int RepeaterSettingsPanel::onRender(Canvas& c) {
   if (_phase == Phase::Confirm) _confirm.draw(c, 0, 0, w, h);
 
   if (_phase == Phase::Modal) {
-    Canvas box = drawModalChrome(c);
+    Canvas box = drawModalChrome(c, 0, _modalText.contentHeight(c) + 4);
     _modalText.draw(box, 2, 2, box.width() - 4, box.height() - 4);
   }
 

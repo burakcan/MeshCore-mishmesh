@@ -16,8 +16,8 @@ void PingDialog::setReplied(uint32_t rttMs, float snrUs, float snrThem) {
 
 void PingDialog::draw(Canvas& c, int x, int y, int w, int h) {
   Canvas view = c.region(x, y, w, h);
-  Canvas box = drawModalChrome(view);
   const int pad = 4;
+  Canvas box = drawModalChrome(view, 0, _text.contentHeight(view) + 2 * pad);
   _text.draw(box, pad, pad, box.width() - 2 * pad, box.height() - 2 * pad);
 }
 

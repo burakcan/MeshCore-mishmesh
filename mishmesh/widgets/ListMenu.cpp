@@ -1,6 +1,7 @@
 #include <mishmesh/widgets/ListMenu.h>
 #include <mishmesh/widgets/Toggle.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/core/Anim.h>
 #include <mishmesh/text/Fonts.h>
 
@@ -29,6 +30,10 @@ void ListMenu::measure(int& w, int& h) const {
   h = _headerH + _rowH * (_model ? _model->count() : 0);
 }
 
+int ListMenu::contentHeight(const Canvas& c) const {
+  return _headerH + (_rowH + rowHeightBonus(c)) * (_model ? _model->count() : 0);
+}
+
 // Kept for callers that need the row-based scroll offset (and tests).
 int ListMenu::firstVisibleRow(int box_height) const {
   int n = _model ? _model->count() : 0;
@@ -48,7 +53,7 @@ int ListMenu::firstVisibleRow(int box_height) const {
 // looks identical. The button shows its own focus (filled when selected); it is drawn
 // on top of everything and never inverted by the row highlight bar.
 void ListMenu::drawButtonRow(Canvas& view, int i, int ry, int cw) {
-  int bh = _rowH - 2;   // 1px margin top and bottom
+  int bh = _effRowH - 2;   // 1px margin top and bottom
   _button.set(_model->label(i), _model->icon(i));
   // Half the row is the floor (so short labels like "Save" keep a button-sized hit
   // target), but grow to whatever the icon + label needs, capped at the row width.
@@ -66,25 +71,25 @@ void ListMenu::drawRowContent(Canvas& view, int i, int ry, int cw, DisplayDriver
   uint16_t ic = _model->icon(i);
   if (ic) {
     int iconH = view.fontHeight(iconFont());
-    int iy = ry + (_rowH - iconH) / 2; if (iy < ry) iy = ry;
+    int iy = ry + (_effRowH - iconH) / 2; if (iy < ry) iy = ry;
     view.drawGlyph(iconFont(), 2, iy, ic, col);
     tx = 2 + iconH + 3;
   }
 
-  int ty = (_rowH - view.fontHeight(fontBody())) / 2; if (ty < 0) ty = 0;
+  int ty = (_effRowH - view.fontHeight(fontBody())) / 2; if (ty < 0) ty = 0;
   int rightW = 0;
   if (_model->isRadio(i)) {
     // Single-select: reserve a square slot at the right edge; draw the check only
     // on the chosen row, so the marker stays put as the cursor moves between rows.
     int gh = view.fontHeight(iconFont());
     if (_model->radioOn(i)) {
-      int gy = ry + (_rowH - gh) / 2; if (gy < ry) gy = ry;
+      int gy = ry + (_effRowH - gh) / 2; if (gy < ry) gy = ry;
       view.drawGlyph(iconFont(), cw - gh - 2, gy, (uint16_t)Icon::Check, col);
     }
     rightW = gh + 4;
   } else if (_model->isToggle(i)) {
     const int PILL_W = 28;
-    int ph = _rowH - 2;
+    int ph = _effRowH - 2;
     Toggle pill;
     pill.setOn(_model->toggleState(i));
     pill.setColor(col);
@@ -106,7 +111,7 @@ void ListMenu::drawRowContent(Canvas& view, int i, int ry, int cw, DisplayDriver
 
   int availW = cw - tx - rightW; if (availW < 0) availW = 0;
   const char* lbl = _model->label(i);
-  if (i == _selected) _marquee.draw(view, fontBody(), tx, ry, availW, _rowH, lbl, col, now);
+  if (i == _selected) _marquee.draw(view, fontBody(), tx, ry, availW, _effRowH, lbl, col, now);
   else                view.drawTextEllipsized(fontBody(), tx, ry + ty, availW, lbl, col);
 }
 
@@ -118,6 +123,7 @@ void ListMenu::draw(Canvas& c, int x, int y, int w, int h) {
 
   uint32_t now = c.now();
   Canvas view = c.region(x, y, w, h);
+  _effRowH = _rowH + rowHeightBonus(view);
 
   int bodyTop = _headerH + (_header && _headerH > 0 ? 2 : 0);   // gap below the header
 
@@ -146,24 +152,24 @@ void ListMenu::draw(Canvas& c, int x, int y, int w, int h) {
     return;
   }
 
-  int contentH = bodyTop + n * _rowH;
+  int contentH = bodyTop + n * _effRowH;
   int maxScroll = contentH > h ? contentH - h : 0;
 
   // Scroll target: keep the selected row visible (computed from the committed
   // target, not the eased value, so it doesn't chatter while settling).
-  int selTop = bodyTop + _selected * _rowH;
-  int selBot = selTop + _rowH;
+  int selTop = bodyTop + _selected * _effRowH;
+  int selBot = selTop + _effRowH;
   if (selBot > _scrollTarget + h) _scrollTarget = selBot - h;
   if (selTop < _scrollTarget) _scrollTarget = selTop;
   if (_selected == 0) _scrollTarget = 0;     // first row: reveal the header
   if (_scrollTarget > maxScroll) _scrollTarget = maxScroll;
   if (_scrollTarget < 0) _scrollTarget = 0;
-  int barTarget = _selected * _rowH;         // highlight top, content coords
+  int barTarget = _selected * _effRowH;         // highlight top, content coords
 
   if (!_animReady) {                         // open / wrap: jump straight to target
     _scrollPx = _scrollTarget; _barY = barTarget; _animReady = true;
   } else {
-    int minStep = _rowH / 2; if (minStep < 3) minStep = 3;   // ~half a row per frame
+    int minStep = _effRowH / 2; if (minStep < 3) minStep = 3;   // ~half a row per frame
     _scrollPx = approach(_scrollPx, _scrollTarget, minStep);
     _barY = approach(_barY, barTarget, minStep);
   }
@@ -181,8 +187,8 @@ void ListMenu::draw(Canvas& c, int x, int y, int w, int h) {
   // drawn last (below) so the highlight bar never paints over them.
   for (int i = 0; i < n; i++) {
     if (_model->isButton(i)) continue;
-    int ry = bodyTop + i * _rowH - _scrollPx;
-    if (ry + _rowH <= 0 || ry >= h) continue;
+    int ry = bodyTop + i * _effRowH - _scrollPx;
+    if (ry + _effRowH <= 0 || ry >= h) continue;
     drawRowContent(view, i, ry, cw, DisplayDriver::LIGHT, now);
   }
 
@@ -192,12 +198,12 @@ void ListMenu::draw(Canvas& c, int x, int y, int w, int h) {
   // _drawSelection is false (focus has moved to an external widget).
   if (_drawSelection && !_model->isButton(_selected)) {
     int barY = bodyTop + _barY - _scrollPx;
-    view.fillRect(0, barY, cw, _rowH, DisplayDriver::LIGHT);
+    view.fillRect(0, barY, cw, _effRowH, DisplayDriver::LIGHT);
     for (int i = 0; i < n; i++) {
       if (_model->isButton(i)) continue;
-      int ry = bodyTop + i * _rowH - _scrollPx;
-      if (ry + _rowH <= barY || ry >= barY + _rowH) continue;   // no overlap with the bar
-      Canvas bar = view.region(0, barY, cw, _rowH);
+      int ry = bodyTop + i * _effRowH - _scrollPx;
+      if (ry + _effRowH <= barY || ry >= barY + _effRowH) continue;   // no overlap with the bar
+      Canvas bar = view.region(0, barY, cw, _effRowH);
       drawRowContent(bar, i, ry - barY, cw, DisplayDriver::DARK, now);
     }
   }
@@ -205,8 +211,8 @@ void ListMenu::draw(Canvas& c, int x, int y, int w, int h) {
   // Button rows on top: the shared Button widget renders its own focus state.
   for (int i = 0; i < n; i++) {
     if (!_model->isButton(i)) continue;
-    int ry = bodyTop + i * _rowH - _scrollPx;
-    if (ry + _rowH <= 0 || ry >= h) continue;
+    int ry = bodyTop + i * _effRowH - _scrollPx;
+    if (ry + _effRowH <= 0 || ry >= h) continue;
     drawButtonRow(view, i, ry, cw);
   }
 

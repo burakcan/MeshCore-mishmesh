@@ -55,6 +55,10 @@ public:
   int  count() const { return _count; }
   const char* lineForTest(int i) const { return (i >= 0 && i < _count) ? _lines[i] : ""; }
   bool needsAnimation() const { return _animating; }
+  // Unwrapped height of the current lines plus header/footer - what a modal
+  // frame around this panel should size itself to. A setWrap(true) caller can
+  // exceed it, and then the frame just keeps its full inset and scrolls.
+  int contentHeight(const Canvas& c) const;
   // True when the scroll position is at or past the bottom of the content.
   // Uses state cached by the last draw(); returns true before the first draw
   // (content fits in a zero-height view - no overshoot possible).

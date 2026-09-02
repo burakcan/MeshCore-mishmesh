@@ -2,6 +2,7 @@
 #include <mishmesh/core/AirtimeHistory.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/text/Fonts.h>
 #include <stdio.h>
 
@@ -33,8 +34,9 @@ void AirtimeApplet::onStart(AppletContext& ctx) {
 int AirtimeApplet::onRender(Canvas& c) {
   int w = c.width(), h = c.height();
   _tabs.setBattery(_app ? _app->batteryMillivolts() : 0);
-  _tabs.draw(c, 0, 0, w, BAR_H);
-  int bodyY = BAR_H + 1;
+  const int barH = barHeight(c, BAR_H);
+  _tabs.draw(c, 0, 0, w, barH);
+  int bodyY = barH + 1;
   int bodyH = h - bodyY;
 
   if (!_app || !_app->airtimeStats(_st)) {
@@ -48,7 +50,11 @@ int AirtimeApplet::onRender(Canvas& c) {
 
 int AirtimeApplet::renderBudget(Canvas& c, int y, int h) {
   int w = c.width();
-  const int LW = 62;   // left (gauge) column width
+  // Side by side the gauge column takes 62px, which on a 122px portrait panel
+  // leaves the stats too narrow to hold a label and its value without the two
+  // running into each other. Stack there: gauge band on top, stats beneath.
+  const bool stacked = isPortrait(c);
+  const int LW = stacked ? w : 62;   // gauge column (or full-width band) width
 
   // --- left: big "free %" hero + labelled fill bar ---
   unsigned pct = _st.txBudgetMax ? (unsigned)((uint64_t)_st.txBudgetMs * 100u / _st.txBudgetMax) : 0;
@@ -63,32 +69,33 @@ int AirtimeApplet::renderBudget(Canvas& c, int y, int h) {
   c.drawText(fontBody(), 3, y + 2 + nh, "TX free", DisplayDriver::LIGHT);
 
   int barW = LW - 6;
-  int barY = y + h - 7;
+  int gaugeH = 2 + nh + c.lineHeight(fontBody());
+  int barY = stacked ? y + gaugeH + 2 : y + h - 7;
   c.drawRect(3, barY, barW, 6, DisplayDriver::LIGHT);
   int fillW = _st.txBudgetMax ? (barW - 2) * (int)pct / 100 : 0;
   if (fillW > 0) c.fillRect(4, barY + 1, fillW, 4, DisplayDriver::LIGHT);
 
-  // --- right: lifetime + last-hour stats, label left / value right ---
+  // --- lifetime + last-hour stats, label left / value right ---
   int rowH = c.lineHeight(fontBody());
-  int x0 = LW + 2;
-  int ly = y + 1;
+  int x0 = stacked ? 3 : LW + 2;
+  int ly = stacked ? barY + 6 + 6 : y + 1;
   char v[14];
   fmtDur(v, sizeof(v), _st.txTotalMs);
   c.drawText(fontBody(), x0, ly, "TX", DisplayDriver::LIGHT);
-  c.drawText(fontBody(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
+  c.drawText(fontBody(), w - 3, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
   ly += rowH;
   fmtDur(v, sizeof(v), _st.rxTotalMs);
   c.drawText(fontBody(), x0, ly, "RX", DisplayDriver::LIGHT);
-  c.drawText(fontBody(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
+  c.drawText(fontBody(), w - 3, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
   ly += rowH;
   fmtDur(v, sizeof(v), _st.history ? _st.history->txWindowMs() : 0);
   c.drawText(fontBody(), x0, ly, "1h", DisplayDriver::LIGHT);
-  c.drawText(fontBody(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
+  c.drawText(fontBody(), w - 3, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
   ly += rowH;
   snprintf(v, sizeof(v), "%u/%u", (unsigned)(_st.sentFlood + _st.sentDirect),
            (unsigned)(_st.recvFlood + _st.recvDirect));
   c.drawText(fontBody(), x0, ly, "Pkt", DisplayDriver::LIGHT);
-  c.drawText(fontBody(), w, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
+  c.drawText(fontBody(), w - 3, ly, v, DisplayDriver::LIGHT, TextAlign::Right);
 
   return 1000;   // budget refills continuously; keep the % live
 }

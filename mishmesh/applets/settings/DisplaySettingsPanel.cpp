@@ -114,11 +114,11 @@ void DisplaySettingsPanel::begin(AppletContext& ctx) {
 }
 
 int DisplaySettingsPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
+  _list.draw(c, x, y, w, h);
   if (_editingSleep || _editingBrightness) {
-    _stepper.draw(c, x, y, w, h);
+    _stepper.draw(c, x, y, w, h);   // overlay, like every other panel's modal
     return 100;
   }
-  _list.draw(c, x, y, w, h);
   return _list.needsAnimation() ? ListMenu::TICK_MS : 500;
 }
 

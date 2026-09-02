@@ -31,6 +31,10 @@ bool ScrollText::onInput(InputEvent ev) {
   return false;
 }
 
+int ScrollText::contentHeight(const Canvas& c) const {
+  return _headerH + _count * c.lineHeight(fontBody()) + _footerH;
+}
+
 void ScrollText::draw(Canvas& c, int x, int y, int w, int h) {
   Canvas view = c.region(x, y, w, h);
   const mf_font_s* font = fontBody();

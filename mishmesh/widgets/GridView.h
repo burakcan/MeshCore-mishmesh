@@ -26,6 +26,12 @@ class GridView : public Widget {
   bool _focusVisible = true;   // when false, draw without the focus highlight
                                // (another widget owns focus this frame)
 public:
+  // A key cap needs about this much around it and no more; past it the highlight
+  // reads as a filled panel rather than a pressed key. Sized from the 4-column
+  // keypad on the 128x64 design panel, which is the densest layout there is.
+  static const int MAX_CELL_W = 44;
+  static const int MAX_CELL_H = 22;
+
   GridView() : _model(nullptr), _row(0), _col(0) {}
 
   void setModel(const GridModel* m);

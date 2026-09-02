@@ -96,6 +96,12 @@ public:
                       TextAlign align = TextAlign::Left);
   int textWidthScaled(const mf_font_s* font, const char* str, int scale) const;
   int fontHeightScaled(const mf_font_s* font, int scale) const;
+  // Largest whole magnification in 1..maxScale at which `str` still fits maxW.
+  // Picking the magnification from the canvas height alone reads a 122x250
+  // portrait panel as roomy and then draws a scale-2 readout off both edges;
+  // the readout has to be measured against the width it actually gets.
+  // Returns 1 when even unscaled text overflows - callers ellipsize instead.
+  int fitScale(const mf_font_s* font, const char* str, int maxW, int maxScale) const;
 
   // Word-wraps within w; returns the y just below the last line.
   int drawTextWrapped(const mf_font_s* font, int x, int y, int w,

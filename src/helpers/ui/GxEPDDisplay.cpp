@@ -146,9 +146,34 @@ void GxEPDDisplay::applyGeometry() {
   const bool portrait = (_rotation % 2) != 0;   // odd turns put the panel on its side
   const int lw = portrait ? EINK_LOGICAL_HEIGHT : EINK_LOGICAL_WIDTH;
   const int lh = portrait ? EINK_LOGICAL_WIDTH  : EINK_LOGICAL_HEIGHT;
-  scale_x = (portrait ? EINK_SCALE_Y : EINK_SCALE_X) * _ui_scale;
-  scale_y = (portrait ? EINK_SCALE_X : EINK_SCALE_Y) * _ui_scale;
-  setLogicalSize(lw / _ui_scale, lh / _ui_scale);
+  const int eff = effectiveUiScale();
+  scale_x = (portrait ? EINK_SCALE_Y : EINK_SCALE_X) * eff;
+  scale_y = (portrait ? EINK_SCALE_X : EINK_SCALE_Y) * eff;
+  setLogicalSize(lw / eff, lh / eff);
+}
+
+// Portrait divides the panel's SHORT edge, so a multiple that is comfortable in
+// landscape can leave a width no layout survives: 2x on a 250x122 panel is 61
+// logical px, where list labels clip mid-word and the keypad ellipsizes its own
+// key captions. Step down rather than offer a size that cannot be read. A square
+// panel is equally tight either way, so leave that to the variant.
+int GxEPDDisplay::effectiveUiScale() const {
+  const bool portrait = (_rotation % 2) != 0;
+  const int lw = portrait ? EINK_LOGICAL_HEIGHT : EINK_LOGICAL_WIDTH;
+  int eff = _ui_scale;
+  if (portrait && lw < EINK_LOGICAL_WIDTH)
+    while (eff > 1 && lw / eff < MIN_LOGICAL_WIDTH) eff--;
+  return eff;
+}
+
+// Hide the interface-size choice where it has nothing to offer, instead of
+// letting the settings row claim "Large" while the panel renders Standard.
+bool GxEPDDisplay::supportsUiScale() const {
+  const bool portrait = (_rotation % 2) != 0;
+  const int lw = portrait ? EINK_LOGICAL_HEIGHT : EINK_LOGICAL_WIDTH;
+  if (portrait && lw < EINK_LOGICAL_WIDTH)
+    return lw / MAX_UI_SCALE >= MIN_LOGICAL_WIDTH;
+  return true;
 }
 
 void GxEPDDisplay::setUiScale(int mult) {

@@ -3,6 +3,7 @@
 #include "MessageThreadApplet.h"
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/text/Fonts.h>
 #include <cstdio>
 
@@ -92,7 +93,7 @@ int NotificationApplet::onRender(Canvas& c) {
   int footY = H - FOOT;
   // The footer is caption-sized because a 64px panel has nothing to spare; a
   // taller card can carry the body tier, which is what the rest of the card uses.
-  const mf_font_s* footFont = c.height() >= 100 ? fontBody() : fontCaption();
+  const mf_font_s* footFont = tierFont(c);
   int cap = card.fontHeight(footFont); if (cap <= 0) cap = 6;
 
   // Preview body, wrapped in the band between the sender and footer. Snap the

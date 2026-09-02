@@ -14,6 +14,7 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/text/Fonts.h>
 
 namespace mishmesh {
@@ -79,6 +80,7 @@ void SettingsApplet::onStart(AppletContext& ctx) {
 
 int SettingsApplet::onRender(Canvas& c) {
   int bw = 0, bh = 0; _bar.measure(bw, bh);
+  bh = barHeight(c, bh);
   _bar.setBattery(_app ? _app->batteryMillivolts() : 0);
   _bar.draw(c, 0, 0, c.width(), bh);
   _list.draw(c, 0, bh + 1, c.width(), c.height() - (bh + 1));

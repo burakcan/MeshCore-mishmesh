@@ -113,7 +113,7 @@ int RepeaterAclApplet::onRender(Canvas& c) {
     c.drawText(cap, 2, bottom, status, DisplayDriver::LIGHT, TextAlign::Left);
   }
   if (_phase == Phase::Level) {
-    Canvas box = drawModalChrome(c);
+    Canvas box = drawModalChrome(c, 0, _levelMenu.contentHeight(c) + 4);
     _levelMenu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
   }
 

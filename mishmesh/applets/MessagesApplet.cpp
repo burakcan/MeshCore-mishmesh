@@ -135,7 +135,8 @@ int MessagesApplet::onRender(Canvas& c) {
   _list.draw(c, 0, bodyY, w, bodyH);
 
   if (_menuOpen) {
-    Canvas box = drawModalChrome(c);   // bare box over the live list
+    // bare box over the live list, sized to the rows it holds
+    Canvas box = drawModalChrome(c, 0, _chatMenu.contentHeight(c) + 4);
     _chatMenu.draw(box, 2, 2, box.width() - 4, box.height() - 4);
     if (_chatMenu.modalActive()) _chatMenu.drawModal(c, 0, 0, w, h);   // full-screen guard
     return _chatMenu.needsAnimation() ? ListMenu::TICK_MS : 250;

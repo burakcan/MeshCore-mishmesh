@@ -2,6 +2,7 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
 #include <mishmesh/core/Canvas.h>
+#include <mishmesh/core/Metrics.h>
 #include <mishmesh/core/ClockService.h>
 #include <mishmesh/core/MessagesService.h>
 #include <mishmesh/core/TimeFormat.h>
@@ -15,6 +16,10 @@ namespace mishmesh {
 
 static const int BAR_H = 12;
 static const int MARGIN = 4;
+
+// The hint bar is the recessive tier on a 64px panel, but caption type is too
+// faint to read on a larger one - promote it where there is room to spare.
+static const Font* hintFont(const Canvas& c) { return tierFont(c); }
 
 void HomeApplet::hintLabel(const char* label, char out[5]) {
   int n = 0;
@@ -129,8 +134,11 @@ int HomeApplet::onRender(Canvas& c) {
   // fontNum is 16px, sized for a 64px-tall panel. On a taller one it reads as an
   // afterthought, so magnify it - whole multiples of a bitmap glyph are exact, so
   // the clock stays as sharp as everything around it. The vertical budget still
-  // has to clear the hint bar: clock + date + unread all sit above it.
-  const int numScale = c.height() >= 100 ? 2 : 1;
+  // has to clear the hint bar: clock + date + unread all sit above it. Width is
+  // its own limit: a 122px portrait panel is tall enough to ask for scale 2 and
+  // too narrow to hold it, which used to draw "16:00" as a clipped "16:0".
+  const int numAvail = w - 2 * MARGIN - (suffix ? c.textWidth(fontBody(), suffix) + 3 : 0);
+  const int numScale = c.fitScale(fontNum(), clock, numAvail, numScaleCap(c));
   const int numH = c.fontHeightScaled(fontNum(), numScale);
   int cy = BAR_H + 4;
   c.drawTextScaled(fontNum(), MARGIN, cy, clock, DisplayDriver::LIGHT, numScale);
@@ -150,7 +158,7 @@ int HomeApplet::onRender(Canvas& c) {
     char b[8];
     snprintf(b, sizeof(b), "%u", _msgs->totalNotifyUnread());
     int uy = dy + c.fontHeight(fontBody()) + 2;
-    int hintY = h - c.fontHeight(hintFont(h)) - 1;
+    int hintY = h - c.fontHeight(hintFont(c)) - 1;
     if (uy + 13 <= hintY) {   // 12px glyph + 1px breathing room above the hint bar
       c.drawGlyph(iconFont(), MARGIN, uy, (uint16_t)Icon::Mail, DisplayDriver::LIGHT);
       c.drawText(fontBody(), MARGIN + 16, uy + 2, b, DisplayDriver::LIGHT);
@@ -159,7 +167,7 @@ int HomeApplet::onRender(Canvas& c) {
 
   // --- hint bar: <Left  .Apps  vTgls  Right> ---
   {
-    const Font* f = hintFont(h);
+    const Font* f = hintFont(c);
     char l4[5] = {0}, r4[5] = {0};
     const AppletRegistration* lr = uiPrefs().quickAction(UiPrefs::SLOT_LEFT);
     const AppletRegistration* rr = uiPrefs().quickAction(UiPrefs::SLOT_RIGHT);

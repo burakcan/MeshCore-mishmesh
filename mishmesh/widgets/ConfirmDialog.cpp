@@ -17,10 +17,16 @@ bool ConfirmDialog::onInput(InputEvent ev) {
 
 void ConfirmDialog::draw(Canvas& c, int x, int y, int w, int h) {
   Canvas view = c.region(x, y, w, h);
-  Canvas box = drawModalChrome(view);
-  int bw = box.width(), bh = box.height();
-
-  int pad = 4;
+  const int pad = 4;
+  // Message + button row is the whole dialog, so measure it and let the frame
+  // shrink to it. Wrapping is measured against the width the box will actually
+  // have, which is why the width is settled first.
+  int bw = view.width() - 16;
+  int msgH = view.measureTextWrapped(fontBody(), bw - 2 * pad, _msg);
+  int wantH = pad + 2 + msgH + 4 + view.lineHeight(fontBody()) + 2 + 4;
+  Canvas box = drawModalChrome(view, 0, wantH);
+  bw = box.width();
+  int bh = box.height();
   box.drawTextWrapped(fontBody(), pad, pad + 2, bw - 2 * pad, _msg, DisplayDriver::LIGHT);
 
   // Buttons along the bottom.

@@ -49,6 +49,10 @@ class ListMenu : public Widget {
   const ListModel* _model;
   int _selected;
   int _rowH;
+  // Authored row height plus the roomy-canvas bonus, resolved per draw() since
+  // only the canvas knows the panel size. Every layout read inside draw() uses
+  // this; _rowH stays what the applet asked for.
+  int _effRowH;
   int _lastSel;
   Marquee _marquee;
   const char* _emptyText;   // shown centered when the model has no rows
@@ -71,7 +75,7 @@ public:
   static const int TICK_MS = 33;   // ~30 fps while a list is animating
 
   ListMenu()
-      : _model(nullptr), _selected(0), _rowH(12), _lastSel(-1), _emptyText(nullptr),
+      : _model(nullptr), _selected(0), _rowH(12), _effRowH(12), _lastSel(-1), _emptyText(nullptr),
         _header(nullptr), _headerH(0), _scrollPx(0), _scrollTarget(0),
         _barY(0), _animReady(false), _animating(false), _drawSelection(true) {}
 
@@ -89,6 +93,8 @@ public:
   int firstVisibleRow(int box_height) const;   // scroll offset for the selection
   void setHeader(Widget* hdr, int height) { _header = hdr; _headerH = height; }
   bool needsAnimation() const { return _animating || _marquee.active(); }
+  // Height the rows occupy on this canvas - what a modal frame should be sized to.
+  int contentHeight(const Canvas& c) const;
 
   bool onInput(InputEvent ev) override;
   void measure(int& w, int& h) const override;

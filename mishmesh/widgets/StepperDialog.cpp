@@ -19,9 +19,10 @@ bool StepperDialog::onInput(InputEvent ev) {
 
 void StepperDialog::draw(Canvas& c, int x, int y, int w, int h) {
   Canvas view = c.region(x, y, w, h);
-  Canvas box = drawModalChrome(view);
-  int bw = box.width(), bh = box.height();
   int pad = 4;
+  // Title row over a value row: two lines, whatever the panel size.
+  Canvas box = drawModalChrome(view, 0, pad + 2 + 3 * view.lineHeight(fontBody()) + pad);
+  int bw = box.width(), bh = box.height();
 
   box.drawTextEllipsized(fontBody(), pad, pad + 2, bw - 2 * pad, _title, DisplayDriver::LIGHT);
 

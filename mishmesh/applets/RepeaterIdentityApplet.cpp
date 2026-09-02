@@ -127,7 +127,7 @@ int RepeaterIdentityApplet::onRender(Canvas& c) {
   if (_phase == Phase::Menu) {
     _menu.draw(c, 0, top, w, h - top);
   } else if (_phase == Phase::Show || _phase == Phase::Confirm) {
-    Canvas modal = drawModalChrome(c);
+    Canvas modal = drawModalChrome(c, 0, _scroll.contentHeight(c) + 4);
     _scroll.draw(modal, 0, 0, modal.width(), modal.height());
     if (_phase == Phase::Confirm) _confirm.draw(c, 0, 0, w, h);
   } else if (_phase == Phase::Busy) {

@@ -40,7 +40,7 @@ int QuickRepliesPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
   _list.draw(c, x, y, w, h);
   if (_confirming) { _confirm.draw(c, 0, 0, c.width(), c.height()); return 100; }
   if (_menuOpen) {
-    Canvas box = drawModalChrome(c);
+    Canvas box = drawModalChrome(c, 0, _actions.contentHeight(c) + 4);
     _actions.draw(box, 2, 2, box.width() - 4, box.height() - 4);
     return _actions.needsAnimation() ? ListMenu::TICK_MS : 250;
   }

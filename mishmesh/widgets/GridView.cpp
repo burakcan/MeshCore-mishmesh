@@ -31,10 +31,19 @@ void GridView::draw(Canvas& c, int x, int y, int w, int h) {
   if (!_model) return;
   int rows = _model->rows(), cols = _model->cols();
   if (rows <= 0 || cols <= 0) return;
-  int cw = w / cols, ch = h / rows;
+  // Dividing the canvas up unconditionally turns the keypad on a 122x250 panel
+  // into 30x59 cells: a key cap floating in a highlight the size of a domino.
+  // Cap each cell and centre the block in what is left instead.
+  const int fullW = w / cols, fullH = h / rows;
+  const int cw = fullW > MAX_CELL_W ? MAX_CELL_W : fullW;
+  const int ch = fullH > MAX_CELL_H ? MAX_CELL_H : fullH;
+  // Centre only the room the cap handed back. The integer-division remainder is
+  // left where it always sat, so the 128x64 layout is untouched.
+  const int ox = x + (fullW - cw) * cols / 2;
+  const int oy = y + (fullH - ch) * rows / 2;
   for (int r = 0; r < rows; r++) {
     for (int col = 0; col < cols; col++) {
-      int cx = x + col * cw, cy = y + r * ch;
+      int cx = ox + col * cw, cy = oy + r * ch;
       bool sel = _focusVisible && (r == _row && col == _col);
       DisplayDriver::Color fg = DisplayDriver::LIGHT;
       if (sel) {
