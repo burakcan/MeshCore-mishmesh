@@ -230,9 +230,10 @@ void OnboardingApplet::drawWelcome(Canvas& c, int x, int y, int w, int h) {
   _logoTop = approach(_logoTop, finalTop, 1);
   _logoSettling = (_logoTop != finalTop);
 
-  c.drawXbm(x + (w - MESHCORE_LOGO_W) / 2, _logoTop, MESHCORE_LOGO, MESHCORE_LOGO_W, MESHCORE_LOGO_H);
+  c.drawXbm(x + (w - MESHCORE_LOGO_W) / 2, _logoTop, MESHCORE_LOGO, MESHCORE_LOGO_W, MESHCORE_LOGO_H,
+            DisplayDriver::LIGHT);
   c.drawXbm(x + (w - MISHMESH_LOGO_W) / 2, _logoTop + MESHCORE_LOGO_H + gap,
-            MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H);
+            MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H, DisplayDriver::LIGHT);
 
   // hold the button back until the logos land, so the first frame matches the splash
   if (!_logoSettling)

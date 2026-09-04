@@ -17,6 +17,7 @@ public:
   int  uiScale = 1;
   bool orientable = false;            // can be turned
   int  rotation = 0;
+  int  fullRefreshes = 0;             // refreshFull() calls
   std::vector<std::string> calls;     // ordered log of high-level calls
   std::vector<Rect> fills;            // fillRect args (device coords)
   std::vector<Rect> rects;            // drawRect args (device coords)
@@ -43,6 +44,7 @@ public:
   void clear() override { calls.push_back("clear"); }
   void startFrame(ColorVal bkg = UIColor::window_bkg) override { (void)bkg; calls.push_back("startFrame"); }
   void endFrame() override { calls.push_back("endFrame"); }
+  void refreshFull() override { fullRefreshes++; calls.push_back("refreshFull"); }
   void setTextSize(int) override {}
   void setColor(ColorVal c) override { lastColor = c; }
   void setCursor(int x, int y) override { cursorX = x; cursorY = y; }
@@ -52,6 +54,11 @@ public:
     if (w == 1 && h == 1 && lastColor != UIColor::window_bkg) litPixels.push_back({x, y});
   }
   void drawRect(int x, int y, int w, int h) override { rects.push_back({x, y, w, h}); }
-  void drawXbm(int, int, const uint8_t*, int, int) override {}
+  int xbms = 0;                       // drawXbm calls
+  ColorVal lastXbmColor = UIColor::window_bkg;
+  void drawXbm(int, int, const uint8_t*, int, int) override {
+    xbms++;
+    lastXbmColor = lastColor;
+  }
   uint16_t getTextWidth(const char* str) override { return str ? (uint16_t)(6 * __builtin_strlen(str)) : 0; }
 };

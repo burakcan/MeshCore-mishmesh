@@ -379,8 +379,12 @@ void Canvas::blit1bpp(const uint8_t* buf, int w, int h) {
   if (_d != nullptr) _d->blitColumnMajor1bpp(buf, w, h);
 }
 
-void Canvas::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
-  if (_d != nullptr) _d->drawXbm(_ox + x, _oy + y, bits, w, h);
+void Canvas::drawXbm(int x, int y, const uint8_t* bits, int w, int h, DisplayDriver::Color c) {
+  if (_d == nullptr) return;
+  // Drivers paint an XBM in whatever setColor last left behind, so an XBM drawn
+  // straight after a background fill comes out invisible. Colour it here.
+  _d->setColor(themedColor(c));
+  _d->drawXbm(_ox + x, _oy + y, bits, w, h);
 }
 
 }  // namespace mishmesh

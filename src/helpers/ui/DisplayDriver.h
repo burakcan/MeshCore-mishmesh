@@ -153,4 +153,11 @@ public:
   }
   
   virtual void endFrame() = 0;
+
+  // [mishmesh] Make the next flush a full (non-partial) panel refresh. Partial
+  // refreshes leave residue on e-ink that nothing else clears; a full one costs
+  // a couple of flashing seconds and resets the panel. No-op where the
+  // distinction does not exist.
+  virtual void refreshFull() {}
+  // [/mishmesh]
 };

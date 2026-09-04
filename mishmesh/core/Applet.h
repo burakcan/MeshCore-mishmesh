@@ -131,6 +131,17 @@ struct AppServices {
   // it to NodePrefs and applies it live to the AppletHost.
   virtual uint8_t screenSleepIndex() const { return 1; }
   virtual void    setScreenSleepIndex(uint8_t) {}
+  // Face left on a bistable panel while the screen sleeps, as an index into the
+  // mishmesh SleepScreen table (mishmesh/core/SleepScreen.h). Only offered where
+  // sleepScreenSupported(), i.e. e-ink. Default 0 = blank.
+  virtual bool    sleepScreenSupported() const { return false; }
+  virtual uint8_t sleepScreenIndex() const { return 0; }
+  virtual void    setSleepScreenIndex(uint8_t) {}
+  // Orientation for a face that reads either way: 0 = Auto (follow the screen),
+  // else an index into the SLEEP_ORIENT labels. Faces that read only one way
+  // apply it themselves and never consult this.
+  virtual uint8_t sleepOrientation() const { return 0; }
+  virtual void    setSleepOrientation(uint8_t) {}
   virtual bool    screenBrightnessSupported() const { return false; }
   virtual uint8_t screenBrightnessIndex() const { return 2; }
   virtual void    setScreenBrightnessIndex(uint8_t) {}
@@ -242,6 +253,16 @@ public:
   // of resetting to home. Default false: most screens return home. May be dynamic
   // (e.g. only while a session is in progress).
   virtual bool keepOnWake() const { return false; }
+
+  // This screen is holding the device locked, so a sleep face can say so. Not a
+  // stack-depth question: the lock sits at the foreground while it is engaged.
+  virtual bool locksDevice() const { return false; }
+
+  // Deliver the press that woke the panel to this screen, instead of spending it
+  // on the wake alone. Default false, so a pocket press cannot act on whatever
+  // happened to be foreground. A screen that is itself a gate (the lock) returns
+  // true, or getting past it costs one press more asleep than awake.
+  virtual bool wakePressCounts() const { return false; }
 
   // Suppress auto-off entirely while this applet is foreground and returns true
   // (e.g. a running stopwatch the user is watching). May be dynamic. Costs battery

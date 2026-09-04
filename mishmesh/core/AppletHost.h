@@ -34,6 +34,25 @@ public:
   // rendering does not extend the deadline, only input does.
   void setAutoOffMillis(uint32_t ms) { _auto_off_ms = ms; }
 
+  // Which face a bistable panel is left showing once it sleeps: an index into
+  // the mishmesh/core/SleepScreen.h table, 0 (blank) by default. Ignored on a
+  // panel that really powers down.
+  void setSleepScreen(int idx) { _sleep_face = idx; }
+  int  sleepScreen() const { return _sleep_face; }
+  // Orientation choice for a face that reads either way (0 = Auto). A face that
+  // only reads one way ignores this and gets that way applied for it.
+  void setSleepOrientation(int choice) { _sleep_orient = choice; }
+  int  sleepOrientation() const { return _sleep_orient; }
+  // The rotation the user chose, so the panel can be put back after a sleep face
+  // was painted some other way round. applyDisplayRotation() keeps this current;
+  // the adapter seeds it at boot, where the driver is turned before the host exists.
+  void setUiRotation(int quarters) { _ui_rotation = ((quarters % 4) + 4) % 4; }
+  // Sleep the panel now instead of waiting out the auto-off timer, e.g. engaging
+  // the screen lock. Honoured on the next loop pass, not here: an applet asks for
+  // this from onRender, and the frame it is in the middle of still has to flush
+  // before the sleep face can replace it.
+  void requestSleep() { _sleep_requested = true; }
+
   void setRoot(Applet* root);
   void push(Applet* a);
   void pop();
@@ -47,6 +66,8 @@ public:
 
   Applet* foreground() const;
   int depth() const { return _depth; }
+  // Whether the screen lock is engaged, for anything drawing device state.
+  bool deviceLocked() const;
 
   // Millisecond clock as of the current loop() pass. Lets an applet time input
   // gestures (onInput carries no timestamp) without reaching for Arduino millis().
@@ -106,8 +127,22 @@ public:
   // Test/inspection accessor for the live held-button snapshot.
   const InputState& ctxInput() const { return _input_state; }
 
+  // Test/inspection accessor: how many times the sleep face has been painted.
+  int sleepPaintsForTest() const { return _sleep_paints; }
+
 private:
   void renderIfDue(uint32_t now_ms);
+  // Compose and flush the configured sleep face, arming the next repaint from
+  // the delay it returns. Also spends the hourly ghost-clearing full refresh.
+  void paintSleepFace(uint32_t now_ms);
+  // Repaint the sleep face if it asked for one and its deadline has passed.
+  void renderSleepFace(uint32_t now_ms);
+  // Blank the panel and leave the sleep face on it. Shared by the auto-off
+  // deadline and requestSleep().
+  void enterSleep(uint32_t now_ms);
+  // Turn the panel for a face that only reads one way, and put it back on wake.
+  void applySleepRotation();
+  void restoreSleepRotation();
   void drawBubble(uint32_t now_ms);   // top-right new-message badge overlay
 #ifdef MISHMESH_INPUT_PROFILE
   // UI-responsiveness overlay (build with -D MISHMESH_INPUT_PROFILE). Draws the
@@ -169,6 +204,22 @@ private:
   // (unless the foreground opts out via keepOnWake). Short naps keep your place.
   static const uint32_t WAKE_HOME_THRESHOLD_MS = 60000;
   uint32_t _slept_at;   // now_ms when auto-off last blanked the panel (0 = not slept)
+
+  // Partial refreshes leave residue on e-ink and nothing else in the driver ever
+  // clears it, so a face that repaints (the clock) would ghost its way through
+  // the night. Spend one full refresh an hour, always while the panel is asleep
+  // and its flash is not in anyone's way. A static face never repaints, so it
+  // never reaches this and never pays for it.
+  static const uint32_t SLEEP_FULL_REFRESH_MS = 3600000;
+  int      _sleep_face;
+  int      _sleep_orient;     // see setSleepOrientation()
+  int      _ui_rotation;      // quarter turns the user chose
+  bool     _sleep_rotated;    // panel is turned away from _ui_rotation for a face
+  bool     _sleep_requested;  // see requestSleep()
+  uint32_t _sleep_next_at;    // when the face wants its next repaint
+  bool     _sleep_has_next;   // false once a face returns SLEEP_NEVER
+  uint32_t _sleep_full_at;    // earliest next ghost-clearing full refresh
+  int      _sleep_paints;
 
   char _toast_msg[28];
   uint32_t _toast_until;

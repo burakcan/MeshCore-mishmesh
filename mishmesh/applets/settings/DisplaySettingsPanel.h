@@ -56,10 +56,18 @@ public:
 private:
   struct Model : ListModel {
     AppServices* app = nullptr;
-    bool sizeSupported = false;      // only panels that can magnify offer the row
-    bool rotateSupported = false;    // ditto for panels that can be turned
+    AppletHost* host = nullptr;
+    // Queried per row rather than latched in begin(): turning the panel to
+    // portrait withdraws the interface-size choice, and the list has to show that
+    // on the next frame, not the next time the panel is opened.
+    bool sizeSupported() const;      // only panels that can magnify offer the row
+    bool rotateSupported() const;    // ditto for panels that can be turned
+    bool sleepFaceSupported = false; // e-ink only: an OLED really goes dark
+    // Only a face that reads either way is worth asking about; one that reads a
+    // single way gets it applied for it, so the row would be a dead control.
+    bool sleepOrientChoosable() const;
     enum Row : int { InterfaceSize, Orientation, InputRotation, ScreenSleep,
-                     ScreenBrightness, ROW_COUNT };
+                     SleepFace, SleepOrientation, ScreenBrightness, ROW_COUNT };
     int rowAt(int visible) const;    // visible index -> Row, skipping hidden ones
     int count() const override;
     const char* label(int i) const override;
@@ -68,6 +76,8 @@ private:
 
   static void commitRotation(int choice);
   static void commitInputRotation(int choice);
+  static void commitSleepFace(int choice);
+  static void commitSleepOrientation(int choice);
   void pushPicker(const char* title, const char* const* labels, int count,
                   int current, void (*commit)(int));
 

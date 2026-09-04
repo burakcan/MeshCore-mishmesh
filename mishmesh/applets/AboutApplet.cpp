@@ -47,7 +47,7 @@ int AboutApplet::onRender(Canvas& c) {
     Canvas r = c.region(rx, ry, w - rx, h - ry);
     const int rw = r.width();
     int lx = (rw > MISHMESH_LOGO_W) ? (rw - MISHMESH_LOGO_W) / 2 : 0;
-    r.drawXbm(lx, 2, MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H);
+    r.drawXbm(lx, 2, MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H, DisplayDriver::LIGHT);
 
     // Caption is the recessive tier, which on a 64px panel is the only thing that
     // fits. A taller one has room for body type, and this is a screen people read

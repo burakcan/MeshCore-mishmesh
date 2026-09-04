@@ -270,8 +270,24 @@ uint16_t GxEPDDisplay::getTextWidth(const char* str) {
 
 void GxEPDDisplay::endFrame() {
   uint32_t crc = display_crc.finalize();
+  // [mishmesh] A requested full refresh has to go out even when the frame is
+  // identical to the last one - clearing the residue IS the point, and that is
+  // exactly when the CRC below would skip the flush.
+  if (_force_full) {
+    display.display(false);
+    _force_full = false;
+    last_display_crc_value = crc;
+    return;
+  }
+  // [/mishmesh]
   if (crc != last_display_crc_value) {
     display.display(true);
     last_display_crc_value = crc;
   }
 }
+
+// [mishmesh]
+void GxEPDDisplay::refreshFull() {
+  _force_full = true;
+}
+// [/mishmesh]

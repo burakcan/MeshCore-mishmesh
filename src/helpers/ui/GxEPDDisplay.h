@@ -69,6 +69,7 @@ private:
   // [/mishmesh]
   bool _init = false;
   bool _isOn = false;
+  bool _force_full = false;   // [mishmesh] see refreshFull()
   uint16_t _curr_color;
   CRC32 display_crc;
   int last_display_crc_value = 0;
@@ -116,4 +117,5 @@ public:
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
   uint16_t getTextWidth(const char* str) override;
   void endFrame() override;
+  void refreshFull() override;   // [mishmesh]
 };

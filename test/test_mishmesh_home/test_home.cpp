@@ -45,6 +45,43 @@ void primeRegistry() {
 
 }  // namespace
 
+TEST(HomeApplet, LoneBackSleepsOnceTheLockWindowCloses) {
+  primeRegistry();
+  FakeDisplayDriver d;
+  FakeApp app;
+  AppletContext ctx; ctx.app = &app;
+  AppletHost host(&d, ctx);
+  host.setAutoOffMillis(0);          // isolate the manual gesture from auto-off
+  HomeApplet home;
+  host.setRoot(&home);
+
+  host.loop(1000);
+  host.dispatch(InputEvent::Back);
+  host.loop(1000);
+  EXPECT_TRUE(d.on);                 // still open for a second and third tap
+
+  host.loop(1000 + 800);             // past the tap window: sleep is requested
+  host.loop(1000 + 900);             // honoured on the next pass
+  EXPECT_FALSE(d.on);
+}
+
+TEST(HomeApplet, AnyOtherKeyCancelsThePendingSleep) {
+  primeRegistry();
+  FakeDisplayDriver d;
+  FakeApp app;
+  AppletContext ctx; ctx.app = &app;
+  AppletHost host(&d, ctx);
+  host.setAutoOffMillis(0);
+  HomeApplet home;
+  host.setRoot(&home);
+
+  host.loop(1000);
+  host.dispatch(InputEvent::Back);
+  host.dispatch(InputEvent::NavDown);   // opens the drawer, breaks the sequence
+  for (uint32_t t = 1100; t <= 3000; t += 100) host.loop(t);
+  EXPECT_TRUE(d.on);
+}
+
 TEST(HomeApplet, NavLeftAndRightPushConfiguredApplets) {
   primeRegistry();
   FakeDisplayDriver d;

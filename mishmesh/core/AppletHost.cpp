@@ -2,6 +2,7 @@
 #include <mishmesh/core/Anim.h>
 #include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/InputSource.h>
+#include <mishmesh/core/SleepScreen.h>
 #include <mishmesh/text/Fonts.h>
 #include <helpers/ui/DisplayDriver.h>
 #include <string.h>
@@ -33,6 +34,10 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
       _next_render_at(0), _last_flush_ms(0), _has_rendered(false), _dirty(true),
       _loop_now(0), _auto_off_ms(30000), _last_activity(0), _activity_init(false),
       _last_input_ms(0), _slept_at(0),
+      _sleep_face(0), _sleep_orient(SLEEP_ORIENT_AUTO), _ui_rotation(0),
+      _sleep_rotated(false), _sleep_requested(false),
+      _sleep_next_at(0), _sleep_has_next(false),
+      _sleep_full_at(SLEEP_FULL_REFRESH_MS), _sleep_paints(0),
       _toast_until(0), _toast_pending(false),
       _bubble_start(0), _bubble_until(0), _bubble_pending(false), _bubble_unread(0) {
   for (int i = 0; i < MAX_STACK; i++) _stack[i] = nullptr;
@@ -96,6 +101,7 @@ void AppletHost::pushInputRotation() {
 
 void AppletHost::applyDisplayRotation(int quarters) {
   if (_display == nullptr || !_display->supportsOrientation()) return;
+  setUiRotation(quarters);
   _display->setDisplayRotation(quarters);
   rebuildCanvas();
 }
@@ -125,6 +131,7 @@ bool AppletHost::isDisplayOn() const {
 }
 
 void AppletHost::wakeDisplay() {
+  restoreSleepRotation();
   if (_display != nullptr && !_display->isOn()) _display->turnOn();
   // Restart the auto-off window so the panel we just woke isn't blanked again on
   // the next loop: clearing _activity_init makes loop() restamp _last_activity to
@@ -143,6 +150,11 @@ void AppletHost::addSource(InputSource* src) {
 
 Applet* AppletHost::foreground() const {
   return _depth > 0 ? _stack[_depth - 1] : nullptr;
+}
+
+bool AppletHost::deviceLocked() const {
+  Applet* fg = foreground();
+  return fg != nullptr && fg->locksDevice();
 }
 
 void AppletHost::applyInputContext() {
@@ -227,6 +239,7 @@ void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms) {
   if (!rep.repeat) _prof.recordPolled();   // a discrete press edge was sampled
 #endif
   if (_display != nullptr && !_display->isOn()) {
+    restoreSleepRotation();
     // A user wake (not the passive notification path). After a long sleep,
     // reset navigation to home unless the foreground wants to stay put.
     if (_slept_at != 0 && now_ms - _slept_at > WAKE_HOME_THRESHOLD_MS) {
@@ -234,8 +247,14 @@ void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms) {
       if (fg == nullptr || !fg->keepOnWake()) popToRoot();
     }
     _slept_at = 0;
-    _display->turnOn();   // first press only wakes; it isn't delivered
+    _display->turnOn();   // the press wakes; only an opt-in screen also receives it
     _dirty = true;
+    Applet* woken = foreground();   // popToRoot above may have changed it
+    if (woken != nullptr && woken->wakePressCounts()) {
+      // Deliberately not through dispatch(): its unconsumed-Back fallback pops the
+      // screen, and a wake press must never navigate.
+      woken->onInput(rep.event);
+    }
   } else {
 #ifdef MISHMESH_INPUT_PROFILE
     if (!rep.repeat) _prof.recordDispatched();
@@ -296,26 +315,21 @@ void AppletHost::loop(uint32_t now_ms) {
     _dirty = true;
   }
 
-  if (_auto_off_ms > 0 && _display != nullptr && _display->isOn()) {
+  if (_sleep_requested) {
+    _sleep_requested = false;
+    enterSleep(now_ms);   // an explicit ask outranks blocksSleep()
+  } else if (_auto_off_ms > 0 && _display != nullptr && _display->isOn()) {
     Applet* fg = foreground();
     if (fg != nullptr && fg->blocksSleep()) {
       // Hold the panel on; keep the deadline fresh so it gets the full grace
       // period (not an instant blank) once the applet stops blocking.
       _last_activity = now_ms;
     } else if (now_ms - _last_activity > _auto_off_ms) {
-      _slept_at = now_ms;               // for the wake-to-home decision
-      if (fg != nullptr) fg->onSleep();
-      // A bistable panel holds whatever was last flushed, so the screen keeps
-      // showing a UI that is no longer live - and the next press wakes to home,
-      // which reads as the screen having been lost. Blank it so off looks off.
-      if (_display->isEink()) {
-        _display->startFrame(themedColor(DisplayDriver::DARK));
-        _display->endFrame();
-      }
-      _display->turnOff();
+      enterSleep(now_ms);
     }
   }
 
+  renderSleepFace(now_ms);
   renderIfDue(now_ms);
 
   // Rendering is synchronous and a frame can take many ms to compose and flush to
@@ -326,6 +340,71 @@ void AppletHost::loop(uint32_t now_ms) {
   // Idle cost is nil - sources just report no change. Events caught here paint on
   // the next loop (_dirty), one frame later.
   pumpInput(now_ms);
+}
+
+void AppletHost::enterSleep(uint32_t now_ms) {
+  if (_display == nullptr || !_display->isOn()) return;
+  _slept_at = now_ms;                 // for the wake-to-home decision
+  Applet* fg = foreground();
+  if (fg != nullptr) fg->onSleep();
+  _display->turnOff();
+  // A bistable panel holds whatever was last flushed, so the screen keeps showing
+  // a UI that is no longer live - and the next press wakes to home, which reads as
+  // the screen having been lost. Paint the chosen sleep face over it; the default
+  // face is blank, so off still looks off.
+  if (_display->isEink()) {
+    applySleepRotation();
+    paintSleepFace(now_ms);
+  }
+}
+
+void AppletHost::applySleepRotation() {
+  if (_display == nullptr || !_display->supportsOrientation()) return;
+  const int target = sleepOrientRotation(_sleep_face, _sleep_orient, _ui_rotation);
+  if (target < 0 || target == _ui_rotation) return;
+  _display->setDisplayRotation(target);
+  rebuildCanvas();
+  _sleep_rotated = true;
+}
+
+void AppletHost::restoreSleepRotation() {
+  if (!_sleep_rotated) return;
+  _sleep_rotated = false;
+  if (_display == nullptr) return;
+  _display->setDisplayRotation(_ui_rotation);
+  rebuildCanvas();
+}
+
+void AppletHost::paintSleepFace(uint32_t now_ms) {
+  if (_display == nullptr) return;
+  const SleepScreen* face = sleepScreenAt(_sleep_face);
+  if ((int32_t)(now_ms - _sleep_full_at) >= 0) {
+    _display->refreshFull();
+    _sleep_full_at = now_ms + SLEEP_FULL_REFRESH_MS;
+  }
+  _canvas.setNow(now_ms);
+  _display->startFrame(themedColor(DisplayDriver::DARK));
+  // Drivers may ignore startFrame's bkg, so in light mode paint it ourselves -
+  // same reason renderIfDue does.
+  if (themeSwapped(DisplayDriver::DARK) == DisplayDriver::LIGHT)
+    _canvas.fillRect(0, 0, _canvas.width(), _canvas.height(), DisplayDriver::DARK);
+  int delay = face != nullptr ? face->draw(_canvas, _ctx) : SLEEP_NEVER;
+  _display->endFrame();
+  _last_flush_ms = now_ms;
+  _sleep_paints++;
+  _sleep_has_next = delay >= 0;
+  if (_sleep_has_next) {
+    uint32_t d = (uint32_t)delay;
+    if (d < EINK_MIN_FLUSH_GAP_MS) d = EINK_MIN_FLUSH_GAP_MS;   // no face may busy-flush
+    _sleep_next_at = now_ms + d;
+  }
+}
+
+void AppletHost::renderSleepFace(uint32_t now_ms) {
+  if (!_sleep_has_next || _display == nullptr) return;
+  if (_display->isOn() || !_display->isEink() || _slept_at == 0) return;
+  if ((int32_t)(now_ms - _sleep_next_at) < 0) return;
+  paintSleepFace(now_ms);
 }
 
 void AppletHost::renderIfDue(uint32_t now_ms) {

@@ -3,6 +3,7 @@
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/ScreenSleep.h>
+#include <mishmesh/core/SleepScreen.h>
 #include <stdio.h>
 
 namespace mishmesh {
@@ -61,19 +62,37 @@ ChoicePickerPanel& choicePicker() {
   return s;
 }
 
+bool DisplaySettingsPanel::Model::sizeSupported() const {
+  return host != nullptr && host->displaySupportsUiScale();
+}
+
+bool DisplaySettingsPanel::Model::rotateSupported() const {
+  return host != nullptr && host->displaySupportsOrientation();
+}
+
 int DisplaySettingsPanel::Model::rowAt(int visible) const {
   int n = 0;
-  if (sizeSupported && n++ == visible) return InterfaceSize;
-  if (rotateSupported && n++ == visible) return Orientation;
-  if (rotateSupported && n++ == visible) return InputRotation;
+  if (sizeSupported() && n++ == visible) return InterfaceSize;
+  if (rotateSupported() && n++ == visible) return Orientation;
+  if (rotateSupported() && n++ == visible) return InputRotation;
   if (n++ == visible) return ScreenSleep;
+  if (sleepFaceSupported && n++ == visible) return SleepFace;
+  if (sleepOrientChoosable() && n++ == visible) return SleepOrientation;
   return ScreenBrightness;
+}
+
+bool DisplaySettingsPanel::Model::sleepOrientChoosable() const {
+  if (!sleepFaceSupported || !rotateSupported() || app == nullptr) return false;
+  const SleepScreen* face = sleepScreenAt(app->sleepScreenIndex());
+  return face != nullptr && face->orient == SleepOrient::Either;
 }
 
 int DisplaySettingsPanel::Model::count() const {
   int n = 1;   // screen sleep is always offered
-  if (sizeSupported) n++;
-  if (rotateSupported) n += 2;   // orientation + the input override that follows it
+  if (sizeSupported()) n++;
+  if (rotateSupported()) n += 2;   // orientation + the input override that follows it
+  if (sleepFaceSupported) n++;
+  if (sleepOrientChoosable()) n++;
   if (app && app->screenBrightnessSupported()) n++;
   return n;
 }
@@ -84,6 +103,8 @@ const char* DisplaySettingsPanel::Model::label(int i) const {
     case Orientation:      return "Orientation";
     case InputRotation:    return "Controls";
     case ScreenSleep:      return "Screen sleep";
+    case SleepFace:        return "Sleep screen";
+    case SleepOrientation: return "Sleep orientation";
     case ScreenBrightness: return "Screen brightness";
   }
   return "";
@@ -96,6 +117,8 @@ const char* DisplaySettingsPanel::Model::value(int i) const {
     case InputRotation:    return uiPrefs().inputRotation() == UiPrefs::INPUT_AUTO
                                     ? "Auto" : ROTATION_LABELS[uiPrefs().inputRotation()];
     case ScreenSleep:      return app ? screenSleepLabel(app->screenSleepIndex()) : "";
+    case SleepFace:        return app ? sleepScreenLabel(app->sleepScreenIndex()) : "";
+    case SleepOrientation: return app ? sleepOrientLabels()[app->sleepOrientation()] : "";
     case ScreenBrightness: return app ? brightnessLabel(app->screenBrightnessIndex()) : "";
   }
   return "";
@@ -104,8 +127,8 @@ const char* DisplaySettingsPanel::Model::value(int i) const {
 void DisplaySettingsPanel::begin(AppletContext& ctx) {
   _host = ctx.host;
   _model.app = ctx.app;
-  _model.sizeSupported = _host && _host->displaySupportsUiScale();
-  _model.rotateSupported = _host && _host->displaySupportsOrientation();
+  _model.host = _host;
+  _model.sleepFaceSupported = ctx.app && ctx.app->sleepScreenSupported();
   _editingSleep = _editingBrightness = false;
   _stepper.reset();
   _list.setRowHeight(14);
@@ -177,6 +200,18 @@ bool DisplaySettingsPanel::onInput(InputEvent ev) {
           _editingSleep = true;
         }
         break;
+      case Model::SleepFace:
+        if (_model.app) {
+          pushPicker("Sleep screen", sleepScreenLabels(), SLEEP_SCREEN_COUNT,
+                     _model.app->sleepScreenIndex(), &commitSleepFace);
+        }
+        break;
+      case Model::SleepOrientation:
+        if (_model.app) {
+          pushPicker("Sleep orientation", sleepOrientLabels(), SLEEP_ORIENT_COUNT,
+                     _model.app->sleepOrientation(), &commitSleepOrientation);
+        }
+        break;
       case Model::ScreenBrightness:
         if (_model.app) {
           _brightnessRestore = _model.app->screenBrightnessIndex();
@@ -194,6 +229,7 @@ bool DisplaySettingsPanel::onInput(InputEvent ev) {
 // The picker commits through the singleton, which is also how the Display panel
 // reaches the host - the callback has no context of its own.
 static AppletHost* s_host = nullptr;
+static AppServices* s_app = nullptr;
 
 void DisplaySettingsPanel::commitRotation(int choice) {
   uiPrefs().setRotation(choice);
@@ -201,6 +237,14 @@ void DisplaySettingsPanel::commitRotation(int choice) {
     s_host->applyDisplayRotation(choice);
     s_host->setInputRotation(uiPrefs().effectiveInputRotation());
   }
+}
+
+void DisplaySettingsPanel::commitSleepFace(int choice) {
+  if (s_app) s_app->setSleepScreenIndex((uint8_t)choice);
+}
+
+void DisplaySettingsPanel::commitSleepOrientation(int choice) {
+  if (s_app) s_app->setSleepOrientation((uint8_t)choice);
 }
 
 void DisplaySettingsPanel::commitInputRotation(int choice) {
@@ -212,6 +256,7 @@ void DisplaySettingsPanel::pushPicker(const char* title, const char* const* labe
                                       int count, int current, void (*commit)(int)) {
   if (!_host) return;
   s_host = _host;
+  s_app = _model.app;
   static SettingsDetailApplet detail;   // one level below the shared detail
   choicePicker().configure(title, labels, count, current, commit);
   detail.setPanel(&choicePicker());

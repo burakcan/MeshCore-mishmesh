@@ -17,11 +17,14 @@ public:
   LockApplet() : Applet("Lock") {}
 
   void onStart(AppletContext& ctx) override;
+  void onSleep() override;
   void onForeground() override;
   int  onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
   bool isOverlay() const override { return true; }
   bool keepOnWake() const override { return true; }
+  bool wakePressCounts() const override { return true; }
+  bool locksDevice() const override { return true; }
 
   // test seams
   bool lockingShownForTest() const { return _mode == Locking; }
@@ -53,6 +56,7 @@ private:
   Mode     _mode  = Locking;
   uint8_t  _pips  = 0;
   uint8_t  _flash = 0;        // brief emphasis frames on the pip that just filled
+  bool     _sleepAsked = false;   // requestSleep() sent; waiting for onSleep()
   uint32_t _lastMs = 0;      // last input time, for the challenge idle-timeout
   uint32_t _animAt = 0;      // start of the lock/unlock flourish
 };

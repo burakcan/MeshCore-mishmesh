@@ -67,9 +67,87 @@ TEST(ScreenLock, LockPlaysFlourishThenSettlesToResting) {
   EXPECT_TRUE(f.lock.lockingShownForTest());   // "Locked" flourish shown
 
   f.host.loop(1200 + 500);                  // past the ~420ms lock animation
+  EXPECT_TRUE(f.lock.lockingShownForTest());   // held until the panel blanks
+  f.host.loop(1200 + 600);                  // sleep honoured -> onSleep retires it
   EXPECT_FALSE(f.lock.lockingShownForTest());
   EXPECT_FALSE(f.lock.challengeShownForTest());  // now resting (home visible)
   EXPECT_EQ(2, f.host.depth());             // still locked
+}
+
+// The flourish must never give way to a frame of bare home on its way to sleep:
+// the host draws the underlay before asking this overlay, so an early retirement
+// flushes one frame of unlocked-looking home.
+TEST(ScreenLock, PadlockStaysUpUntilThePanelBlanks) {
+  LockFixture f;
+  f.press(InputEvent::Back, 1000);
+  f.press(InputEvent::Back, 1100);
+  f.press(InputEvent::Back, 1200);
+
+  f.host.loop(1200 + 500);
+  EXPECT_TRUE(f.d.on);
+  EXPECT_TRUE(f.lock.lockingShownForTest());
+
+  f.host.loop(1200 + 600);
+  EXPECT_FALSE(f.d.on);
+  EXPECT_FALSE(f.lock.lockingShownForTest());
+}
+
+TEST(ScreenLock, LockingSleepsThePanel) {
+  LockFixture f;
+  f.press(InputEvent::Back, 1000);
+  f.press(InputEvent::Back, 1100);
+  f.press(InputEvent::Back, 1200);
+  EXPECT_TRUE(f.d.on);                      // the flourish still has to be seen
+
+  f.host.loop(1200 + 500);                  // flourish ends, sleep is requested
+  f.host.loop(1200 + 600);                  // honoured on the next pass
+  EXPECT_FALSE(f.d.on);
+  EXPECT_EQ(2, f.host.depth());             // still locked underneath
+}
+
+TEST(ScreenLock, WakePressCountsTowardsUnlocking) {
+  LockFixture f;
+  f.press(InputEvent::Back, 1000);
+  f.press(InputEvent::Back, 1100);
+  f.press(InputEvent::Back, 1200);
+  f.host.loop(1700);
+  f.host.loop(1800);
+  ASSERT_FALSE(f.d.on);                     // locking put the panel to sleep
+
+  f.press(InputEvent::Back, 2000);          // wakes AND fills the first pip
+  EXPECT_TRUE(f.d.on);
+  EXPECT_TRUE(f.lock.challengeShownForTest());
+  EXPECT_EQ(1, f.lock.pipsForTest());
+
+  f.press(InputEvent::Back, 2100);
+  f.press(InputEvent::Back, 2200);          // three presses total, same as awake
+  f.host.loop(3000);                        // past the unlock animation
+  EXPECT_EQ(1, f.host.depth());             // unlocked
+}
+
+TEST(ScreenLock, ReportsDeviceLockedForTheSleepFace) {
+  LockFixture f;
+  EXPECT_FALSE(f.host.deviceLocked());
+  f.press(InputEvent::Back, 1000);
+  f.press(InputEvent::Back, 1100);
+  f.press(InputEvent::Back, 1200);
+  EXPECT_TRUE(f.host.deviceLocked());
+
+  f.press(InputEvent::Back, 1400);   // reveals AND counts as pip 1
+  f.press(InputEvent::Back, 1500);
+  f.press(InputEvent::Back, 1600);
+  f.host.loop(2200);                 // past the unlock animation
+  EXPECT_FALSE(f.host.deviceLocked());
+}
+
+TEST(ScreenLock, TripleBackLocksRatherThanSleepingFromTheFirstTap) {
+  LockFixture f;
+  f.press(InputEvent::Back, 1000);
+  f.press(InputEvent::Back, 1100);
+  f.press(InputEvent::Back, 1200);
+  EXPECT_EQ(2, f.host.depth());      // locked
+  f.host.loop(1250);
+  EXPECT_TRUE(f.d.on);               // the lock flourish still has the panel
 }
 
 TEST(ScreenLock, SlowBackDoesNotLock) {
@@ -189,7 +267,8 @@ TEST(ScreenLock, ReducedMotionStillHoldsTheLockedFrame) {
   f.press(InputEvent::Back, 1100);
   f.press(InputEvent::Back, 1200);          // triple-Back engages the lock
   const bool shown = f.lock.lockingShownForTest();
-  f.host.loop(1200 + 2000);                 // past the 1200ms hold
+  f.host.loop(1200 + 2000);                 // past the 1200ms hold -> asks to sleep
+  f.host.loop(1200 + 2100);                 // sleep lands; the padlock retires with it
   const bool cleared = !f.lock.lockingShownForTest();
   setReducedMotion(false);
 

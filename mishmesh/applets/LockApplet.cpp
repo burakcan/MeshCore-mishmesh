@@ -28,7 +28,15 @@ void LockApplet::onForeground() {
   _pips = 0;
   _flash = 0;
   _animAt = _host ? _host->nowMs() : 0;
+  _sleepAsked = false;
   if (_sound) _sound->play(sound::SoundId::UiConfirm);
+}
+
+void LockApplet::onSleep() {
+  _mode = Resting;   // the padlock went with the panel; wake to home, still locked
+  _pips = 0;
+  _flash = 0;
+  _sleepAsked = false;
 }
 
 bool LockApplet::onInput(InputEvent ev) {
@@ -128,8 +136,20 @@ int LockApplet::onRender(Canvas& c) {
   // goes, not the frame. Unlocking is the opposite: home reappearing is itself the
   // feedback, so skip straight to the pop rather than spend a flush on a flourish.
   if (_mode == Locking && now - _animAt > lockHold()) {
-    _mode = Resting;
-    return 1000;
+    // Locking the screen is the "I am putting this down" gesture, so go to sleep
+    // on it rather than idling out. Keep drawing the padlock until the panel
+    // actually blanks (onSleep): dropping to Resting here hands the host a frame
+    // of bare home - the underlay is rendered before this overlay gets asked -
+    // and that one flushed frame reads as the lock having failed.
+    if (!_sleepAsked && _host) {
+      _sleepAsked = true;
+      _host->requestSleep();
+    }
+    if (now - _animAt > lockHold() * 2) {   // a panel that cannot sleep, e.g. already off
+      _mode = Resting;
+      return 1000;
+    }
+    return 100;
   }
   if (_mode == Unlocking && (reducedMotion() || now - _animAt > UNLOCK_ANIM_MS)) {
     if (_host) _host->pop();             // remove the lock -> home revealed

@@ -54,6 +54,7 @@ ICONS = [
     ("Coffee",     "coffee",      0xE026),   # coffee cup = support / About screen
     ("Sliders",    "sliders",     0xE027),   # experimental settings group
     ("Tomato",     "tomato",      0xE028),   # pomodoro tab + focus-phase mark (vendored: hand-drawn)
+    ("Lock",       "lock",        0xE029),   # screen lock, shown on the sleep face
 ]
 
 # Iconify-sourced compound paths whose inner subpaths are holes (even-odd),

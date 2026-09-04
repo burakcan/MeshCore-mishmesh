@@ -215,30 +215,47 @@ int HomeApplet::onRender(Canvas& c) {
     }
   }
 
+  int delay = 1000;
   if (_drawer.isOpen()) {
     _drawer.draw(c);
-    return _drawer.animating() ? 33 : 500;
+    delay = _drawer.animating() ? 33 : 500;
   }
-  return 1000;
+
+  if (_sleepArmed) {
+    const uint32_t elapsed = c.now() - _lastBackMs;
+    const uint32_t window = lockTapWindow();
+    if (elapsed >= window) {
+      _sleepArmed = false;
+      _backTaps = 0;
+      if (_host) _host->requestSleep();
+    } else {
+      const int remaining = (int)(window - elapsed);
+      if (remaining < delay) delay = remaining;
+    }
+  }
+  return delay;
 }
 
 bool HomeApplet::onInput(InputEvent ev) {
   if (_drawer.isOpen()) return _drawer.onInput(ev);
 
-  // Triple-Back locks the screen. Back is otherwise a no-op at the root, so
-  // consuming it here changes nothing for single/double presses.
+  // Back sleeps the device; three in quick succession lock it instead. Both have
+  // to wait out the tap window before acting - see _sleepArmed.
   if (ev == InputEvent::Back) {
     uint32_t now = _host ? _host->nowMs() : 0;
     if (_backTaps > 0 && now - _lastBackMs > lockTapWindow()) _backTaps = 0;
     _backTaps++;
     _lastBackMs = now;
+    _sleepArmed = true;
     if (_backTaps >= 3 && _lock && _host) {
       _backTaps = 0;
+      _sleepArmed = false;
       _host->push(_lock);
     }
     return true;
   }
   _backTaps = 0;   // any other input breaks the triple-Back sequence
+  _sleepArmed = false;
 
   switch (ev) {
     case InputEvent::Select:

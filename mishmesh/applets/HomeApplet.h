@@ -33,6 +33,10 @@ class HomeApplet : public Applet {
   }
   uint8_t  _backTaps = 0;
   uint32_t _lastBackMs = 0;
+  // A lone Back sleeps the device, but only once the triple-Back window has
+  // closed - otherwise the first tap of the lock gesture would blank the screen
+  // out from under the next two. Armed on a Back, cleared by the third one.
+  bool     _sleepArmed = false;
 public:
   HomeApplet() : Applet("Home"), _menu(nullptr), _host(nullptr), _app(nullptr) {}
 
@@ -45,8 +49,8 @@ public:
   QuickDrawer& drawerForTest() { return _drawer; }
 
   void onStart(AppletContext& ctx) override;
-  void onBackground() override { _drawer.closeNow(); }
-  void onSleep() override { _drawer.closeNow(); }
+  void onBackground() override { _drawer.closeNow(); _sleepArmed = false; }
+  void onSleep() override { _drawer.closeNow(); _sleepArmed = false; }
   int onRender(Canvas& c) override;
   bool onInput(InputEvent ev) override;
 };

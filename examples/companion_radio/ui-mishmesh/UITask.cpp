@@ -275,6 +275,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _host->setInputMountRotation(MISHMESH_INPUT_MOUNT_ROTATION);
   _host->setInputRotation(mishmesh::uiPrefs().effectiveInputRotation());
   _host->setAutoOffMillis(mishmesh::screenSleepMillis(screenSleepIndex()));   // honor saved sleep pref
+  _host->setSleepScreen(sleepScreenIndex());
+  _host->setSleepOrientation(sleepOrientation());
+  _host->setUiRotation(mishmesh::uiPrefs().rotation());
 
   _menu = new mishmesh::AppMenuApplet();
   _lock = new mishmesh::LockApplet();

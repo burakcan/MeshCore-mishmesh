@@ -33,6 +33,7 @@
 #include <mishmesh/core/RetryEngine.h>
 #include <mishmesh/core/UnreadReminder.h>
 #include <mishmesh/core/ScreenSleep.h>
+#include <mishmesh/core/SleepScreen.h>
 #include <mishmesh/core/NameValidation.h>
 #include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/sound/Sounds.h>
@@ -400,6 +401,29 @@ public:
     p->screen_sleep = mishmesh::screenSleepIndexToStored(idx);
     the_mesh.savePrefs();
     if (_host) _host->setAutoOffMillis(mishmesh::screenSleepMillis(idx));   // live
+  }
+  bool sleepScreenSupported() const override { return _display && _display->isEink(); }
+  uint8_t sleepScreenIndex() const override {
+    uint8_t s = _node_prefs ? _node_prefs->sleep_screen : 0;
+    return s < mishmesh::SLEEP_SCREEN_COUNT ? s : 0;
+  }
+  void setSleepScreenIndex(uint8_t idx) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->sleep_screen = idx < mishmesh::SLEEP_SCREEN_COUNT ? idx : 0;
+    the_mesh.savePrefs();
+    if (_host) _host->setSleepScreen(p->sleep_screen);   // live
+  }
+  uint8_t sleepOrientation() const override {
+    uint8_t s = _node_prefs ? _node_prefs->sleep_rotation : 0;
+    return s < mishmesh::SLEEP_ORIENT_COUNT ? s : 0;
+  }
+  void setSleepOrientation(uint8_t idx) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->sleep_rotation = idx < mishmesh::SLEEP_ORIENT_COUNT ? idx : 0;
+    the_mesh.savePrefs();
+    if (_host) _host->setSleepOrientation(p->sleep_rotation);   // live
   }
   bool screenBrightnessSupported() const override { return _display && _display->supportsBrightness(); }
   uint8_t screenBrightnessIndex() const override {

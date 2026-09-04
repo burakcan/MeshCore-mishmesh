@@ -144,7 +144,7 @@ public:
   // Draw a row-major XBM bitmap (as `drawXbm`/logo assets use) at local (x,y). Not
   // clipped to the Canvas clip window - intended for small on-screen marks (e.g. the
   // boot logo) positioned within the visible area.
-  void drawXbm(int x, int y, const uint8_t* bits, int w, int h);
+  void drawXbm(int x, int y, const uint8_t* bits, int w, int h, DisplayDriver::Color c);
 
   // Optional inline glyph-overlay hook: a secondary bitmap font whose
   // glyphs replace mapped codepoints in body text (used for a small emoji atlas).

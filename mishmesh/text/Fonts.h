@@ -58,6 +58,7 @@ enum class Icon : uint16_t {
   Coffee      = 0xE026,   // coffee cup (About / support screen)
   Sliders     = 0xE027,   // experimental settings group
   Tomato      = 0xE028,   // pomodoro tab + focus-phase mark
+  Lock        = 0xE029,   // screen lock engaged (sleep-face status strip)
 };
 
 }  // namespace mishmesh
