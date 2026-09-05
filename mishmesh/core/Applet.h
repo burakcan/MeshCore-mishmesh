@@ -142,6 +142,10 @@ struct AppServices {
   // apply it themselves and never consult this.
   virtual uint8_t sleepOrientation() const { return 0; }
   virtual void    setSleepOrientation(uint8_t) {}
+  // How long asleep before a wake resets navigation to home, as an index into
+  // the mishmesh WAKE_HOME options (mishmesh/core/WakeHome.h). Default index 2 = 2m.
+  virtual uint8_t wakeHomeIndex() const { return 2; }
+  virtual void    setWakeHomeIndex(uint8_t) {}
   virtual bool    screenBrightnessSupported() const { return false; }
   virtual uint8_t screenBrightnessIndex() const { return 2; }
   virtual void    setScreenBrightnessIndex(uint8_t) {}

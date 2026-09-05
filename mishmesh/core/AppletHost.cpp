@@ -3,6 +3,7 @@
 #include <mishmesh/core/StrUtil.h>
 #include <mishmesh/core/InputSource.h>
 #include <mishmesh/core/SleepScreen.h>
+#include <mishmesh/core/WakeHome.h>
 #include <mishmesh/text/Fonts.h>
 #include <helpers/ui/DisplayDriver.h>
 #include <string.h>
@@ -33,7 +34,7 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
       _depth(0), _nsources(0),
       _next_render_at(0), _last_flush_ms(0), _has_rendered(false), _dirty(true),
       _loop_now(0), _auto_off_ms(30000), _last_activity(0), _activity_init(false),
-      _last_input_ms(0), _slept_at(0),
+      _last_input_ms(0), _slept_at(0), _wake_home_ms(wakeHomeMillis(2)),
       _sleep_face(0), _sleep_orient(SLEEP_ORIENT_AUTO), _ui_rotation(0),
       _sleep_rotated(false), _sleep_requested(false),
       _sleep_next_at(0), _sleep_has_next(false),
@@ -152,6 +153,16 @@ Applet* AppletHost::foreground() const {
   return _depth > 0 ? _stack[_depth - 1] : nullptr;
 }
 
+bool AppletHost::wakeResetsToHome(uint32_t now_ms) const {
+  if (_wake_home_ms == WAKE_HOME_NEVER) return false;
+  if (_slept_at == 0) return false;
+  if (_wake_home_ms != 0 && now_ms - _slept_at <= _wake_home_ms) return false;
+  for (int i = 0; i < _depth; i++) {
+    if (_stack[i] != nullptr && _stack[i]->keepOnWake()) return false;
+  }
+  return true;
+}
+
 bool AppletHost::deviceLocked() const {
   Applet* fg = foreground();
   return fg != nullptr && fg->locksDevice();
@@ -240,12 +251,9 @@ void AppletHost::handleReport(const InputReport& rep, uint32_t now_ms) {
 #endif
   if (_display != nullptr && !_display->isOn()) {
     restoreSleepRotation();
-    // A user wake (not the passive notification path). After a long sleep,
-    // reset navigation to home unless the foreground wants to stay put.
-    if (_slept_at != 0 && now_ms - _slept_at > WAKE_HOME_THRESHOLD_MS) {
-      Applet* fg = foreground();
-      if (fg == nullptr || !fg->keepOnWake()) popToRoot();
-    }
+    // A user wake (not the passive notification path). After a long sleep, reset
+    // navigation to home unless something on the stack wants to stay put.
+    if (wakeResetsToHome(now_ms)) popToRoot();
     _slept_at = 0;
     _display->turnOn();   // the press wakes; only an opt-in screen also receives it
     _dirty = true;

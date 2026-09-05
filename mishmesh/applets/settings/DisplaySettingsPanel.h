@@ -48,7 +48,7 @@ public:
   void begin(AppletContext& ctx) override;
   int  renderBody(Canvas& c, int x, int y, int w, int h) override;
   bool onInput(InputEvent ev) override;
-  bool modalActive() const override { return _editingSleep || _editingBrightness; }
+  bool modalActive() const override { return _editingSleep || _editingBrightness || _editingWakeHome; }
 
   const char* rowLabelForTest(int i) const { return _model.label(i); }
   const char* rowValueForTest(int i) const { return _model.value(i); }
@@ -67,7 +67,7 @@ private:
     // single way gets it applied for it, so the row would be a dead control.
     bool sleepOrientChoosable() const;
     enum Row : int { InterfaceSize, Orientation, InputRotation, ScreenSleep,
-                     SleepFace, SleepOrientation, ScreenBrightness, ROW_COUNT };
+                     WakeHome, SleepFace, SleepOrientation, ScreenBrightness, ROW_COUNT };
     int rowAt(int visible) const;    // visible index -> Row, skipping hidden ones
     int count() const override;
     const char* label(int i) const override;
@@ -86,6 +86,7 @@ private:
   StepperDialog _stepper;
   bool _editingSleep = false;
   bool _editingBrightness = false;
+  bool _editingWakeHome = false;
   uint8_t _brightnessRestore = 4;   // index to revert to if the stepper is cancelled
 };
 

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Anim.h>
+#include <mishmesh/core/WakeHome.h>
 #include <mishmesh/core/Canvas.h>
 #include "FakeDisplayDriver.h"
 
@@ -136,6 +137,7 @@ TEST(AppletHost, LongSleepWakeResetsToHome) {
   AppletHost host(&d, emptyCtx());
   QueueSource src; host.addSource(&src);
   host.setAutoOffMillis(30000);
+  host.setWakeHomeMillis(60000);         // pin the threshold; the default is 2m
   FakeApplet root("root"), child("child");
   host.setRoot(&root);
   host.push(&child);
@@ -144,11 +146,62 @@ TEST(AppletHost, LongSleepWakeResetsToHome) {
   EXPECT_EQ(1, child.slept);             // onSleep fired on the foreground
 
   src.queue.push_back(InputEvent::Select);
-  host.loop(sleptAt + 60001);            // wake past the 60s home threshold
+  host.loop(sleptAt + 60001);            // wake past the home threshold
   EXPECT_TRUE(d.isOn());
   EXPECT_EQ(1, host.depth());            // reset to home
   EXPECT_EQ(&root, host.foreground());
   EXPECT_EQ(InputEvent::None, root.lastInput);   // wake press only woke, not delivered
+}
+
+TEST(AppletHost, LongSleepWakeKeepsWhenAnythingOnTheStackOptsIn) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  QueueSource src; host.addSource(&src);
+  host.setAutoOffMillis(30000);
+  host.setWakeHomeMillis(60000);
+  FakeApplet root("root"), chat("chat"), keypad("keypad");
+  chat.keepWake = true;                  // the chat wants to survive a nap...
+  host.setRoot(&root);
+  host.push(&chat);
+  host.push(&keypad);                    // ...but the keypad over it is foreground
+
+  uint32_t sleptAt = sleepPanel(host, src, d, 1000);
+  src.queue.push_back(InputEvent::Select);
+  host.loop(sleptAt + 60001);
+  EXPECT_EQ(3, host.depth());            // popping to root would take the draft too
+  EXPECT_EQ(&keypad, host.foreground());
+}
+
+TEST(AppletHost, NeverThresholdKeepsYourPlaceIndefinitely) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  QueueSource src; host.addSource(&src);
+  host.setAutoOffMillis(30000);
+  host.setWakeHomeMillis(WAKE_HOME_NEVER);
+  FakeApplet root("root"), child("child");
+  host.setRoot(&root);
+  host.push(&child);
+
+  uint32_t sleptAt = sleepPanel(host, src, d, 1000);
+  src.queue.push_back(InputEvent::Select);
+  host.loop(sleptAt + 600000);           // ten minutes
+  EXPECT_EQ(2, host.depth());
+}
+
+TEST(AppletHost, AlwaysThresholdResetsEvenAfterAShortNap) {
+  FakeDisplayDriver d;
+  AppletHost host(&d, emptyCtx());
+  QueueSource src; host.addSource(&src);
+  host.setAutoOffMillis(30000);
+  host.setWakeHomeMillis(0);
+  FakeApplet root("root"), child("child");
+  host.setRoot(&root);
+  host.push(&child);
+
+  uint32_t sleptAt = sleepPanel(host, src, d, 1000);
+  src.queue.push_back(InputEvent::Select);
+  host.loop(sleptAt + 200);              // a blink
+  EXPECT_EQ(1, host.depth());
 }
 
 TEST(AppletHost, LongSleepWakeKeepsAppletThatOptsIn) {

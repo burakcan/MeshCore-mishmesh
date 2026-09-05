@@ -94,7 +94,8 @@ TEST(DisplaySettingsPanel, ScreenBrightnessStepperAppliesSelection) {
   AppletContext ctx; ctx.app = &app;
   DisplaySettingsPanel& p = displaySettings();
   p.begin(ctx);
-  // Brightness sits directly below Screen sleep here.
+  // Rows here are Screen sleep, Return to home, Screen brightness.
+  EXPECT_TRUE(p.onInput(InputEvent::NavDown));
   EXPECT_TRUE(p.onInput(InputEvent::NavDown));
   EXPECT_TRUE(p.onInput(InputEvent::Select));         // open at High (idx 2)
   EXPECT_TRUE(p.modalActive());
@@ -110,6 +111,7 @@ TEST(DisplaySettingsPanel, ScreenBrightnessPreviewsWhileStepping) {
   AppletContext ctx; ctx.app = &app;
   DisplaySettingsPanel& p = displaySettings();
   p.begin(ctx);
+  EXPECT_TRUE(p.onInput(InputEvent::NavDown));
   EXPECT_TRUE(p.onInput(InputEvent::NavDown));
   EXPECT_TRUE(p.onInput(InputEvent::Select));         // open at High (idx 2)
   EXPECT_TRUE(p.onInput(InputEvent::NavLeft));        // -> Medium (idx 1)

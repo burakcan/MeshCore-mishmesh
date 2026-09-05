@@ -41,6 +41,10 @@ public:
   uint16_t cellIcon(int r, int c) const override;
 
   // Applet
+  // Text being typed outlives a nap: popping to home mid-message would throw
+  // away the draft along with the screen it was going to.
+  bool keepOnWake() const override { return true; }
+
   void onStart(AppletContext& ctx) override;
   void onStop() override;
   int  onRender(Canvas& c) override;

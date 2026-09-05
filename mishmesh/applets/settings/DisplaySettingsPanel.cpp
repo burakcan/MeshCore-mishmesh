@@ -4,12 +4,17 @@
 #include <mishmesh/core/Canvas.h>
 #include <mishmesh/core/ScreenSleep.h>
 #include <mishmesh/core/SleepScreen.h>
+#include <mishmesh/core/WakeHome.h>
 #include <stdio.h>
 
 namespace mishmesh {
 
 static void sleepStepLabel(int idx, char* out, uint16_t cap) {
   snprintf(out, cap, "%s", screenSleepLabel(idx));
+}
+
+static void wakeHomeStepLabel(int idx, char* out, uint16_t cap) {
+  snprintf(out, cap, "%s", wakeHomeLabel(idx));
 }
 
 static const char* brightnessLabel(int idx) {
@@ -76,6 +81,7 @@ int DisplaySettingsPanel::Model::rowAt(int visible) const {
   if (rotateSupported() && n++ == visible) return Orientation;
   if (rotateSupported() && n++ == visible) return InputRotation;
   if (n++ == visible) return ScreenSleep;
+  if (n++ == visible) return WakeHome;
   if (sleepFaceSupported && n++ == visible) return SleepFace;
   if (sleepOrientChoosable() && n++ == visible) return SleepOrientation;
   return ScreenBrightness;
@@ -88,7 +94,7 @@ bool DisplaySettingsPanel::Model::sleepOrientChoosable() const {
 }
 
 int DisplaySettingsPanel::Model::count() const {
-  int n = 1;   // screen sleep is always offered
+  int n = 2;   // screen sleep and the return-to-home delay are always offered
   if (sizeSupported()) n++;
   if (rotateSupported()) n += 2;   // orientation + the input override that follows it
   if (sleepFaceSupported) n++;
@@ -103,6 +109,7 @@ const char* DisplaySettingsPanel::Model::label(int i) const {
     case Orientation:      return "Orientation";
     case InputRotation:    return "Controls";
     case ScreenSleep:      return "Screen sleep";
+    case WakeHome:         return "Return to home";
     case SleepFace:        return "Sleep screen";
     case SleepOrientation: return "Sleep orientation";
     case ScreenBrightness: return "Screen brightness";
@@ -117,6 +124,7 @@ const char* DisplaySettingsPanel::Model::value(int i) const {
     case InputRotation:    return uiPrefs().inputRotation() == UiPrefs::INPUT_AUTO
                                     ? "Auto" : ROTATION_LABELS[uiPrefs().inputRotation()];
     case ScreenSleep:      return app ? screenSleepLabel(app->screenSleepIndex()) : "";
+    case WakeHome:         return app ? wakeHomeLabel(app->wakeHomeIndex()) : "";
     case SleepFace:        return app ? sleepScreenLabel(app->sleepScreenIndex()) : "";
     case SleepOrientation: return app ? sleepOrientLabels()[app->sleepOrientation()] : "";
     case ScreenBrightness: return app ? brightnessLabel(app->screenBrightnessIndex()) : "";
@@ -129,7 +137,7 @@ void DisplaySettingsPanel::begin(AppletContext& ctx) {
   _model.app = ctx.app;
   _model.host = _host;
   _model.sleepFaceSupported = ctx.app && ctx.app->sleepScreenSupported();
-  _editingSleep = _editingBrightness = false;
+  _editingSleep = _editingBrightness = _editingWakeHome = false;
   _stepper.reset();
   _list.setRowHeight(14);
   _list.setModel(&_model);
@@ -138,7 +146,7 @@ void DisplaySettingsPanel::begin(AppletContext& ctx) {
 
 int DisplaySettingsPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
   _list.draw(c, x, y, w, h);
-  if (_editingSleep || _editingBrightness) {
+  if (modalActive()) {
     _stepper.draw(c, x, y, w, h);   // overlay, like every other panel's modal
     return 100;
   }
@@ -146,7 +154,7 @@ int DisplaySettingsPanel::renderBody(Canvas& c, int x, int y, int w, int h) {
 }
 
 bool DisplaySettingsPanel::onInput(InputEvent ev) {
-  if (_editingSleep || _editingBrightness) {
+  if (modalActive()) {
     if (_stepper.onInput(ev)) {
       StepperResult r = _stepper.result();
       if (r == StepperResult::None) {
@@ -158,13 +166,16 @@ bool DisplaySettingsPanel::onInput(InputEvent ev) {
           if (_editingSleep) {
             if (r == StepperResult::Confirmed)
               _model.app->setScreenSleepIndex((uint8_t)_stepper.value());
+          } else if (_editingWakeHome) {
+            if (r == StepperResult::Confirmed)
+              _model.app->setWakeHomeIndex((uint8_t)_stepper.value());
           } else if (r == StepperResult::Confirmed) {
             _model.app->setScreenBrightnessIndex((uint8_t)_stepper.value());
           } else {
             _model.app->previewScreenBrightnessIndex(_brightnessRestore);   // revert
           }
         }
-        _editingSleep = _editingBrightness = false;
+        _editingSleep = _editingBrightness = _editingWakeHome = false;
         _stepper.reset();
       }
     }
@@ -198,6 +209,13 @@ bool DisplaySettingsPanel::onInput(InputEvent ev) {
           _stepper.configure("Screen sleep", _model.app->screenSleepIndex(),
                              0, SCREEN_SLEEP_COUNT - 1, sleepStepLabel);
           _editingSleep = true;
+        }
+        break;
+      case Model::WakeHome:
+        if (_model.app) {
+          _stepper.configure("Return to home", _model.app->wakeHomeIndex(),
+                             0, WAKE_HOME_COUNT - 1, wakeHomeStepLabel);
+          _editingWakeHome = true;
         }
         break;
       case Model::SleepFace:

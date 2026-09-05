@@ -34,6 +34,7 @@
 #include <mishmesh/core/UnreadReminder.h>
 #include <mishmesh/core/ScreenSleep.h>
 #include <mishmesh/core/SleepScreen.h>
+#include <mishmesh/core/WakeHome.h>
 #include <mishmesh/core/NameValidation.h>
 #include <mishmesh/sound/SoundEngine.h>
 #include <mishmesh/sound/Sounds.h>
@@ -424,6 +425,16 @@ public:
     p->sleep_rotation = idx < mishmesh::SLEEP_ORIENT_COUNT ? idx : 0;
     the_mesh.savePrefs();
     if (_host) _host->setSleepOrientation(p->sleep_rotation);   // live
+  }
+  uint8_t wakeHomeIndex() const override {
+    return (uint8_t)mishmesh::wakeHomeStoredToIndex(_node_prefs ? _node_prefs->wake_home : 0);
+  }
+  void setWakeHomeIndex(uint8_t idx) override {
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (!p) return;
+    p->wake_home = mishmesh::wakeHomeIndexToStored(idx);
+    the_mesh.savePrefs();
+    if (_host) _host->setWakeHomeMillis(mishmesh::wakeHomeMillis(idx));   // live
   }
   bool screenBrightnessSupported() const override { return _display && _display->supportsBrightness(); }
   uint8_t screenBrightnessIndex() const override {

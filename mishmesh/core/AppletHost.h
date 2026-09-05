@@ -47,6 +47,10 @@ public:
   // was painted some other way round. applyDisplayRotation() keeps this current;
   // the adapter seeds it at boot, where the driver is turned before the host exists.
   void setUiRotation(int quarters) { _ui_rotation = ((quarters % 4) + 4) % 4; }
+
+  // A user wake this long after the panel blanked resets navigation to home;
+  // shorter naps keep your place. 0 = always reset, WAKE_HOME_NEVER = never.
+  void setWakeHomeMillis(uint32_t ms) { _wake_home_ms = ms; }
   // Sleep the panel now instead of waiting out the auto-off timer, e.g. engaging
   // the screen lock. Honoured on the next loop pass, not here: an applet asks for
   // this from onRender, and the frame it is in the middle of still has to flush
@@ -159,6 +163,10 @@ private:
   // input-blind gap - see loop().
   void pumpInput(uint32_t now_ms);
   void handleReport(const InputReport& rep, uint32_t now_ms);
+  // Whether a wake should reset navigation to home. Asks the whole stack, not
+  // just the top: a keypad opened over a chat is foreground, but popping to root
+  // would take the chat with it and throw away what was being typed.
+  bool wakeResetsToHome(uint32_t now_ms) const;
   void pushInputRotation();   // mount + user, out to every source
   void rebuildCanvas();       // after the driver's logical size changes
   void refreshInputState();   // OR every source's heldMask() into _input_state
@@ -200,10 +208,8 @@ private:
   // lastInputMs().
   uint32_t _last_input_ms;
 
-  // A user wake this long after the panel blanked resets navigation to home
-  // (unless the foreground opts out via keepOnWake). Short naps keep your place.
-  static const uint32_t WAKE_HOME_THRESHOLD_MS = 60000;
   uint32_t _slept_at;   // now_ms when auto-off last blanked the panel (0 = not slept)
+  uint32_t _wake_home_ms;   // see setWakeHomeMillis()
 
   // Partial refreshes leave residue on e-ink and nothing else in the driver ever
   // clears it, so a face that repaints (the clock) would ghost its way through

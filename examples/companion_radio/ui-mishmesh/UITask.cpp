@@ -277,6 +277,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _host->setAutoOffMillis(mishmesh::screenSleepMillis(screenSleepIndex()));   // honor saved sleep pref
   _host->setSleepScreen(sleepScreenIndex());
   _host->setSleepOrientation(sleepOrientation());
+  _host->setWakeHomeMillis(mishmesh::wakeHomeMillis(wakeHomeIndex()));
   _host->setUiRotation(mishmesh::uiPrefs().rotation());
 
   _menu = new mishmesh::AppMenuApplet();
