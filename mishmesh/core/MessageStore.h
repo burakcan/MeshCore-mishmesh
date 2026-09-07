@@ -131,6 +131,20 @@ private:
 
   ConvoSummary& ensureSlot(const ConvoKey& key);
   void rebuildIndex();
+  // Bring the loaded index back in step with what is actually on flash.
+  void reconcileIndex();
+  // One log file's shape from a single forward walk, shared by rebuild and
+  // reconcile. `after` is a live-record index: inboundAfter counts the inbound
+  // records at or past it, which is how reconcile finds what a short blob missed.
+  struct LogScan {
+    int      liveCount;
+    int      inboundAfter;
+    uint32_t maxTime;
+    uint32_t validEnd;      // bytes up to the last complete record (torn tail excluded)
+    uint16_t previewLen;
+    char     preview[PREVIEW_LEN];
+  };
+  void scanLog(const char* name, int after, LogScan& out) const;
   void rotateIfNeeded(const ConvoKey& key, ConvoSummary& c);
 
   // Window management

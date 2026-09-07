@@ -114,6 +114,11 @@ uint16_t ConvoIndex::rawCount(int ci) const {
   return _convos[ci].count;
 }
 
+uint32_t ConvoIndex::logBytes(int ci) const {
+  if (ci < 0 || ci >= _count) return 0;
+  return _convos[ci].logBytes;
+}
+
 uint16_t ConvoIndex::totalUnread() const {
   uint32_t t = 0;
   for (int i = 0; i < _count; i++) t += _convos[i].unread;

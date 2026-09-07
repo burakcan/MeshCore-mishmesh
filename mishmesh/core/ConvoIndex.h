@@ -38,6 +38,7 @@ public:
 
   // ---- accessors used by MessageStore ----
   uint16_t rawCount(int ci) const;   // message count of slot ci
+  uint32_t logBytes(int ci) const;   // persisted log length of slot ci
   uint16_t totalUnread() const;
   uint16_t totalNotifyUnread() const;
   uint32_t totalLogBytes() const;    // sum of logBytes across all convos (for budget check)
