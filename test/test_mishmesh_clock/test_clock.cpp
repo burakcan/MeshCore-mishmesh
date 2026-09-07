@@ -8,6 +8,8 @@
 #include <mishmesh/applets/ClockAlertApplet.h>
 #include <mishmesh/applets/SoundPickerApplet.h>
 #include <mishmesh/sound/Sounds.h>
+#include <mishmesh/core/Canvas.h>
+#include <mishmesh/text/Fonts.h>
 #include "FakeDisplayDriver.h"
 
 #include <map>
@@ -525,6 +527,41 @@ struct ClockAppletFixture : ::testing::Test {
   }
   void render() { Canvas c(&d, 1000); app.onRender(c); }
 };
+}
+
+// The stopwatch's running hint is the longest string in this applet and does not
+// fit a 122px portrait panel in the regular tier - tierFont() picks by height, so
+// it reads that canvas as roomy. It has to drop to the dense tier rather than run
+// off both edges.
+TEST(ClockApplet, RunningStopwatchHintFitsAPortraitPanel) {
+  const char* hint = "Sel stop / up lap / hold reset";
+  FakeDisplayDriver portrait(122, 250);
+  Canvas pc(&portrait, 1000);
+  ASSERT_GT(pc.textWidth(fontBody(), hint), pc.width());       // the bug, still true
+  ASSERT_LE(pc.textWidth(fontCaption(), hint), pc.width());    // and the way out
+
+  clockService().resetForTest();
+  FakeApp svc;
+  AppletContext ctx; ctx.app = &svc;
+  ClockApplet app;
+  app.onStart(ctx);
+  clockService().swToggle(1000);            // start it: selects the long hint
+  { Canvas c(&portrait, 2000); app.onRender(c); }
+
+  // Nothing may be clipped away: count what the dense tier draws unclipped on a
+  // wide canvas, and require the portrait render to have put the same ink down.
+  FakeDisplayDriver wide(400, 250);
+  { Canvas w(&wide, 2000);
+    w.drawText(fontCaption(), 0, 0, hint, DisplayDriver::LIGHT); }
+
+  int inHint = 0;
+  const int bandTop = 250 - 2 * pc.lineHeight(fontCaption()) - 2;
+  for (auto& p : portrait.litPixels) {
+    EXPECT_GE(p.first, 0);
+    EXPECT_LT(p.first, 122);
+    if (p.second >= bandTop) inHint++;
+  }
+  EXPECT_EQ((int)wide.litPixels.size(), inHint);
 }
 
 TEST_F(ClockAppletFixture, NavRightWalksAllSixTabs) {

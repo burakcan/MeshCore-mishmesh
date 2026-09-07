@@ -184,13 +184,30 @@ static int numScale(Canvas& c, const char* str, int maxW) {
 }
 static const Font* hintFont(Canvas& c) { return tierFont(c); }
 
+// A centred hint has to be measured against the canvas WIDTH. tierFont() keys off
+// height, so a 122x250 portrait panel reads "roomy" and picks a tier the line then
+// runs off both edges in - the same trap numScale() above exists for. Drop to the
+// dense tier when the regular one does not fit.
+static const Font* hintFontFor(Canvas& c, const char* hint) {
+  const Font* f = tierFont(c);
+  return c.textWidth(f, hint) <= c.width() ? f : fontCaption();
+}
+
+// Every hint in this file goes out through here: densest tier that fits, then
+// ellipsized so a longer string added later degrades instead of bleeding.
+static void drawHint(Canvas& c, int y, const char* hint) {
+  c.drawTextEllipsized(hintFontFor(c, hint), c.width() / 2, y, c.width(), hint,
+                       DisplayDriver::LIGHT, TextAlign::Center);
+}
+
 int ClockApplet::renderStopwatch(Canvas& c, int y, int h) {
   ClockService& svc = clockService();
   uint32_t ms = svc.swElapsedMs(_now);
   char buf[16];
   fmtStopwatch(buf, sizeof(buf), ms);
-  const Font* hf = hintFont(c);
-  int capH = c.lineHeight(hf);
+  const char* hint = svc.swRunning() ? "Sel stop / up lap / hold reset"
+                    : ms ? "Sel resume / hold reset" : "Select to start";
+  int capH = c.lineHeight(hintFontFor(c, hint));
   int lapH = c.lineHeight(fontCaption());   // the lap list stays in the dense tier
   int avail = h - capH - 2;               // body above the hint line
   int laps = svc.swLapCount();
@@ -233,10 +250,7 @@ int ClockApplet::renderStopwatch(Canvas& c, int y, int h) {
     }
   }
 
-  const char* hint = svc.swRunning() ? "Sel stop / up lap / hold reset"
-                    : ms ? "Sel resume / hold reset" : "Select to start";
-  c.drawText(hf, c.width() / 2, y + h - capH, hint,
-             DisplayDriver::LIGHT, TextAlign::Center);
+  drawHint(c, y + h - capH, hint);
   return svc.swRunning() ? 50 : 60000;
 }
 
@@ -245,11 +259,15 @@ int ClockApplet::renderTimer(Canvas& c, int y, int h) {
   char buf[16];
   fmtCountdown(buf, sizeof(buf), svc.tmRemainingMs(_now));
   const int ns = numScale(c, buf, c.width());
-  const Font* hf = hintFont(c);
+  const bool paused = svc.tmPaused();
+  const char* hint = svc.tmRunning() ? "Sel pause / hold reset"
+                    : paused ? "Sel resume / hold reset"
+                             : "Up/down set / sel start";
+  const Font* hf = hintFont(c);              // the "Paused" label keeps the regular tier
   int nh = c.fontHeightScaled(fontNum(), ns);
   int capH = c.lineHeight(hf);
-  int avail = h - capH - 2;
-  bool paused = svc.tmPaused();
+  int hintH = c.lineHeight(hintFontFor(c, hint));
+  int avail = h - hintH - 2;
   int block = paused ? nh + 2 + capH : nh;   // centre readout (+ "Paused") as one block
   int ny = y + (avail - block) / 2;
   c.drawTextScaled(fontNum(), c.width() / 2, ny, buf, DisplayDriver::LIGHT, ns, TextAlign::Center);
@@ -257,11 +275,7 @@ int ClockApplet::renderTimer(Canvas& c, int y, int h) {
     c.drawText(hf, c.width() / 2, ny + nh + 2, "Paused",
                DisplayDriver::LIGHT, TextAlign::Center);
 
-  const char* hint = svc.tmRunning() ? "Sel pause / hold reset"
-                    : paused ? "Sel resume / hold reset"
-                             : "Up/down set / sel start";
-  c.drawText(hf, c.width() / 2, y + h - capH, hint,
-             DisplayDriver::LIGHT, TextAlign::Center);
+  drawHint(c, y + h - hintH, hint);
   return svc.tmRunning() ? 200 : 60000;
 }
 
@@ -349,8 +363,7 @@ int ClockApplet::renderPomodoroIdle(Canvas& c, int y, int h) {
 
   c.drawText(fontCaption(), p.tx, p.labelY, "FOCUS", DisplayDriver::LIGHT, TextAlign::Center);
   c.drawTextScaled(fontNum(), p.tx, p.numY, buf, DisplayDriver::LIGHT, p.ns, TextAlign::Center);
-  c.drawText(hintFont(c), c.width() / 2, y + h - p.hintH,
-             "Sel start / hold setup", DisplayDriver::LIGHT, TextAlign::Center);
+  drawHint(c, y + h - p.hintH, "Sel start / hold setup");
   return 1000;
 }
 
@@ -398,8 +411,7 @@ int ClockApplet::renderPomodoroRunning(Canvas& c, int y, int h) {
 
   const char* hint = s.pmRunning() ? "Sel pause / hold reset"
                                     : "Sel start / hold reset";
-  c.drawText(hintFont(c), c.width() / 2, y + h - p.hintH, hint,
-             DisplayDriver::LIGHT, TextAlign::Center);
+  drawHint(c, y + h - p.hintH, hint);
   return s.pmRunning() ? 250 : 60000;
 }
 
