@@ -3,6 +3,9 @@
 
 #include "GAT56230SMeshKitBoard.h"
 
+// [mishmesh]
+float mishmeshBatteryCalFactor = 1.0f;
+// [/mishmesh]
 
 #ifdef NRF52_POWER_MANAGEMENT
 // Static configuration for power management
