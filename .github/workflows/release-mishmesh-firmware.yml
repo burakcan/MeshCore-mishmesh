@@ -4,7 +4,8 @@ permissions:
   contents: write
 
 # Tag a commit `mishmesh-v<version>` (e.g. mishmesh-v0.9.0) to build the mishmesh
-# firmwares (Wio Tracker L1, BLE + USB) and publish a GitHub Release with the .uf2s.
+# firmwares (Wio Tracker L1 and L1 E-Ink, BLE + USB) and publish a GitHub Release
+# with the .uf2s.
 # Or run manually from the Actions tab (uploads artifacts, no release).
 #
 # Official builds include the licensed EmojiMania glyphs, restored from the
@@ -48,6 +49,8 @@ jobs:
           /usr/bin/env bash build.sh build-firmware
           WioTrackerL1_companion_radio_ble_mishmesh
           WioTrackerL1_companion_radio_usb_mishmesh
+          WioTrackerL1Eink_companion_radio_ble_mishmesh
+          WioTrackerL1Eink_companion_radio_usb_mishmesh
 
       - name: Upload Workflow Artifacts
         uses: actions/upload-artifact@v7
