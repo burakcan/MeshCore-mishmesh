@@ -14,6 +14,7 @@ const description =
     <p class="lbl">Manual</p>
     <nav id="toc">
       <a href="#getting-around" class="on">Getting around</a>
+      <a href="#display">Display &amp; screens</a>
       <a href="#messaging">Messaging</a>
       <a href="#contacts">Contacts</a>
       <a href="#repeaters">Repeaters &amp; rooms</a>
@@ -26,13 +27,13 @@ const description =
     <!-- GETTING AROUND -->
     <section class="sec" id="getting-around">
       <span class="head">Getting around</span>
-      <p>mishmesh is a stack of screens driven entirely from the device's buttons. <b>Select</b> drills into whatever's highlighted; <b>Back</b> steps out. Left, right, up and down move the highlight. That's the whole grammar - here's the shell you'll live in.</p>
+      <p>mishmesh is a stack of screens driven entirely from the device's buttons. <b>Select</b> drills into whatever's highlighted; <b>Back</b> steps out. Left, right, up and down move the highlight. It runs on the 128x64 OLED of the Wio Tracker L1 / L1 Pro and the 2.13" 250x122 e-ink of the L1 E-Ink, laying out for whichever it finds.</p>
 
       <h3>The home screen</h3>
-      <p>The clock is home base. The top bar shows your node name and battery, with small status icons that appear only when they matter: muted, GPS searching or fixed, Bluetooth on or connected, repeater mode, an armed alarm, a running timer or stopwatch. Under the clock sits your unread-message count.</p>
+      <p>The top bar shows your node name and battery, with small status icons that appear only when they matter: muted, GPS searching or fixed, Bluetooth on or connected, repeater mode, an armed alarm, a running timer or stopwatch. Under the clock sits your unread-message count.</p>
       <Screenshot src="assets/img/home.png" alt="home screen" caption="The hint bar along the bottom is your launchpad." />
       <p>That bottom hint bar - <code class="inl">&lt;Cont  .Apps  vTgls  Mess&gt;</code> - is how you leave home. <b>Select</b> opens the app menu. <b>Down</b> pulls the toggle drawer. The two side arrows are shortcuts you assign.</p>
-      <Tip label="Shortcut"><p>The Left and Right labels on the hint bar aren't fixed. Settings &gt; Home &gt; Left / Right shortcut points each arrow at any app, so your two most-used screens are one press away.</p></Tip>
+      <Tip label="Shortcut"><p>Settings &gt; Home &gt; Left / Right shortcut points each arrow at any app.</p></Tip>
 
       <h3>The app menu</h3>
       <p>Select from home to open the grid of every screen. The Messages tile carries a badge when you have unread mail.</p>
@@ -43,8 +44,8 @@ const description =
       <Screenshot src="assets/img/drawer.png" alt="quick-toggle drawer" caption="The toggle drawer, on the Sound tile." />
       <Tip label="Hidden"><p>On the <b>Advert</b> tile a short press sends a zero-hop advert; <b>hold</b> it to flood the advert across the whole mesh.</p><p>The Bluetooth tile shows your pairing PIN inline, and GPS shows the live satellite count while it searches.</p></Tip>
 
-      <h3>Locking the screen</h3>
-      <Tip label="Gesture"><p>From the home screen, press <kbd>Back</kbd> <kbd>Back</kbd> <kbd>Back</kbd> quickly to lock - an animated padlock appears. Three more Backs unlock it. Back does nothing else at home, so it's a safe pocket gesture.</p></Tip>
+      <h3>Sleeping and locking</h3>
+      <Tip label="Gesture"><p>From the home screen a single <kbd>Back</kbd> sleeps the screen. Press it three times quickly and it locks instead; three more Backs unlock it.</p></Tip>
       <Screenshot src="assets/img/lock.png" alt="locked screen with padlock" caption="Locked." />
 
       <h3>Typing</h3>
@@ -62,6 +63,43 @@ const description =
       </ShotRow>
     </section>
 
+    <!-- DISPLAY -->
+    <section class="sec" id="display">
+      <span class="head">Display &amp; screens</span>
+      <p>Panel settings live in Settings &gt; Display. Which rows appear depends on the board.</p>
+
+      <h3>On both boards</h3>
+      <ul>
+        <li><b>Screen sleep</b> - how long an idle panel waits before it sleeps.</li>
+        <li><b>Return to home</b> - how long asleep before a wake drops you back at home rather than where you left off. Always, 1m, 2m, 5m or Never; the default is 2m.</li>
+      </ul>
+
+      <h3>OLED only</h3>
+      <p><b>Screen brightness</b> - Low, Medium or High, previewed live as you step it.</p>
+
+      <h3>E-ink only</h3>
+      <p>Four rows appear only on e-ink.</p>
+      <ShotRow>
+        <Screenshot src="assets/img/eink_home.png" alt="mishmesh home screen on the 250x122 e-ink panel" caption="Home on the e-ink panel." />
+        <Screenshot src="assets/img/eink_portrait.png" alt="contacts list rendered in portrait on the e-ink panel" caption="The same shell, turned portrait." />
+      </ShotRow>
+      <ul>
+        <li><b>Interface size</b> - Standard or Large. Large magnifies the whole interface, which the bigger panel has the room for.</li>
+        <li><b>Orientation</b> - Landscape, Portrait, or either one flipped. Screens that split sideways in landscape stack in portrait.</li>
+        <li><b>Controls</b> - which way the buttons read. Auto follows the orientation; the four fixed settings override it for a board whose controls are not mounted square to the panel.</li>
+        <li><b>Sleep screen</b> - the face left on the glass once the panel sleeps: Screen off, Clock, or Logo.</li>
+      </ul>
+      <Tip label="Sleep faces"><p>Each face sets its own refresh cadence: the logo refreshes once per sleep, the clock once a minute. A face that only reads one way round has the panel turned for it and turned back on wake, so <b>Sleep orientation</b> appears only for a face that lays out either way.</p></Tip>
+
+      <h3>Refresh behaviour</h3>
+      <p>On the e-ink build:</p>
+      <ul>
+        <li>Button presses during a refresh are queued, not dropped.</li>
+        <li>Screens that slide or pulse on the OLED settle straight to their final state.</li>
+        <li>A label too long for its row is ellipsized rather than clipped mid-glyph.</li>
+      </ul>
+    </section>
+
     <!-- MESSAGING -->
     <section class="sec" id="messaging">
       <span class="head">Messaging</span>
@@ -75,7 +113,7 @@ const description =
       <p>Your messages are boxed; incoming ones are labelled with the sender. Two compose buttons sit at the bottom: <b>Write</b> opens the keypad, <b>Quick</b> inserts a canned reply. Long-press any message for Reply, Resend, Delete, and View path.</p>
       <Screenshot src="assets/img/chat.png" alt="chat thread with delivery status" caption="Delivery status sits under each sent message." />
       <p>Under each message you send you'll see its state: <b>Sent</b>, <b>Retrying N/5</b>, <b>Delivered</b> with the round-trip time, <b>Failed</b>, or <b>Heard N</b> for channel messages that were repeated.</p>
-      <Tip label="Repeat alert"><p>If the node lives in a pocket or a backpack, one chirp is easy to miss. Messages &gt; Settings &gt; Repeat alert re-plays the chat's notification tone every few minutes while something is unread - <b>Every</b> sets the gap (off by default), <b>Stop after</b> the point where it gives up so a forgotten node doesn't chirp all day. Any button press stops the current round; the next message starts a new one. Muted chats and channels set to mentions-only never repeat, and a muted device stays silent.</p></Tip>
+      <Tip label="Repeat alert"><p>Messages &gt; Settings &gt; Repeat alert re-plays the chat's notification tone every few minutes while something is unread - <b>Every</b> sets the gap (off by default), <b>Stop after</b> the point where it gives up so a forgotten node doesn't chirp all day. Any button press stops the current round; the next message starts a new one. Muted chats and channels set to mentions-only never repeat, and a muted device stays silent.</p></Tip>
       <Tip label="Auto-retry"><p>Direct messages retry on their own - up to five times, every eight seconds. On the second retry mishmesh can drop the learned route and flood instead, so a stale path repairs itself. Both behaviours are toggles in Messages &gt; Settings (Auto retry DMs, Auto reset DM paths). Retrying only covers messages sent since the radio last started - a message still undelivered when you reboot is shown as Failed rather than picked up again.</p></Tip>
 
       <h3>Sharing a channel</h3>
@@ -140,7 +178,7 @@ const description =
       <Tip label="Gesture"><p>Long-press <kbd>Select</kbd> to reset the stopwatch, timer or Pomodoro. On the world clock, long-press a city to remove it.</p></Tip>
 
       <h3>Pomodoro</h3>
-      <p>The Pomodoro tab runs the focus-and-break cycle: a ring of segments tracks the set, filling as each focus block completes, with the tomato marking focus and a coffee cup marking the breaks. <b>Select</b> starts and pauses; the phase rings and rolls into the next one on its own.</p>
+      <p>A ring of segments tracks the set, filling as each focus block completes - a tomato marks focus, a coffee cup the breaks. <b>Select</b> starts and pauses; the phase rings and rolls into the next one on its own.</p>
       <ShotRow>
         <Screenshot src="assets/img/clock_pomodoro.png" alt="pomodoro ready screen" caption="Ready - the empty set ring." />
         <Screenshot src="assets/img/clock_pomodoro_run.png" alt="pomodoro focus block running" caption="Mid-focus, the ring filling." />
@@ -149,7 +187,7 @@ const description =
       <Tip label="Setup"><p>Long-press <kbd>Select</kbd> on the Ready screen to open setup: focus length, short and long break, how many focus blocks make a set, and whether phases auto-advance or wait for a press.</p></Tip>
 
       <h3>Airtime</h3>
-      <p>Airtime keeps you legal on the band. The Budget tab shows how much of your transmit allowance is free, plus lifetime and last-hour air time. The History tab charts TX and RX over the last hour against a dashed per-minute duty-cycle ceiling.</p>
+      <p>The Budget tab shows how much of your transmit allowance is free, plus lifetime and last-hour air time. The History tab charts TX and RX over the last hour against a dashed per-minute duty-cycle ceiling.</p>
       <ShotRow>
         <Screenshot src="assets/img/airtime_budget.png" alt="airtime budget gauge" caption="TX headroom at a glance." />
         <Screenshot src="assets/img/airtime_history.png" alt="airtime history graph" caption="The last hour, minute by minute." />
@@ -162,7 +200,8 @@ const description =
       <p>Grouped by area:</p>
       <Screenshot src="assets/img/settings.png" alt="settings groups" caption="Settings, grouped by area." />
       <ul>
-        <li><b>Home</b> - screen sleep, the Left / Right home shortcuts, and brightness (previewed live as you step it).</li>
+        <li><b>Home</b> - the Left / Right home shortcuts.</li>
+        <li><b>Display</b> - screen sleep, return-to-home, brightness, and on e-ink the interface size, orientation, controls and sleep face. <a href="#display">Covered above</a>.</li>
         <li><b>Battery</b> - the indicator style (gauge, percentage, or voltage) and an ADC calibration trim that corrects the reading against a multimeter, with a live voltage preview as you step it.</li>
         <li><b>Contacts</b> - auto-add rules, overwrite-oldest, notify-when-full, max hops, and bulk clean-up.</li>
         <li><b>Messages</b> - auto-retry and auto-path-reset, direct-message acks, wake-on-message, the repeat alert, per-channel and direct sounds, quick replies.</li>
@@ -171,7 +210,7 @@ const description =
         <li><b>Time &amp; date</b> - timezone by city (DST-aware), 12 / 24h, date format with a live example, auto time-sync, and manual set.</li>
         <li><b>System Info</b> - heap and storage, contact count, battery, uptime, both version numbers, your public key, and two tiers of factory reset.</li>
       </ul>
-      <p>Most panels drill one level deeper. Battery is a good example: pick how the indicator reads, then step the calibration trim - the modal shows the live voltage next to the percent, so you can dial it against a multimeter.</p>
+      <p>Most panels drill one level deeper. Battery: pick how the indicator reads, then step the calibration trim - the modal shows the live voltage next to the percent, so you can dial it against a multimeter.</p>
       <ShotRow>
         <Screenshot src="assets/img/settings_battery.png" alt="battery settings panel" caption="Battery: display style and trim." />
         <Screenshot src="assets/img/settings_battery_cal.png" alt="battery calibration stepper with live voltage" caption="Calibration, with live voltage." />

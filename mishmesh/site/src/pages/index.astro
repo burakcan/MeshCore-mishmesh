@@ -2,7 +2,7 @@
 import Base from "../layouts/Base.astro";
 import StatusBar from "../components/StatusBar.astro";
 const description =
-  "mishmesh - the on-device UI for MeshCore. Messaging, contacts, repeater admin and radio config on a LoRa radio's own screen. For the Seeed Wio Tracker L1 / L1 Pro.";
+  "mishmesh - the on-device UI for MeshCore. Messaging, contacts, repeater admin and radio config on a LoRa radio's own screen. For the Seeed Wio Tracker L1 / L1 Pro and L1 E-Ink.";
 ---
 <Base title="mishmesh - the on-device UI for MeshCore" description={description} bodyClass="landing" css="landing.css">
   <StatusBar variant="landing" />
@@ -12,12 +12,12 @@ const description =
     <div>
       <h1 class="reveal">mishmesh<span class="cursor"></span></h1>
       <p class="tag reveal"><b>The on-device UI for MeshCore.</b></p>
-      <p class="sub reveal">Messaging, contacts, repeater admin and radio config - all on the 128x64 screen, driven by the buttons. The phone app still works; you just don't need it.</p>
+      <p class="sub reveal">Messaging, contacts, repeater admin and radio config - all on the device's own screen, driven by the buttons. The phone app still works; you just don't need it.</p>
       <div class="btns reveal">
         <a class="btn solid" href="#install">Flash it</a>
         <a class="btn" href="#" data-manual>Open manual</a>
       </div>
-      <p class="meta-line">For the Seeed Wio Tracker L1 / L1 Pro</p>
+      <p class="meta-line">For the Seeed Wio Tracker L1 / L1 Pro / L1 E-Ink</p>
     </div>
     <figure>
       <img src="assets/img/home.png" alt="mishmesh home screen: node name, big clock, quick-action hints">
@@ -29,8 +29,8 @@ const description =
 <section id="what"><div class="wrap">
   <span class="head">What it is</span>
   <p class="lead">MeshCore is a LoRa mesh: messages hop from node to node with no towers or internet. Normally you operate it through the phone companion app over Bluetooth.</p>
-  <p class="lead"><b>mishmesh is an alternative companion firmware that puts that interface on the device itself.</b> Messaging, contacts, repeater administration, radio settings, a background clock - all on the 128x64 screen, driven by the buttons.</p>
-  <p class="lead">It's a drop-in replacement for the stock MeshCore companion UI. The phone app still connects over Bluetooth; you just don't need it to do the everyday things.</p>
+  <p class="lead"><b>mishmesh is an alternative companion firmware that puts that interface on the device itself.</b> Messaging, contacts, repeater administration, radio settings, a background clock - all on the device's own screen, driven by the buttons.</p>
+  <p class="lead">It's a drop-in replacement for the stock MeshCore companion UI - the phone app still connects over Bluetooth.</p>
 </div></section>
 
 <section id="apps"><div class="wrap">
@@ -63,8 +63,7 @@ const description =
 
 <section id="install"><div class="wrap">
   <span class="head">Install</span>
-  <p class="lead" style="margin-bottom:8px">mishmesh runs on the <b>Seeed Wio Tracker L1 / L1 Pro</b> (nRF52840; they're the same board). Two ways in.</p>
-  <p class="lead" style="margin-bottom:8px;font-size:18px">More boards are on the way, including the e-ink L1 variant.</p>
+  <p class="lead" style="margin-bottom:8px">mishmesh runs on the <b>Seeed Wio Tracker L1 / L1 Pro</b> (nRF52840; they're the same board, 128x64 OLED) and the <b>Wio Tracker L1 E-Ink</b> (2.13", 250x122). Two ways in.</p>
 
   <div class="pill" role="tablist">
     <button class="sel" data-tab="uf2" role="tab">Drag-and-drop .uf2</button>
@@ -74,7 +73,7 @@ const description =
   <div class="steps" data-panel="uf2">
     <div class="step"><span class="n"></span><div>
       <h3>Grab the firmware</h3>
-      <p>Download the latest <a href="#" data-releases>.uf2 from Releases</a>. Pick <b>_ble_</b> for the Bluetooth companion build or <b>_usb_</b> for serial.</p>
+      <p>Download the latest <a href="#" data-releases>.uf2 from Releases</a>. Pick <b>WioTrackerL1_</b> for the OLED board or <b>WioTrackerL1Eink_</b> for the e-ink one, then <b>_ble_</b> for the Bluetooth companion build or <b>_usb_</b> for serial.</p>
     </div></div>
     <div class="step"><span class="n"></span><div>
       <h3>Enter the bootloader</h3>
@@ -91,12 +90,13 @@ const description =
       <h3>Build it</h3>
       <p>From a PlatformIO checkout of the repo. FIRMWARE_VERSION (the MeshCore base) is optional for mishmesh builds.</p>
       <pre><button class="copy">copy</button><code><span class="c"># optional: pin the meshcore base it reports</span>
-export FIRMWARE_VERSION=v1.16.0
+export FIRMWARE_VERSION=v1.17.1
 sh build.sh build-firmware WioTrackerL1_companion_radio_usb_mishmesh</code></pre>
+      <p style="margin-top:8px">On the e-ink board swap <b>WioTrackerL1_</b> for <b>WioTrackerL1Eink_</b>.</p>
     </div></div>
     <div class="step"><span class="n"></span><div>
       <h3>Flash it</h3>
-      <p>Upload over USB - nrfutil does a 1200-baud touch to drop the board into DFU, no manual reset needed. Swap <b>usb</b> for <b>ble</b> for the Bluetooth build.</p>
+      <p>Upload over USB - nrfutil does a 1200-baud touch to drop the board into DFU, no manual reset needed. Swap <b>usb</b> for <b>ble</b> for the Bluetooth build, and <b>WioTrackerL1_</b> for <b>WioTrackerL1Eink_</b> on the e-ink board.</p>
       <pre><button class="copy">copy</button><code>pio run -e WioTrackerL1_companion_radio_usb_mishmesh -t upload</code></pre>
     </div></div>
     <div class="note"><b>Heads up:</b> a bricked or empty board won't enumerate a serial port - use the double-tap + .uf2 method above instead. Full build notes live in the <a href="#" data-repo>repo README</a>.</div>
@@ -120,7 +120,7 @@ sh build.sh build-firmware WioTrackerL1_companion_radio_usb_mishmesh</code></pre
     <a href="https://ko-fi.com/burak_can">ko-fi.com/burak_can</a>
   </div>
   <div class="cr">
-    <span>mm v1.4.0 &middot; mc v1.17.1</span>
+    <span>mm v1.5.0 &middot; mc v1.17.1</span>
   </div>
 </div></footer>
 </Base>

@@ -9,6 +9,16 @@ its heading with `## v<version>`.
 
 ## Unreleased
 
+## v1.5.0
+
+- E-ink support - the Wio Tracker L1 E-Ink is now a build target.
+- Portrait orientation and a Large interface size on the e-ink panel.
+- New Display settings group; screen sleep and brightness moved there from Home.
+- A single Back at the home screen sleeps the display; three in quick succession still lock it.
+- Sleep screen on e-ink: leave a clock or the logo on the panel while it sleeps.
+- Return to home when the screen has been asleep a while, configurable.
+- Fix: onboarding not triggering on a new device.
+
 ## v1.4.1
 
 - Fix: messages could go missing from a chat in some cases.

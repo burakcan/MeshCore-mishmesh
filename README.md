@@ -15,8 +15,9 @@ puts messaging, contacts, and configuration on the device, so the radio is
 useful on its own and the phone is optional. It can currently do almost everything
 without a phone.
 
-It currently targets Wio Trackler L1 (pro).
-E-ink support will be there at some point, I currently don't have a device to test it.
+It targets the Seeed Wio Tracker L1 / L1 Pro (128x64 OLED) and the Wio Tracker
+L1 E-Ink (2.13", 250x122), which also gets portrait orientation, a larger
+interface size, and a face left on the glass while the panel sleeps.
 In theory we can support more devices with enough buttons.
 
 The underlying MeshCore firmware is mostly unchanged; see [About MeshCore](#about-meshcore)
@@ -74,8 +75,9 @@ below.
 
 ### Install
 
-Grab the latest `WioTrackerL1_companion_radio_*_mishmesh-*.uf2` from
-[Releases](../../releases), then:
+Grab the latest `.uf2` for your board from [Releases](../../releases) -
+`WioTrackerL1_companion_radio_*_mishmesh-*.uf2` for the OLED board,
+`WioTrackerL1Eink_companion_radio_*_mishmesh-*.uf2` for the e-ink one - then:
 
 1. Plug the Wio Tracker L1 into USB.
 2. Double-tap reset. It mounts as a USB drive.
@@ -94,6 +96,8 @@ A PlatformIO project. With the repo cloned:
 export FIRMWARE_VERSION=mishmesh-dev
 pio run -e WioTrackerL1_companion_radio_usb_mishmesh -t upload   # or _ble_mishmesh
 ```
+
+On the e-ink board swap `WioTrackerL1_` for `WioTrackerL1Eink_` in the env name.
 
 Package the `.uf2` / `.zip` like a release does (lands in `out/`):
 
