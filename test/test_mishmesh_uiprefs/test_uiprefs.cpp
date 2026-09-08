@@ -136,3 +136,29 @@ int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+TEST(UiPrefs, ThemeDefaultFollowsPanel) {
+  primeRegistry();
+  MemStorage mem;
+
+  uiPrefs().resetForTest();
+  uiPrefs().begin(&mem);                 // OLED: light-on-black
+  EXPECT_TRUE(uiPrefs().darkMode());
+
+  uiPrefs().resetForTest();
+  uiPrefs().begin(&mem, false);          // e-ink: ink-on-paper
+  EXPECT_FALSE(uiPrefs().darkMode());
+}
+
+TEST(UiPrefs, StoredThemeBeatsPanelDefault) {
+  primeRegistry();
+  MemStorage mem;
+
+  uiPrefs().resetForTest();
+  uiPrefs().begin(&mem, false);
+  uiPrefs().setDarkMode(true);
+
+  uiPrefs().resetForTest();              // simulate reboot
+  uiPrefs().begin(&mem, false);
+  EXPECT_TRUE(uiPrefs().darkMode());
+}

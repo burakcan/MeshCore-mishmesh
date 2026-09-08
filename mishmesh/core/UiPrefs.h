@@ -21,7 +21,9 @@ public:
   static const int SLOT_RIGHT = 1;
   static const int LABEL_CAP = 17;   // stored label + NUL (registry labels are short)
 
-  void begin(AppletStorage* s);
+  // defaultDark is what the theme falls back to when nothing is stored yet:
+  // an OLED reads best light-on-black, e-ink the other way round.
+  void begin(AppletStorage* s, bool defaultDark = true);
 
   BattMode battMode() const { return _battMode; }
   void     setBattMode(BattMode m);           // persists "uibatt"

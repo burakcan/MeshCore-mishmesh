@@ -257,7 +257,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _theStorage.ds = the_mesh.getStore();
   ctx.storage = &_theStorage;
   mishmesh::quickReplyStore().begin(&_theStorage);   // load canned replies
-  mishmesh::uiPrefs().begin(&_theStorage);   // battery style + home shortcuts
+  mishmesh::uiPrefs().begin(&_theStorage,   // battery style + home shortcuts
+                            !(_display && _display->isEink()));
   mishmeshBatteryCalFactor = mishmesh::uiPrefs().battCalPercent() / 100.0f;   // apply persisted trim
   // Magnification changes what width()/height() report, so it has to be settled
   // before the host builds its canvas around them.

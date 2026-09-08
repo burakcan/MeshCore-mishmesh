@@ -10,11 +10,11 @@ static const char* const QA_DEFAULT[2] = { "Contacts", "Messages" };
 
 static int clampCal(int pct) { return pct < 50 ? 50 : pct > 150 ? 150 : pct; }
 
-void UiPrefs::begin(AppletStorage* s) {
+void UiPrefs::begin(AppletStorage* s, bool defaultDark) {
   _st = s;
   _battMode = BattMode::Gauge;
   _battCal = 100;
-  _dark = true;
+  _dark = defaultDark;
   _uiScale = 2;
   _rotation = 0;
   _inputRot = INPUT_AUTO;
