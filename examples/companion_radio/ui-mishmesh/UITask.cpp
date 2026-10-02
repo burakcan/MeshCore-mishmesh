@@ -3,6 +3,7 @@
 #include <helpers/sensors/LocationProvider.h>
 #include <mishmesh/Version.h>
 #include <mishmesh/applets/NotificationApplet.h>
+#include <mishmesh/applets/NavigationApplet.h>
 #include <mishmesh/applets/onboarding_logo.h>   // MeshCore + mishmesh wordmarks
 #include <mishmesh/applets/ClockAlertApplet.h>
 #include <mishmesh/core/ClockService.h>
@@ -196,6 +197,10 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   if (_node_prefs && _node_prefs->ble_enabled == 0) disableBluetooth();
 
   if (_display == nullptr) return;   // headless build
+
+  // Register navigation after global applet-registry initialization. Keeping this
+  // out of static initialization avoids cross-translation-unit init-order issues.
+  mishmesh::registerNavigationApplet();
 
   // wire the flash backend and load persisted index/history.
   {
@@ -694,9 +699,26 @@ bool UITask::getRecentAdvert(int index, mishmesh::ContactView& out) const {
 bool UITask::isContact(const uint8_t* pk) const { return the_mesh.lookupContactByPubKey(pk, 6) != nullptr; }
 
 bool UITask::selfLocation(int32_t& lat, int32_t& lon) const {
-  if (!_sensors) return false;
-  lat = (int32_t)(_sensors->node_lat * 1e6);
-  lon = (int32_t)(_sensors->node_lon * 1e6);
+  if (!_sensors || !gpsEnabled()) return false;
+
+  // Navigation needs the freshest fix, not only the cached node_lat/node_lon
+  // value updated by EnvironmentSensorManager::loop(). Refresh the location
+  // provider once when the navigation screen asks for a position. This keeps
+  // the normal sensor update interval untouched while preventing navigation
+  // from displaying the position from when a waypoint was marked.
+  LocationProvider* lp = _sensors->getLocationProvider();
+  if (!lp) return false;
+  lp->loop();
+  if (!lp->isValid()) return false;
+
+  lat = (int32_t)lp->getLatitude();
+  lon = (int32_t)lp->getLongitude();
+
+  // Keep the shared sensor cache in sync too, so bot/status/telemetry see the
+  // same fresh position after navigation has refreshed it.
+  _sensors->node_lat = lat / 1000000.0;
+  _sensors->node_lon = lon / 1000000.0;
+
   return lat != 0 || lon != 0;
 }
 

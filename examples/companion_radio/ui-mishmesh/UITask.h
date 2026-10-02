@@ -319,6 +319,38 @@ public:
     the_mesh.savePrefs();
     the_mesh.uiApplyRadioParams();   // live, no reboot
   }
+  bool botEnabled() const override { return _node_prefs && _node_prefs->bot_enabled != 0; }
+  void setBotEnabled(bool on) override {
+    NodePrefs* p = the_mesh.getNodePrefs(); if (!p) return; p->bot_enabled = on ? 1 : 0; the_mesh.savePrefs();
+  }
+  bool botCommandsEnabled() const override { return _node_prefs && _node_prefs->bot_commands_enabled != 0; }
+  void setBotCommandsEnabled(bool on) override {
+    NodePrefs* p = the_mesh.getNodePrefs(); if (!p) return; p->bot_commands_enabled = on ? 1 : 0; the_mesh.savePrefs();
+  }
+  int botMode() const override { return _node_prefs ? (int)_node_prefs->bot_mode : 0; }
+  void setBotMode(int mode) override {
+    NodePrefs* p = the_mesh.getNodePrefs(); if (!p) return; p->bot_mode = (uint8_t)((mode < 0 || mode > 2) ? 0 : mode); the_mesh.savePrefs();
+  }
+  bool botLocationEnabled() const override { return _node_prefs && _node_prefs->bot_location_enabled != 0; }
+  void setBotLocationEnabled(bool on) override {
+    NodePrefs* p = the_mesh.getNodePrefs(); if (!p) return; p->bot_location_enabled = on ? 1 : 0; the_mesh.savePrefs();
+  }
+  const char* botChannel() const override { return _node_prefs ? _node_prefs->bot_channel : ""; }
+  void setBotChannel(const char* v) override {
+    NodePrefs* p = the_mesh.getNodePrefs(); if (!p) return; snprintf(p->bot_channel, sizeof(p->bot_channel), "%s", v ? v : ""); the_mesh.savePrefs();
+  }
+  const char* botTrigger() const override { return _node_prefs ? _node_prefs->bot_trigger : ""; }
+  void setBotTrigger(const char* v) override {
+    NodePrefs* p = the_mesh.getNodePrefs(); if (!p) return; snprintf(p->bot_trigger, sizeof(p->bot_trigger), "%s", v ? v : ""); the_mesh.savePrefs();
+  }
+  const char* botReply() const override { return _node_prefs ? _node_prefs->bot_reply : ""; }
+  void setBotReply(const char* v) override {
+    NodePrefs* p = the_mesh.getNodePrefs(); if (!p) return; snprintf(p->bot_reply, sizeof(p->bot_reply), "%s", v ? v : ""); the_mesh.savePrefs();
+  }
+  uint8_t botReplyFields() const override { return _node_prefs ? _node_prefs->bot_reply_fields : 0; }
+  void setBotReplyFields(uint8_t fields) override {
+    NodePrefs* p = the_mesh.getNodePrefs(); if (!p) return; p->bot_reply_fields = fields; the_mesh.savePrefs();
+  }
   bool repeaterMode() const override {
     return _node_prefs && _node_prefs->isRepeatEn();
   }
@@ -449,6 +481,8 @@ public:
     if (!p) return false;
     size_t n = strlen(name);
     if (n > sizeof(p->node_name) - 1) n = sizeof(p->node_name) - 1;
+    // Never cut a UTF-8 code point (especially 🇵🇱 / 📟) in half.
+    while (n > 0 && ((static_cast<uint8_t>(name[n]) & 0xC0) == 0x80)) --n;
     memcpy(p->node_name, name, n);
     p->node_name[n] = 0;
     the_mesh.savePrefs();

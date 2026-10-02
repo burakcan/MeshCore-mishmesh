@@ -568,6 +568,9 @@ void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pk
 void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
                            const char *text) {
   markConnectionActive(from); // in case this is from a server, and we have a connection
+  // [mishmesh] Remote Bot: commands are handled in addition to normal message storage.
+  handleMishmeshBot(from, pkt, text);
+  // [/mishmesh]
   queueMessage(from, TXT_TYPE_PLAIN, pkt, sender_timestamp, NULL, 0, text);
 }
 
@@ -641,6 +644,9 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   }
   if (_ui) _ui->newMsg(path_len, channel_name, text, offline_queue_len);
 #endif
+  // [mishmesh] Remote Bot: respond on the configured channel in addition to storage/UI.
+  handleMishmeshBotChannel(channel, pkt, text);
+  // [/mishmesh]
   // [mishmesh]
   if (_mm_store) {
     uint8_t pathLen = 0;
@@ -1260,6 +1266,10 @@ bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text,
                                   getRTCClock()->getCurrentTime(),
                                   expected_ack, _ms->getMillis());
     }
+
+    // [mishmesh] also expose the bot reply to the MeshCore phone app.
+    mishmeshQueueCompanionMessage(k, msg_timestamp, text);
+
     if (senderTimeOut) *senderTimeOut = msg_timestamp;
     return true;
   }
@@ -1281,7 +1291,93 @@ bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text,
     _mm_store->appendOutboundChannel(k, text, tlen, msg_timestamp,
                                      getRTCClock()->getCurrentTime());
   }
+
+  // [mishmesh] also expose the bot reply to the MeshCore phone app.
+  mishmeshQueueCompanionMessage(k, msg_timestamp, text);
+
   return true;
+}
+
+
+void MyMesh::mishmeshQueueCompanionMessage(const mishmesh::ConvoKey& k,
+                                           uint32_t timestamp,
+                                           const char* text) {
+  if (!text || !text[0]) return;
+
+  int i = 0;
+
+  if (k.type == 0) {
+    // Locally generated direct-message reply.
+    if (app_target_ver >= 3) {
+      out_frame[i++] = RESP_CODE_CONTACT_MSG_RECV_V3;
+      out_frame[i++] = 0; // SNR = 0 for locally generated message
+      out_frame[i++] = 0; // reserved1
+      out_frame[i++] = 0; // reserved2
+    } else {
+      out_frame[i++] = RESP_CODE_CONTACT_MSG_RECV;
+    }
+
+    // This is a bot-generated local reply. The Companion protocol's 6-byte
+    // identity field is the SENDER of a received-message frame, not the
+    // recipient. Use our own identity so the phone app resolves the message
+    // to the bot/device name instead of showing the person who triggered it.
+    memcpy(&out_frame[i], self_id.pub_key, 6);
+    i += 6;
+
+    out_frame[i++] = 0xFF; // no RF path
+    out_frame[i++] = TXT_TYPE_PLAIN;
+
+    memcpy(&out_frame[i], &timestamp, 4);
+    i += 4;
+
+  } else {
+    // Locally generated channel reply.
+    if (app_target_ver >= 3) {
+      out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV_V3;
+      out_frame[i++] = 0; // SNR = 0 for locally generated message
+      out_frame[i++] = 0; // reserved1
+      out_frame[i++] = 0; // reserved2
+    } else {
+      out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV;
+    }
+
+    out_frame[i++] = k.id[0]; // channel index
+    out_frame[i++] = 0xFF;    // no RF path
+    out_frame[i++] = TXT_TYPE_PLAIN;
+
+    memcpy(&out_frame[i], &timestamp, 4);
+    i += 4;
+
+    // Channel messages in the Companion protocol carry the sender name
+    // before the actual message body. This is how normal channel RX frames
+    // are constructed too ("name: text").
+    int name_len = strlen(_prefs.node_name);
+    if (name_len > 30) name_len = 30;
+    memcpy(&out_frame[i], _prefs.node_name, name_len);
+    i += name_len;
+    out_frame[i++] = ':';
+    out_frame[i++] = ' ';
+  }
+
+  int tlen = strlen(text);
+  if (i + tlen > MAX_FRAME_SIZE) {
+    tlen = MAX_FRAME_SIZE - i;
+  }
+
+  if (tlen > 0) {
+    memcpy(&out_frame[i], text, tlen);
+    i += tlen;
+  }
+
+  // Make the reply available through the Companion sync mechanism.
+  addToOfflineQueue(out_frame, i);
+
+  // Tell the phone app to fetch the queued message.
+  if (_serial->isConnected()) {
+    uint8_t frame[1];
+    frame[0] = PUSH_CODE_MSG_WAITING;
+    _serial->writeFrame(frame, 1);
+  }
 }
 
 // Auto-retry: re-transmit an existing (still-undelivered) direct message without
@@ -1472,6 +1568,10 @@ void MyMesh::onTraceRecv(mesh::Packet *packet, uint32_t tag, uint32_t auth_code,
     _ui_ping.replied = true;
     _ui_ping.seq++;
   }
+  // [/mishmesh]
+
+  // [mishmesh] Remote Bot trace result.
+  handleMishmeshBotTraceResult(tag, path_snrs, path_hashes, path_len, flags, packet->getSNR());
   // [/mishmesh]
 }
 
@@ -1692,6 +1792,25 @@ void MyMesh::startInterface(BaseSerialInterface &serial) {
   serial.enable();
 }
 
+// Keep UTF-8 node names intact when the Companion advert-name field is limited
+// to the 31-byte payload available in NodePrefs::node_name.
+static size_t mishmeshUtf8SafeLen(const uint8_t* data, size_t max_len) {
+  if (!data) return 0;
+  size_t n = 0;
+  while (n < max_len && data[n] != 0) {
+    uint8_t c = data[n];
+    size_t need = (c < 0x80) ? 1 : ((c & 0xE0) == 0xC0 ? 2 : ((c & 0xF0) == 0xE0 ? 3 : ((c & 0xF8) == 0xF0 ? 4 : 1)));
+    if (n + need > max_len) break;
+    bool valid = true;
+    for (size_t j = 1; j < need; ++j) {
+      if ((data[n + j] & 0xC0) != 0x80) { valid = false; break; }
+    }
+    if (!valid) break;
+    n += need;
+  }
+  return n;
+}
+
 void MyMesh::handleCmdFrame(size_t len) {
   if (cmd_frame[0] == CMD_DEVICE_QUERY && len >= 2) { // sent when app establishes connection
     app_target_ver = cmd_frame[1];                    // which version of protocol does app understand
@@ -1897,9 +2016,11 @@ void MyMesh::handleCmdFrame(size_t len) {
       _iter_started = true;
       _most_recent_lastmod = 0;
     }
+
   } else if (cmd_frame[0] == CMD_SET_ADVERT_NAME && len >= 2) {
-    int nlen = len - 1;
-    if (nlen > sizeof(_prefs.node_name) - 1) nlen = sizeof(_prefs.node_name) - 1; // max len
+    size_t nlen = (size_t)(len - 1);
+    if (nlen > sizeof(_prefs.node_name) - 1) nlen = sizeof(_prefs.node_name) - 1;
+    nlen = mishmeshUtf8SafeLen(&cmd_frame[1], nlen);
     memcpy(_prefs.node_name, &cmd_frame[1], nlen);
     _prefs.node_name[nlen] = 0; // null terminator
     savePrefs();
@@ -2910,6 +3031,7 @@ void MyMesh::checkSerialInterface() {
 
 void MyMesh::loop() {
   BaseChatMesh::loop();
+  checkMishmeshBotTraceTimeout();
 
   if (_cli_rescue) {
     checkCLIRescueCmd();
@@ -2997,4 +3119,9 @@ void MyMesh::logRx(mesh::Packet* pkt, int len, float score) {
   }
 #endif
 }
+// [/mishmesh]
+
+
+// [mishmesh] Remote Bot implementation
+#include "MyMeshBot.h"
 // [/mishmesh]
