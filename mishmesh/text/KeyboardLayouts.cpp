@@ -63,10 +63,11 @@ static const KbdLayout LAYOUTS[] = {
   // Cyrillic layouts fill in the two cap arrays because the Latin base labels
   // would be actively misleading, not merely unaccented. Where an alphabet does
   // not divide into eight 4-letter keys the overflow letter is left off the cap
-  // but still cycles: RU's ё, UK's ґ.
+  // but still cycles, placed last so the labelled letters keep their tap counts:
+  // RU's ё, UK's ґ.
   { "RU", "Русский",
-    { P, "абвг","деёжз","ийкл","мноп","рсту","фхцч","шщъы","ьэюя" },
-    { P, "АБВГ","ДЕЁЖЗ","ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪЫ","ЬЭЮЯ" },
+    { P, "абвг","дежзё","ийкл","мноп","рсту","фхцч","шщъы","ьэюя" },
+    { P, "АБВГ","ДЕЖЗЁ","ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪЫ","ЬЭЮЯ" },
     { P, "абвг","дежз", "ийкл","мноп","рсту","фхцч","шщъы","ьэюя" },
     { P, "АБВГ","ДЕЖЗ", "ИЙКЛ","МНОП","РСТУ","ФХЦЧ","ШЩЪЫ","ЬЭЮЯ" } },
 

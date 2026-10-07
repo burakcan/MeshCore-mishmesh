@@ -621,7 +621,7 @@ TEST(KbdLayouts, RussianLayoutContainsCyrillicAndYo) {
   ASSERT_GE(ru, 0);
   EXPECT_STREQ("Русский", kbdLayoutAt(ru).name);
   EXPECT_STREQ("абвг", kbdLayoutAt(ru).lower[1]);
-  EXPECT_STREQ("деёжз", kbdLayoutAt(ru).lower[2]);
+  EXPECT_STREQ("дежзё", kbdLayoutAt(ru).lower[2]);
   EXPECT_STREQ("ЬЭЮЯ", kbdLayoutAt(ru).upper[8]);
 }
 
@@ -642,11 +642,14 @@ TEST(Keypad, RussianHiddenYoRemainsInMultitapCycle) {
   KeypadApplet k;
   ASSERT_TRUE(k.setLanguageByCode("RU"));
   EXPECT_STREQ("дежз", k.cellLabel(0, 2));
-  EXPECT_STREQ("деёжз", kbdLayoutAt(k.langIndex()).lower[2]);
+  EXPECT_STREQ("дежзё", kbdLayoutAt(k.langIndex()).lower[2]);
 
   k.setFocusForTest(0, 2);
   k.onInput(InputEvent::Select);  // д
   k.onInput(InputEvent::Select);  // е
+  k.onInput(InputEvent::Select);  // ж
+  EXPECT_STREQ("ж", k.text());
+  k.onInput(InputEvent::Select);  // з
   k.onInput(InputEvent::Select);  // ё
   EXPECT_STREQ("ё", k.text());
 }
