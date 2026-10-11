@@ -71,6 +71,19 @@ TEST(Fonts, CommonEULatinCovered) {
       EXPECT_GT(f->character_width(f, cp), 0) << "missing glyph U+" << std::hex << cp;
 }
 
+// Smart-punctuation keyboards send these; they used to draw as the block.
+TEST(Fonts, TypographicPunctuationCovered) {
+  const mf_font_s* fonts[] = { fontBody(), fontSubtitle(), fontCaption() };
+  const uint16_t present[] = {
+    0x2013, 0x2014, 0x2018, 0x2019, 0x201A, 0x201C, 0x201D, 0x201E, 0x2022, 0x2026,
+  };
+  for (const mf_font_s* f : fonts) {
+    for (uint16_t cp : present)
+      EXPECT_GT(f->character_width(f, cp), 0) << "missing glyph U+" << std::hex << cp;
+    EXPECT_EQ(0, f->character_width(f, 0x2015));   // gap in the range stays empty
+  }
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

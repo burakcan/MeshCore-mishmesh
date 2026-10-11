@@ -39,6 +39,12 @@ python3 build_exta.py Subtitle.c --emit
 python3 build_cyrillic.py Body.c
 python3 build_cyrillic.py Subtitle.c
 
+# --- Typographic punctuation (U+2013..U+2026: dashes, curly quotes, bullet,
+#     ellipsis) that phones send with smart punctuation on. Hand-drawn overrides
+#     in build_punct.py, same cell layout as the Cyrillic atlas. ---
+python3 build_punct.py Body.c
+python3 build_punct.py Subtitle.c
+
 # --- Caption: Tom Thumb 3x6 (CC0/public-domain), vendored tom-thumb.bdf - the
 #     recessive metadata tier (status, sender labels, View-Path rows). Latin-1
 #     included so accented sender names (de/fr/...) render; Extended-A is omitted
@@ -48,6 +54,7 @@ python3 build_cyrillic.py Subtitle.c
 cp tom-thumb.dat Caption.dat
 "$ENC" bwfont_export Caption.dat           # -> Caption.c (mf_bwfont_Caption)
 python3 build_cyrillic.py Caption.c
+python3 build_punct.py Caption.c
 python3 preview_fonts.py
 python3 preview_fonts.py latin_preview.png --charset latin
 rm -f tom-thumb.dat Caption.dat
