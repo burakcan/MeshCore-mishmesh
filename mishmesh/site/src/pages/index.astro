@@ -2,7 +2,7 @@
 import Base from "../layouts/Base.astro";
 import StatusBar from "../components/StatusBar.astro";
 const description =
-  "mishmesh - the on-device UI for MeshCore. Messaging, contacts, repeater admin and radio config on a LoRa radio's own screen. For the Seeed Wio Tracker L1 / L1 Pro and L1 E-Ink.";
+  "mishmesh - the on-device UI for MeshCore. Messaging, contacts, repeater admin and radio config on a LoRa radio's own screen. For the Seeed Wio Tracker L1 / L1 Pro, L1 E-Ink and the GAT562 30S Mesh Kit.";
 ---
 <Base title="mishmesh - the on-device UI for MeshCore" description={description} bodyClass="landing" css="landing.css">
   <StatusBar variant="landing" />
@@ -17,7 +17,7 @@ const description =
         <a class="btn solid" href="#install">Flash it</a>
         <a class="btn" href="#" data-manual>Open manual</a>
       </div>
-      <p class="meta-line">For the Seeed Wio Tracker L1 / L1 Pro / L1 E-Ink</p>
+      <p class="meta-line">For the Seeed Wio Tracker L1 / L1 Pro / L1 E-Ink and GAT562 30S Mesh Kit</p>
     </div>
     <figure>
       <img src="assets/img/home.png" alt="mishmesh home screen: node name, big clock, quick-action hints">
@@ -63,7 +63,7 @@ const description =
 
 <section id="install"><div class="wrap">
   <span class="head">Install</span>
-  <p class="lead" style="margin-bottom:8px">mishmesh runs on the <b>Seeed Wio Tracker L1 / L1 Pro</b> (nRF52840; they're the same board, 128x64 OLED) and the <b>Wio Tracker L1 E-Ink</b> (2.13", 250x122). Two ways in.</p>
+  <p class="lead" style="margin-bottom:8px">mishmesh runs on the <b>Seeed Wio Tracker L1 / L1 Pro</b> (nRF52840; they're the same board, 128x64 OLED), the <b>Wio Tracker L1 E-Ink</b> (2.13", 250x122) and the <b>GAT562 30S Mesh Kit</b> (nRF52840, 128x64 OLED, with the joystick and buzzer populated). Two ways in.</p>
 
   <div class="pill" role="tablist">
     <button class="sel" data-tab="uf2" role="tab">Drag-and-drop .uf2</button>
@@ -73,7 +73,7 @@ const description =
   <div class="steps" data-panel="uf2">
     <div class="step"><span class="n"></span><div>
       <h3>Grab the firmware</h3>
-      <p>Download the latest <a href="#" data-releases>.uf2 from Releases</a>. Pick <b>WioTrackerL1_</b> for the OLED board or <b>WioTrackerL1Eink_</b> for the e-ink one, then <b>_ble_</b> for the Bluetooth companion build or <b>_usb_</b> for serial.</p>
+      <p>Download the latest <a href="#" data-releases>.uf2 from Releases</a>. Pick <b>WioTrackerL1_</b> for the OLED board, <b>WioTrackerL1Eink_</b> for the e-ink one or <b>GAT562_30S_Mesh_Kit_</b> for the GAT562, then <b>_ble_</b> for the Bluetooth companion build or <b>_usb_</b> for serial.</p>
     </div></div>
     <div class="step"><span class="n"></span><div>
       <h3>Enter the bootloader</h3>
@@ -92,11 +92,11 @@ const description =
       <pre><button class="copy">copy</button><code><span class="c"># optional: pin the meshcore base it reports</span>
 export FIRMWARE_VERSION=v1.17.1
 sh build.sh build-firmware WioTrackerL1_companion_radio_usb_mishmesh</code></pre>
-      <p style="margin-top:8px">On the e-ink board swap <b>WioTrackerL1_</b> for <b>WioTrackerL1Eink_</b>.</p>
+      <p style="margin-top:8px">On the e-ink board swap <b>WioTrackerL1_</b> for <b>WioTrackerL1Eink_</b>, on the GAT562 for <b>GAT562_30S_Mesh_Kit_</b>.</p>
     </div></div>
     <div class="step"><span class="n"></span><div>
       <h3>Flash it</h3>
-      <p>Upload over USB - nrfutil does a 1200-baud touch to drop the board into DFU, no manual reset needed. Swap <b>usb</b> for <b>ble</b> for the Bluetooth build, and <b>WioTrackerL1_</b> for <b>WioTrackerL1Eink_</b> on the e-ink board.</p>
+      <p>Upload over USB - nrfutil does a 1200-baud touch to drop the board into DFU, no manual reset needed. Swap <b>usb</b> for <b>ble</b> for the Bluetooth build, and <b>WioTrackerL1_</b> for <b>WioTrackerL1Eink_</b> on the e-ink board or <b>GAT562_30S_Mesh_Kit_</b> on the GAT562.</p>
       <pre><button class="copy">copy</button><code>pio run -e WioTrackerL1_companion_radio_usb_mishmesh -t upload</code></pre>
     </div></div>
     <div class="note"><b>Heads up:</b> a bricked or empty board won't enumerate a serial port - use the double-tap + .uf2 method above instead. Full build notes live in the <a href="#" data-repo>repo README</a>.</div>

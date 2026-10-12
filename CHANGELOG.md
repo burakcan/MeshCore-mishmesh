@@ -9,6 +9,8 @@ its heading with `## v<version>`.
 
 ## Unreleased
 
+- GAT562 30S Mesh Kit support (128x64 OLED, joystick, buzzer). Thanks to @anieto.
+
 ## v1.5.0
 
 - E-ink support - the Wio Tracker L1 E-Ink is now a build target.

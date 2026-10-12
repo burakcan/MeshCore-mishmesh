@@ -15,9 +15,10 @@ puts messaging, contacts, and configuration on the device, so the radio is
 useful on its own and the phone is optional. It can currently do almost everything
 without a phone.
 
-It targets the Seeed Wio Tracker L1 / L1 Pro (128x64 OLED) and the Wio Tracker
+It targets the Seeed Wio Tracker L1 / L1 Pro (128x64 OLED), the Wio Tracker
 L1 E-Ink (2.13", 250x122), which also gets portrait orientation, a larger
-interface size, and a face left on the glass while the panel sleeps.
+interface size, and a face left on the glass while the panel sleeps, and the
+GAT562 30S Mesh Kit (128x64 OLED, with the joystick and buzzer populated).
 In theory we can support more devices with enough buttons.
 
 The underlying MeshCore firmware is mostly unchanged; see [About MeshCore](#about-meshcore)
@@ -76,10 +77,11 @@ below.
 ### Install
 
 Grab the latest `.uf2` for your board from [Releases](../../releases) -
-`WioTrackerL1_companion_radio_*_mishmesh-*.uf2` for the OLED board,
-`WioTrackerL1Eink_companion_radio_*_mishmesh-*.uf2` for the e-ink one - then:
+`WioTrackerL1_companion_radio_*_mishmesh_mm-*.uf2` for the OLED board,
+`WioTrackerL1Eink_companion_radio_*_mishmesh_mm-*.uf2` for the e-ink one,
+`GAT562_30S_Mesh_Kit_companion_radio_*_mishmesh_mm-*.uf2` for the GAT562 - then:
 
-1. Plug the Wio Tracker L1 into USB.
+1. Plug the board into USB.
 2. Double-tap reset. It mounts as a USB drive.
 3. Drop the `.uf2` onto it. It reboots into mishmesh.
 
@@ -97,7 +99,8 @@ export FIRMWARE_VERSION=mishmesh-dev
 pio run -e WioTrackerL1_companion_radio_usb_mishmesh -t upload   # or _ble_mishmesh
 ```
 
-On the e-ink board swap `WioTrackerL1_` for `WioTrackerL1Eink_` in the env name.
+On the e-ink board swap `WioTrackerL1_` for `WioTrackerL1Eink_` in the env name,
+on the GAT562 for `GAT562_30S_Mesh_Kit_`.
 
 Package the `.uf2` / `.zip` like a release does (lands in `out/`):
 
