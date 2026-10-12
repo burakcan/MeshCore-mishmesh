@@ -7,10 +7,14 @@ The release workflow reads the section matching the tag (`mishmesh-v<version>`)
 into the GitHub Release notes, so keep the newest version at the top and start
 its heading with `## v<version>`.
 
-## Unreleased
+## v1.6.0
 
 - GAT562 30S Mesh Kit support (128x64 OLED, joystick, buzzer). Thanks to @anieto.
+- Hex keypad for private channel keys: only 0-9 and A-F, on a 4x5 grid (#34).
+- Curly quotes, dashes, the ellipsis and bullets sent from phones now render instead of showing as blocks (#32).
+- Russian keyboard: Ё moved to the end of the ДЕЖЗ key, so three taps give Ж as the label suggests (#21).
 - Fix: message signing from the phone (MeshMapper, web portal) failing with ERR 4 after the radio had been up a while (#28). Thanks to @jram0421.
+- Fix: typing at a field's length limit could push the cursor past the end of the text.
 
 ## v1.5.0
 

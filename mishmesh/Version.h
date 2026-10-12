@@ -6,5 +6,5 @@
 // is FIRMWARE_VERSION itself - build with FIRMWARE_VERSION set to the meshcore
 // release (e.g. v1.17.1); this UI version now carries the fork identity.
 #ifndef MISHMESH_VERSION
-#define MISHMESH_VERSION "v1.5.0"
+#define MISHMESH_VERSION "v1.6.0"
 #endif

@@ -62,6 +62,7 @@ below.
   keyboard layouts. Latin (English, German, French, Spanish, Italian,
   Portuguese, Swedish, Norwegian, Turkish, Polish, Czech, Hungarian) and
   Cyrillic (Russian, Ukrainian, Belarusian, Bulgarian, Serbian, Macedonian).
+  Channel keys get a hex-only pad.
 - **Contacts** - favourites and per-kind tabs (people, repeaters, rooms),
   rename, ping, telemetry requests, and path management.
 - **Repeater management** - log in to a repeater and configure it from the
