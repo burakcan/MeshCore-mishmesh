@@ -131,6 +131,16 @@ public:
     uint32_t seq;
     bool     replied;
   };
+  // [mishmesh] Remote Bot trace request state. One in-flight trace is
+  // enough for the chat bot; the result is returned to the DM sender or channel.
+  struct BotTraceState {
+    bool     pending;
+    bool     channel;
+    uint8_t  channel_idx;
+    uint8_t  pubkey[PUB_KEY_SIZE];
+    uint32_t tag;
+    uint32_t started_ms;
+  };
   const TelemetryLatch& uiLastTelemetry() const { return _ui_telemetry; }
   const PingLatch& uiLastPing() const { return _ui_ping; }
   // [mishmesh] CLI (admin command) reply ring. A few slots keyed by pubkey so a reply
@@ -281,6 +291,17 @@ protected:
 
   void onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
                      const char *text) override;
+  // [mishmesh] Remote Bot (DM query commands, MeshCore-Solo compatible core)
+  bool handleMishmeshBot(const ContactInfo &from, mesh::Packet *pkt, const char *text);
+  bool handleMishmeshBotChannel(const mesh::GroupChannel &channel, mesh::Packet *pkt, const char *text);
+  bool startMishmeshBotTrace(const uint8_t *requester_pubkey, uint8_t channel_idx, bool channel,
+                             const mesh::Packet *rx_pkt);
+  bool mishmeshBotTraceRequested(const char *text) const;
+  void handleMishmeshBotTraceResult(uint32_t tag, const uint8_t *path_snrs,
+                                    const uint8_t *path_hashes, uint8_t path_len,
+                                    uint8_t flags, float final_snr);
+  void checkMishmeshBotTraceTimeout();
+  // [/mishmesh]
   void onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
                          const char *text) override;
   void onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
@@ -398,6 +419,7 @@ private:
   // [mishmesh]
   TelemetryLatch _ui_telemetry = {};
   PingLatch _ui_ping = {};
+  BotTraceState _mishmesh_bot_trace = {};
   CliLatch _ui_cli[MM_CLI_SLOTS] = {};
   uint32_t _ui_cli_seq = 0;   // monotonic; 0 = none yet
   int      _ui_cli_next = 0;  // next ring slot to write
@@ -429,6 +451,9 @@ private:
   void logRx(mesh::Packet* pkt, int len, float score) override;
   bool mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text,
                             uint32_t* senderTimeOut);  // send body, scope-agnostic
+  void mishmeshQueueCompanionMessage(const mishmesh::ConvoKey& k,
+                                     uint32_t timestamp,
+                                     const char* text);
   // [/mishmesh]
 
   TransportKey send_scope;

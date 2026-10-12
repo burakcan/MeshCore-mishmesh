@@ -10,6 +10,7 @@
 #include <mishmesh/applets/settings/RadioSettingsPanel.h>
 #include <mishmesh/applets/settings/ExperimentalSettingsPanel.h>
 #include <mishmesh/applets/settings/TimeSettingsPanel.h>
+#include <mishmesh/applets/settings/BotSettingsPanel.h>
 #include <mishmesh/applets/settings/DevResetOnboardingPanel.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/AppletRegistry.h>
@@ -29,6 +30,7 @@ static SettingsPanel* systemInfoPanelPtr()  { return &systemInfoSettings(); }
 static SettingsPanel* radioPanelPtr()       { return &radioSettings(); }
 static SettingsPanel* experimentalPanelPtr() { return &experimentalSettings(); }
 static SettingsPanel* timePanelPtr()        { return &timeSettings(); }
+static SettingsPanel* botPanelPtr()         { return &botSettings(); }
 static SettingsPanel* devResetPanelPtr()    { return &devResetOnboardingSettings(); }
 
 static bool always(const AppletContext&) { return true; }
@@ -102,7 +104,19 @@ bool SettingsApplet::onInput(InputEvent ev) {
 }
 
 static SettingsApplet s_settings;
+// Remote Bot is a first-class app in the main Apps menu, alongside Navigation.
+// Keep the existing BotSettingsPanel so all bot configuration behavior stays identical.
+class BotAppMenuApplet : public SettingsDetailApplet {
+public:
+  BotAppMenuApplet() { setPanel(&botSettings()); }
+};
+
+static BotAppMenuApplet s_bot_app;
+MISHMESH_REGISTER_APPLET_ICON(&s_bot_app, ::mishmesh::Placement::AppMenu,
+                              "Bot", 9, (uint16_t)::mishmesh::Icon::Robot);
+
+// Settings follows Bot in the main Apps menu.
 MISHMESH_REGISTER_APPLET_ICON(&s_settings, ::mishmesh::Placement::AppMenu,
-                              "Settings", 9, (uint16_t)::mishmesh::Icon::Settings);
+                              "Settings", 10, (uint16_t)::mishmesh::Icon::Settings);
 
 }  // namespace mishmesh

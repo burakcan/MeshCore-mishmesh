@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint> // For uint8_t, uint32_t
+#include <cstdio>
 #include <helpers/ConfigSerializer.h>
 
 #define TELEM_MODE_DENY            0
@@ -72,6 +73,15 @@ public:
   // Written as 1 by savePrefs; still 0 after a load means the file has no "mm"
   // object, i.e. it was written by stock MeshCore and this is a first mishmesh boot.
   uint8_t mm_ver = 0;
+  // Remote Bot settings. Defaults preserve the v2 bot behaviour.
+  uint8_t bot_enabled = 1;
+  uint8_t bot_commands_enabled = 1;
+  uint8_t bot_mode = 0;       // 0=DM, 1=Channel, 2=DM+Channel
+  uint8_t bot_location_enabled = 1; // 0=do not reveal GPS in bot replies, 1=show
+  char bot_channel[32];       // channel name, e.g. #test
+  char bot_trigger[64];       // empty = no automatic trigger reply
+  char bot_reply[140] = "test"; // custom prefix for automatic trigger reply
+  uint8_t bot_reply_fields = 55; // trigger reply fields: sender=1,rssi=2,path=4,snr=16,hops=32
   // [/mishmesh]
 
 
@@ -158,6 +168,15 @@ private:
       def("ble_en", _parent->ble_enabled);
       def("cfull_notif", _parent->contacts_full_notify);
       def("onboard", _parent->onboarding_state);
+      def("bot_en", _parent->bot_enabled);
+      def("bot_cmd", _parent->bot_commands_enabled);
+      def("bot_mode", _parent->bot_mode);
+      def("bot_loc", _parent->bot_location_enabled);
+      def("bot_channel", _parent->bot_channel, sizeof(_parent->bot_channel));
+      def("bot_trigger", _parent->bot_trigger, sizeof(_parent->bot_trigger));
+      def("bot_reply", _parent->bot_reply, sizeof(_parent->bot_reply));
+      def("bot_rfields", _parent->bot_reply_fields);
+      if (_parent->bot_reply_fields == 0) _parent->bot_reply_fields = 55;
     }
   public:
     MishmeshPrefs(NodePrefs* parent) : _parent(parent) { }
@@ -202,6 +221,9 @@ protected:
 public:
   NodePrefs() : radio(this), gps(this), mm(this), companion(this) {
     node_name[0] = 0;
+    bot_channel[0] = 0;
+    bot_trigger[0] = 0;
+    snprintf(bot_reply, sizeof(bot_reply), "pong");
     default_scope_name[0] = 0;
     memset(default_scope_key, 0, sizeof(default_scope_key));
   }
