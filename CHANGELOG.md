@@ -7,6 +7,10 @@ The release workflow reads the section matching the tag (`mishmesh-v<version>`)
 into the GitHub Release notes, so keep the newest version at the top and start
 its heading with `## v<version>`.
 
+## v1.6.1
+
+- Fix: GPS is no longer missing on the GAT562 30S Mesh Kit (#36).
+
 ## v1.6.0
 
 - GAT562 30S Mesh Kit support (128x64 OLED, joystick, buzzer). Thanks to @anieto.
