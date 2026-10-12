@@ -36,7 +36,7 @@ public:
 
   // GridModel
   int rows() const override { return 4; }
-  int cols() const override { return 4; }
+  int cols() const override { return _hexOnly ? 5 : 4; }
   const char* cellLabel(int r, int c) const override;
   uint16_t cellIcon(int r, int c) const override;
 
@@ -59,6 +59,12 @@ public:
   // Reuses the configure() buffer/onConfirm seam. Call before push().
   void configureNumeric(char* dst, uint16_t cap, const char* title,
                         KeypadConfirmFn onConfirm = nullptr, void* ctx = nullptr);
+
+  // Locks the keypad to hex entry on a 4x5 grid: 0-F in the left four columns,
+  // DEL / left / right / OK down the right one so they sit where they do on the
+  // normal layout. Every key types one character; no modes, no language button.
+  void configureHex(char* dst, uint16_t cap, const char* title,
+                    KeypadConfirmFn onConfirm = nullptr, void* ctx = nullptr);
 
   void setFocusForTest(int r, int c) { _grid.setFocus(r, c); }
 
@@ -105,6 +111,7 @@ private:
   uint8_t _emojiPageIdx = 0;
   char _emojiCells[12][5];                   // UTF-8 of the current page's cells ("" = empty)
   bool _numericOnly = false;   // configureNumeric(): digits + . - only, no mode switch
+  bool _hexOnly = false;       // configureHex(): 0-9 A-F on the 4x5 grid
   uint8_t _langIdx = 0;        // index into the KbdLayout table (0 = EN)
   bool _langLoaded = false;    // one-shot: language read from storage once
   bool _langFocused = false;   // top-right language button has focus
@@ -143,13 +150,15 @@ private:
   const char* groupAt(int charIndex) const;   // group string for char cell 0..8
   int  groupCpCount(const char* g) const;                       // codepoints in a group
   const char* groupCpAt(const char* g, int i, int* len) const;  // ptr to cp i; *len = its bytes
-  void insertCharAt(uint16_t pos, char ch);
+  bool insertCharAt(uint16_t pos, char ch);   // false when the buffer is full
   void deleteCharAt(uint16_t pos);
   void insertString(uint16_t pos, const char* s);      // multi-byte insert at pos
   uint16_t prevCodepoint(uint16_t pos) const;          // codepoint boundary before pos
   uint16_t nextCodepoint(uint16_t pos) const;          // codepoint boundary at/after pos
   void commitPending();
+  void deleteBeforeCursor();
   void handleSelect();
+  void handleHexSelect();
   void handleSelectLong();   // long-press: type the focused cell's digit (1..9, or 0)
   void handleCharCell(int charIndex);
   void confirmAndExit();

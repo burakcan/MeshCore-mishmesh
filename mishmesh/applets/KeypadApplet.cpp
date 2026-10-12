@@ -59,6 +59,12 @@ const char* KeypadApplet::groupCpAt(const char* g, int i, int* len) const {
 }
 
 const char* KeypadApplet::cellLabel(int r, int c) const {
+  if (_hexOnly) {
+    static const char* const HEX[16] = {"0","1","2","3","4","5","6","7",
+                                        "8","9","A","B","C","D","E","F"};
+    if (c < 4) return HEX[r * 4 + c];
+    return r == 3 ? "OK" : "";                  // DEL and the arrows are icons
+  }
   if (_emojiPage) {
     if (r < 3) return _emojiCells[r * 4 + c];   // UTF-8 glyph (or "")
     if (c == 0) return "abc";
@@ -104,6 +110,12 @@ const char* KeypadApplet::cellLabel(int r, int c) const {
 }
 
 uint16_t KeypadApplet::cellIcon(int r, int c) const {
+  if (_hexOnly) {
+    if (c < 4) return 0;
+    return r == 0 ? (uint16_t)Icon::Backspace
+         : r == 1 ? (uint16_t)Icon::ArrowLeft
+         : r == 2 ? (uint16_t)Icon::ArrowRight : (uint16_t)Icon::Check;
+  }
   if (_emojiPage) {
     if (r < 3) return 0;                                  // emoji drawn as text label
     if (c == 1) return (uint16_t)Icon::ArrowLeft;
@@ -214,12 +226,13 @@ void KeypadApplet::insertEmojiCell(int cell) {
   _cursor = (uint16_t)(_cursor + strlen(s));
 }
 
-void KeypadApplet::insertCharAt(uint16_t pos, char ch) {
-  if (_len >= _cap) return;
+bool KeypadApplet::insertCharAt(uint16_t pos, char ch) {
+  if (_len >= _cap) return false;
   for (uint16_t i = _len; i > pos; i--) _buf[i] = _buf[i - 1];
   _buf[pos] = ch;
   _len++;
   _buf[_len] = 0;
+  return true;
 }
 
 void KeypadApplet::deleteCharAt(uint16_t pos) {
@@ -317,7 +330,28 @@ void KeypadApplet::handleCharCell(int idx) {
   }
 }
 
+void KeypadApplet::deleteBeforeCursor() {
+  commitPending();
+  if (_cursor > 0) {
+    uint16_t p = prevCodepoint(_cursor);
+    while (_cursor > p) { deleteCharAt(_cursor - 1); _cursor--; }
+  }
+}
+
+void KeypadApplet::handleHexSelect() {
+  int r = _grid.focusedRow(), c = _grid.focusedCol();
+  if (c < 4) {
+    if (insertCharAt(_cursor, "0123456789ABCDEF"[r * 4 + c])) _cursor++;
+    return;
+  }
+  if (r == 0) deleteBeforeCursor();
+  else if (r == 1) _cursor = prevCodepoint(_cursor);
+  else if (r == 2) _cursor = nextCodepoint(_cursor);
+  else confirmAndExit();
+}
+
 void KeypadApplet::handleSelect() {
+  if (_hexOnly) { handleHexSelect(); return; }
   if (_emojiPage) {
     int er = _grid.focusedRow(), ec = _grid.focusedCol();
     if (er < 3) { insertEmojiCell(er * 4 + ec); return; }    // 12 emoji cells
@@ -329,24 +363,17 @@ void KeypadApplet::handleSelect() {
   int r = _grid.focusedRow(), c = _grid.focusedCol();
   if (r < 3 && c < 3) { handleCharCell(r * 3 + c); return; }
   if (c == 3) {
-    if (r == 0) {   // DEL - remove the whole codepoint before the cursor
-      commitPending();
-      if (_cursor > 0) {
-        uint16_t p = prevCodepoint(_cursor);
-        while (_cursor > p) { deleteCharAt(_cursor - 1); _cursor--; }
-      }
-      return;
-    }
-    if (r == 1) { commitPending(); insertCharAt(_cursor, _numericOnly ? '-' : ' '); _cursor++; return; }
+    if (r == 0) { deleteBeforeCursor(); return; }   // DEL - the whole codepoint before the cursor
+    if (r == 1) { commitPending(); if (insertCharAt(_cursor, _numericOnly ? '-' : ' ')) _cursor++; return; }
     if (r == 2) {                                   // shift / mode cycle, or '.' in numeric
-      if (_numericOnly) { commitPending(); insertCharAt(_cursor, '.'); _cursor++; }
+      if (_numericOnly) { commitPending(); if (insertCharAt(_cursor, '.')) _cursor++; }
       else cycleMode();
       return;
     }
   }
   // r == 3
   if (c == 0) {
-    if (_mode == Mode::Num) { commitPending(); insertCharAt(_cursor, '0'); _cursor++; return; }
+    if (_mode == Mode::Num) { commitPending(); if (insertCharAt(_cursor, '0')) _cursor++; return; }
     cycleBottomLeft(); return;   // letters -> sym -> emoji(if any) -> letters
   }
   if (c == 1) { commitPending(); _cursor = prevCodepoint(_cursor); return; }   // cursor left
@@ -355,19 +382,18 @@ void KeypadApplet::handleSelect() {
 }
 
 void KeypadApplet::handleSelectLong() {
+  if (_hexOnly) { handleHexSelect(); return; }   // every hex key is already one char
   int r = _grid.focusedRow(), c = _grid.focusedCol();
   // The 3x3 letter grid maps cell idx 0..8 -> digits '1'..'9'; the '0'/sym cell
   // (r==3,c==0) types '0'. Everything else falls back to the plain press.
   if (r < 3 && c < 3) {
     commitPending();
-    insertCharAt(_cursor, (char)('1' + (r * 3 + c)));
-    _cursor++;
+    if (insertCharAt(_cursor, (char)('1' + (r * 3 + c)))) _cursor++;
     return;
   }
   if (r == 3 && c == 0 && !_numericOnly) {
     commitPending();
-    insertCharAt(_cursor, '0');
-    _cursor++;
+    if (insertCharAt(_cursor, '0')) _cursor++;
     return;
   }
   handleSelect();
@@ -384,7 +410,7 @@ void KeypadApplet::onStart(AppletContext& ctx) {
     _langLoaded = true;
   }
   _grid.setModel(this);
-  _grid.setFocus(0, 1);            // start on "abc" - the natural first target for typing
+  _grid.setFocus(0, _hexOnly ? 0 : 1);   // start on "abc" (or "0") - the natural first target
   if (!_src) { _own[0] = 0; _len = 0; _cursor = 0; }  // standalone: fresh buffer (configure() already seeded)
   _buf = _own;
   _mode = _numericOnly ? Mode::Num : Mode::Lower;
@@ -425,6 +451,8 @@ int KeypadApplet::onRender(Canvas& c) {
     snprintf(tagbuf, sizeof(tagbuf), "%d/%d", _emojiPageIdx + 1, emojiPageCount());
     tag = tagbuf;
     c.drawText(fontCaption(), c.width(), 3, tag, DisplayDriver::LIGHT, TextAlign::Right);
+  } else if (_hexOnly) {                   // nothing to pick: plain label, never focusable
+    c.drawText(fontCaption(), c.width(), 3, "HEX", DisplayDriver::LIGHT, TextAlign::Right);
   } else {
     tag = langCode();
     int tw = c.textWidth(fontCaption(), tag);
@@ -504,7 +532,7 @@ bool KeypadApplet::onInput(InputEvent ev) {
       commitPending();
       return _grid.onInput(ev);
     case InputEvent::NavUp:
-      if (!_emojiPage && _grid.focusedRow() == 0) {  // top row -> language button
+      if (!_emojiPage && !_hexOnly && _grid.focusedRow() == 0) {  // top row -> language button
         commitPending();
         _langFocused = true;
         return true;
@@ -554,6 +582,7 @@ void KeypadApplet::onStop() {
   _confirming = false;
   _confirm.reset();
   _numericOnly = false;
+  _hexOnly = false;
 }
 
 void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
@@ -612,6 +641,7 @@ void KeypadApplet::drawBuffer(Canvas& c, int x, int y, int w, int h) {
 void KeypadApplet::configure(char* dst, uint16_t cap, const char* title,
                              KeypadConfirmFn onConfirm, void* ctx) {
   _numericOnly = false;
+  _hexOnly = false;
   _src = dst;                                  // written only on OK; never during editing
   _cap = cap < KP_MAX ? cap : KP_MAX;
   _title = title;
@@ -627,6 +657,12 @@ void KeypadApplet::configureNumeric(char* dst, uint16_t cap, const char* title,
                                     KeypadConfirmFn onConfirm, void* ctx) {
   configure(dst, cap, title, onConfirm, ctx);
   _numericOnly = true;
+}
+
+void KeypadApplet::configureHex(char* dst, uint16_t cap, const char* title,
+                                KeypadConfirmFn onConfirm, void* ctx) {
+  configure(dst, cap, title, onConfirm, ctx);
+  _hexOnly = true;
 }
 
 KeypadApplet& keypadApplet() {

@@ -40,7 +40,7 @@ bool JoinPrivateApplet::onInput(InputEvent ev) {
       keypadApplet().configure(_name, _nameCap - 1, "Name", nullptr, nullptr);
       if (_host) _host->push(&keypadApplet());
     } else if (sel == 1) {
-      keypadApplet().configure(_key, _keyCap - 1, "Key (32 hex)", nullptr, nullptr);
+      keypadApplet().configureHex(_key, _keyCap - 1, "Key (32 hex)", nullptr, nullptr);
       if (_host) _host->push(&keypadApplet());
     } else {   // Join
       if (!_name || !_name[0]) { if (_host) _host->postToast("Name required"); return true; }

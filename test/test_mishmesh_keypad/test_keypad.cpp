@@ -500,6 +500,91 @@ TEST(KeypadNumeric, LocksModeAndTypesDotAndMinus) {
   k.onStop();
 }
 
+TEST(KeypadHex, FourByFiveGridOfHexDigitsAndActions) {
+  KeypadApplet k;
+  char buf[33] = {0};
+  k.configureHex(buf, sizeof(buf) - 1, "Key (32 hex)");
+  Harness h(&k);
+  EXPECT_EQ(4, k.rows());
+  EXPECT_EQ(5, k.cols());
+  const char* want = "0123456789ABCDEF";
+  for (int r = 0; r < 4; r++)
+    for (int c = 0; c < 4; c++) {
+      char one[2] = { want[r * 4 + c], 0 };
+      EXPECT_STREQ(one, k.cellLabel(r, c));
+      EXPECT_EQ(0, k.cellIcon(r, c));
+    }
+  EXPECT_EQ((uint16_t)Icon::Backspace,  k.cellIcon(0, 4));
+  EXPECT_EQ((uint16_t)Icon::ArrowLeft,  k.cellIcon(1, 4));
+  EXPECT_EQ((uint16_t)Icon::ArrowRight, k.cellIcon(2, 4));
+  EXPECT_EQ((uint16_t)Icon::Check,      k.cellIcon(3, 4));
+}
+
+TEST(KeypadHex, KeysTypeOneCharEachAndActionsEdit) {
+  KeypadApplet k;
+  char buf[33] = {0};
+  k.configureHex(buf, sizeof(buf) - 1, "Key (32 hex)");
+  Harness h(&k);
+  k.setFocusForTest(2, 2); k.onInput(InputEvent::Select);   // A
+  k.onInput(InputEvent::Select);                             // A again, no multi-tap
+  k.setFocusForTest(3, 3); k.onInput(InputEvent::SelectLong); // F, long press = plain press
+  k.setFocusForTest(0, 0); k.onInput(InputEvent::Select);   // 0
+  EXPECT_STREQ("AAF0", k.text());
+
+  k.setFocusForTest(1, 4); k.onInput(InputEvent::Select);   // cursor left
+  k.setFocusForTest(0, 4); k.onInput(InputEvent::Select);   // DEL the F
+  EXPECT_STREQ("AA0", k.text());
+  EXPECT_EQ(2, k.cursor());
+  k.setFocusForTest(2, 4); k.onInput(InputEvent::Select);   // cursor right
+  EXPECT_EQ(3, k.cursor());
+}
+
+TEST(KeypadHex, OkCommitsAndPops) {
+  FakeDisplayDriver d; AppletContext ctx; AppletHost host(&d, ctx);
+  static KeypadApplet root; host.setRoot(&root);
+  KeypadApplet k;
+  char buf[33] = {0};
+  k.configureHex(buf, sizeof(buf) - 1, "Key (32 hex)");
+  host.push(&k);
+  k.setFocusForTest(0, 1); k.onInput(InputEvent::Select);   // 1
+  k.setFocusForTest(3, 4); k.onInput(InputEvent::Select);   // OK
+  EXPECT_STREQ("1", buf);
+  EXPECT_EQ(1, host.depth());
+}
+
+TEST(KeypadHex, NavUpWrapsInsteadOfFocusingLanguage) {
+  KeypadApplet k;
+  char buf[33] = {0};
+  k.configureHex(buf, sizeof(buf) - 1, "Key (32 hex)");
+  Harness h(&k);
+  k.setFocusForTest(0, 2);
+  k.onInput(InputEvent::NavUp);
+  EXPECT_FALSE(k.langFocused());
+  k.onInput(InputEvent::Select);
+  EXPECT_STREQ("E", k.text());                               // wrapped to row 3
+}
+
+TEST(KeypadHex, FullBufferKeepsCursorInBounds) {
+  KeypadApplet k;
+  char buf[3] = {0};
+  k.configureHex(buf, sizeof(buf) - 1, "Key");
+  Harness h(&k);
+  k.setFocusForTest(0, 1);
+  for (int i = 0; i < 4; i++) k.onInput(InputEvent::Select);
+  EXPECT_STREQ("11", k.text());
+  EXPECT_EQ(2, k.cursor());
+}
+
+TEST(KeypadHex, PlainConfigureAfterHexRestoresTextLayout) {
+  KeypadApplet k;
+  char buf[33] = {0};
+  k.configureHex(buf, sizeof(buf) - 1, "Key");
+  k.configure(buf, sizeof(buf) - 1, "Name");
+  Harness h(&k);
+  EXPECT_EQ(4, k.cols());
+  EXPECT_STREQ("abc", k.cellLabel(0, 1));
+}
+
 TEST(KeypadUtf8, EncodesAllLengths) {
   char b[5];
   EXPECT_EQ(1, KeypadApplet::utf8Encode(0x41, b));     EXPECT_STREQ("A", b);
