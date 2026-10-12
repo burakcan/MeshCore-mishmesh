@@ -10,6 +10,7 @@ its heading with `## v<version>`.
 ## Unreleased
 
 - GAT562 30S Mesh Kit support (128x64 OLED, joystick, buzzer). Thanks to @anieto.
+- Fix: message signing from the phone (MeshMapper, web portal) failing with ERR 4 after the radio had been up a while (#28). Thanks to @jram0421.
 
 ## v1.5.0
 
