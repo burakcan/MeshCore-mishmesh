@@ -538,9 +538,11 @@ public:
   int removeNonFavourites() override;
   int removeAll() override;
 
-  // AbstractUITask
-  void msgRead(int msgcount) override;
-  void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) override;
+  // AbstractUITask / MyMesh::Listener
+  void onMessageRecv(mesh::Packet* pkt, const ContactInfo& from, uint8_t txt_type,
+                     uint32_t sender_timestamp, const char* text) override;
+  void onChannelMessageRecv(mesh::Packet* pkt, ChannelDetails& channel_details, const char* text) override;
+  void onQueueSizeChanged(int msgcount) override;
   void notify(UIEventType t = UIEventType::none) override;
   void onRoomLogin(const uint8_t* pubkey, bool success, bool is_admin, uint8_t perms) override;
   void loop() override;

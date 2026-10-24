@@ -17,6 +17,10 @@
   SPIClass SPI1 = SPIClass(FSPI);
 #endif
 
+#ifndef EPD_WASHING_MACHINE_CYCLES
+  #define EPD_WASHING_MACHINE_CYCLES 0
+#endif
+
 // Color scheme
 ColorVal UIColor::window_bkg = GxEPD_WHITE;
 ColorVal UIColor::title_bkg = GxEPD_WHITE;
@@ -28,7 +32,6 @@ ColorVal UIColor::popup_bkg = GxEPD_WHITE;
 ColorVal UIColor::popup_txt = GxEPD_BLACK;
 ColorVal UIColor::corp_blue = GxEPD_BLACK;
 
-
 bool GxEPDDisplay::begin() {
   display.epd2.selectSPI(SPI1, SPISettings(4000000, MSBFIRST, SPI_MODE0));
 #ifdef ESP32
@@ -39,15 +42,27 @@ bool GxEPDDisplay::begin() {
   display.init(115200, true, 2, false);
   display.setRotation(EINK_ROTATION(_rotation));   // [mishmesh] honour a turned panel
   setTextSize(1);  // Default to size 1
-  display.setPartialWindow(0, 0, display.width(), display.height());
 
-  display.fillScreen(GxEPD_WHITE);
-  display.display(true);
+  display.setFullWindow();
+
+  for (int i = 0; i < EPD_WASHING_MACHINE_CYCLES; i++) {
+    display.fillScreen(GxEPD_BLACK);
+    display.display(false);
+    delay(2000);
+    display.fillScreen(GxEPD_WHITE);
+    display.display(false);
+    delay(2000);
+  }
+
+  display.setPartialWindow(0, 0, display.width(), display.height());
+  resetPartialRefreshCounter();
+
   #if DISP_BACKLIGHT
   digitalWrite(DISP_BACKLIGHT, LOW);
   pinMode(DISP_BACKLIGHT, OUTPUT);
   #endif
   _init = true;
+  _isOn = true;
   return true;
 }
 
@@ -58,7 +73,9 @@ void GxEPDDisplay::turnOn() {
 #elif defined(EXP_PIN_BACKLIGHT) && !defined(BACKLIGHT_BTN)
   expander.digitalWrite(EXP_PIN_BACKLIGHT, HIGH);
 #endif
-  _isOn = true;
+  if (!_isOn) {
+    _isOn = true;
+  }
 }
 
 void GxEPDDisplay::turnOff() {
@@ -68,6 +85,17 @@ void GxEPDDisplay::turnOff() {
   expander.digitalWrite(EXP_PIN_BACKLIGHT, LOW);
 #endif
   _isOn = false;
+  // [mishmesh] the UI paints its own sleep face onto the glass after this, so
+  // neither wipe it nor hibernate the controller under those later flushes.
+  if (_retain_when_off) return;
+  // [/mishmesh]
+  // do full refresh before powering off to clear screen
+  // no full refresh needed at wakeup
+  display.clearScreen(0xFF); // Clears microcontroller side RAM
+  display.writeScreenBuffer(0xFF); // Forces 0xFF (White) into the display controller's history registers
+  resetPartialRefreshCounter();
+  last_display_crc_value=0;
+  display.hibernate();
 }
 
 void GxEPDDisplay::clear() {
@@ -80,6 +108,16 @@ void GxEPDDisplay::startFrame(ColorVal bkg) {
   display.fillScreen(bkg);
   display.setTextColor(_curr_color = UIColor::primary_txt);
   display_crc.reset();
+  if (_cycles_before_full_refresh != 0) {
+    display.setPartialWindow(0, 0, display.width(), display.height());
+  } else {
+    // forces a full wipe of the screen ...
+    display.clearScreen(0xFF); // Clears microcontroller side RAM
+    display.writeScreenBuffer(0xFF); // Forces 0xFF (White) into the display controller's history registers
+    // we'll need a partial refresh after that (whatever crc value is)
+    last_display_crc_value = 0;
+    resetPartialRefreshCounter();
+  }
 }
 
 void GxEPDDisplay::setTextSize(int sz) {
@@ -269,6 +307,7 @@ uint16_t GxEPDDisplay::getTextWidth(const char* str) {
 }
 
 void GxEPDDisplay::endFrame() {
+  if (_isOn == false && !_retain_when_off) return;   // [mishmesh] sleep faces flush while off
   uint32_t crc = display_crc.finalize();
   // [mishmesh] A requested full refresh has to go out even when the frame is
   // identical to the last one - clearing the residue IS the point, and that is
@@ -276,18 +315,25 @@ void GxEPDDisplay::endFrame() {
   if (_force_full) {
     display.display(false);
     _force_full = false;
+    resetPartialRefreshCounter();   // this one stands in for the counted wipe
     last_display_crc_value = crc;
     return;
   }
   // [/mishmesh]
   if (crc != last_display_crc_value) {
     display.display(true);
-    last_display_crc_value = crc;
+    if (_cycles_before_full_refresh > 0) {
+      _cycles_before_full_refresh--;
+    }
   }
+  last_display_crc_value = crc;
 }
 
 // [mishmesh]
 void GxEPDDisplay::refreshFull() {
   _force_full = true;
+  // An expired partial-refresh counter would make startFrame() wipe the panel
+  // and then endFrame() refresh it in full again: two flashes for one frame.
+  if (_cycles_before_full_refresh == 0) resetPartialRefreshCounter();
 }
 // [/mishmesh]

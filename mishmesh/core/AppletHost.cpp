@@ -51,6 +51,9 @@ AppletHost::AppletHost(DisplayDriver* display, const AppletContext& ctx)
     setReducedMotion(_display->isEink());
     setLightBackgroundPanel(_display->hasLightBackground());
     _display->setBusyPoll(&AppletHost::busyPollThunk, this);
+    // Sleep faces are painted after turnOff(); a driver that blanks the glass
+    // and drops frames while off would lose them. No-op off e-ink.
+    _display->setRetainImageWhenOff(true);
   }
 }
 

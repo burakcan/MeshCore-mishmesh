@@ -31,6 +31,7 @@ public:
 
   virtual bool isOn() = 0;
   virtual bool isEink() { return false; } // default to non-eink, override in eink drivers
+  virtual void forceFullRefresh() {} // next refresh will be full for eink
   // [mishmesh] optional panel brightness (contrast); default unsupported
   virtual bool supportsBrightness() const { return false; }
   virtual void setBrightness(uint8_t value) { (void)value; }
@@ -52,6 +53,10 @@ public:
   // layer's.
   virtual bool supportsOrientation() const { return false; }
   virtual void setDisplayRotation(int quarters) { (void)quarters; }
+  // A bistable panel keeps its last flush with the display off, and mishmesh
+  // paints its sleep face there. Ask the driver to leave the glass alone in
+  // turnOff() and to keep flushing frames while off. No-op elsewhere.
+  virtual void setRetainImageWhenOff(bool retain) { (void)retain; }
   // [/mishmesh]
   virtual void turnOn() = 0;
   virtual void turnOff() = 0;

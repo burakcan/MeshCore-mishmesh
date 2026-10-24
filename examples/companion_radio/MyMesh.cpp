@@ -1,6 +1,9 @@
 #include "MyMesh.h"
 
 #include <Arduino.h> // needed for PlatformIO
+#ifdef ENABLE_WIFI_INTERFACE
+#include <WiFi.h>
+#endif
 #include <Mesh.h>
 // [mishmesh]
 #include <ed_25519.h>
@@ -65,6 +68,7 @@
 #define CMD_SET_DEFAULT_FLOOD_SCOPE   63
 #define CMD_GET_DEFAULT_FLOOD_SCOPE   64
 #define CMD_SEND_RAW_PACKET           65
+#define CMD_RUN_CLI_COMMAND           66  // v14+
 
 // Stats sub-types for CMD_GET_STATS
 #define STATS_TYPE_CORE               0
@@ -100,6 +104,7 @@
 #define RESP_ALLOWED_REPEAT_FREQ      26
 #define RESP_CODE_CHANNEL_DATA_RECV   27
 #define RESP_CODE_DEFAULT_FLOOD_SCOPE 28
+#define RESP_CODE_CLI_REPLY           29  // v14+, a reply to CMD_RUN_CLI_COMMAND
 
 #define MAX_CHANNEL_DATA_LENGTH       (MAX_FRAME_SIZE - 9)
 
@@ -255,10 +260,10 @@ float MyMesh::getAirtimeBudgetFactor() const {
 }
 
 int MyMesh::getInterferenceThreshold() const {
-  return 0; // disabled for now, until currentRSSI() problem is resolved
+  return _prefs.interference_threshold;
 }
 bool MyMesh::getCADEnabled() const {
-  return false; // hardware CAD before TX (disabled by default, until configurable)
+  return _prefs.cad_enabled;
 }
 
 int MyMesh::calcRxDelay(float score, uint32_t air_time) const {
@@ -267,11 +272,11 @@ int MyMesh::calcRxDelay(float score, uint32_t air_time) const {
 }
 
 uint32_t MyMesh::getRetransmitDelay(const mesh::Packet *packet) {
-  uint32_t t = (_radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2) * 0.5f);
+  uint32_t t = (_radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2) * _prefs.tx_delay_factor);
   return getRNG()->nextInt(0, 5*t + 1);
 }
 uint32_t MyMesh::getDirectRetransmitDelay(const mesh::Packet *packet) {
-  uint32_t t = (_radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2) * 0.2f);
+  uint32_t t = (_radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2) * _prefs.direct_tx_delay_factor);
   return getRNG()->nextInt(0, 5*t + 1);
 }
 
@@ -359,10 +364,6 @@ void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path
       memcpy(&out_frame[1], contact.id.pub_key, PUB_KEY_SIZE);
       _serial->writeFrame(out_frame, 1 + PUB_KEY_SIZE);
     }
-  } else {
-#ifdef DISPLAY_CLASS
-    if (_ui) _ui->notify(UIEventType::newContactMessage);
-#endif
   }
 
   // add inbound-path to mem cache
@@ -385,6 +386,8 @@ void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path
     p->recv_timestamp = getRTCClock()->getCurrentTime();
     p->path_len = mesh::Packet::copyPath(p->path, path, path_len);
   }
+
+  if (_listener) _listener->onDiscoveredContact(contact, is_new, path_len, path);
 
   if (!is_new) dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY); // only schedule lazy write for contacts that are in contacts[]
 }
@@ -412,6 +415,11 @@ void MyMesh::onContactPathUpdated(const ContactInfo &contact) {
 }
 
 ContactInfo*  MyMesh::processAck(const uint8_t *data) {
+  if (_listener) {
+    uint32_t ack_crc;
+    memcpy(&ack_crc, data, 4);
+    _listener->onACKRecv(ack_crc);
+  }
   // see if matches any in a table
   for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++) {
     if (memcmp(data, &expected_ack_table[i].ack, 4) == 0) { // got an ACK from recipient
@@ -470,18 +478,12 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
     _serial->writeFrame(frame, 1);
   }
 
-#ifdef DISPLAY_CLASS
-  // we only want to show text messages on display, not cli data
-  bool should_display = txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN;
-  if (should_display && _ui) {
-    _ui->newMsg(path_len, from.name, text, offline_queue_len);
-    if (!_serial->isConnected()) {
-      _ui->notify(UIEventType::contactMessage);
-    }
+  if (_listener) {
+    _listener->onMessageRecv(pkt, from, txt_type, sender_timestamp, text);
+    _listener->onQueueSizeChanged(offline_queue_len);
   }
-#endif
   // [mishmesh]
-  // Same allowlist as should_display: never store raw CLI_DATA frames as DMs.
+  // Plain text only: never store raw CLI frames as DMs.
   if (_mm_store && (txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN)) {
     uint8_t pathLen = 0;
     const uint8_t* pathPtr = nullptr;
@@ -571,8 +573,7 @@ void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t 
   queueMessage(from, TXT_TYPE_PLAIN, pkt, sender_timestamp, NULL, 0, text);
 }
 
-void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
-                               const char *text) {
+void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp, const char *text) {
   markConnectionActive(from); // in case this is from a server, and we have a connection
   // [mishmesh] latch the CLI reply into a small ring (see MyMesh.h) so a reply for a
   // different contact can't clobber one the on-device UI is awaiting.
@@ -586,6 +587,18 @@ void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint3
   }
   // [/mishmesh]
   queueMessage(from, TXT_TYPE_CLI_DATA, pkt, sender_timestamp, NULL, 0, text);
+}
+
+void MyMesh::onCLICommandRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
+                               const char *text, char* reply) {
+  markConnectionActive(from); // in case this is from a server, and we have a connection
+  if (from.isRemoteCLIAllowed()) {
+    if (!handleCommand(text, sender_timestamp, reply)) {
+      strcat(reply, "Unknown command");   // reply may have cmd prefix from 'text'
+    }
+  } else {
+    queueMessage(from, TXT_TYPE_CLI_COMMAND, pkt, sender_timestamp, NULL, 0, text);
+  }
 }
 
 void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
@@ -627,20 +640,16 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
     _serial->writeFrame(frame, 1);
-  } else {
-#ifdef DISPLAY_CLASS
-    if (_ui) _ui->notify(UIEventType::channelMessage);
-#endif
   }
-#ifdef DISPLAY_CLASS
-  // Get the channel name from the channel index
-  const char *channel_name = "Unknown";
-  ChannelDetails channel_details;
-  if (getChannel(channel_idx, channel_details)) {
-    channel_name = channel_details.name;
+  if (_listener) {
+    // Get the channel name from the channel index
+    ChannelDetails channel_details;
+    if (!getChannel(channel_idx, channel_details)) {
+      strcpy(channel_details.name, "Unknown");
+    }
+    _listener->onChannelMessageRecv(pkt, channel_details, text);
+    _listener->onQueueSizeChanged(offline_queue_len);
   }
-  if (_ui) _ui->newMsg(path_len, channel_name, text, offline_queue_len);
-#endif
   // [mishmesh]
   if (_mm_store) {
     uint8_t pathLen = 0;
@@ -690,6 +699,9 @@ void MyMesh::onChannelDataRecv(const mesh::GroupChannel &channel, mesh::Packet *
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
     _serial->writeFrame(frame, 1);
   }
+  if (_listener) {
+    _listener->onChannelDataRecv(pkt, channel, data_type, data, data_len);
+  }
 }
 
 uint8_t MyMesh::onContactRequest(const ContactInfo &contact, uint32_t sender_timestamp, const uint8_t *data,
@@ -737,6 +749,8 @@ uint8_t MyMesh::onContactRequest(const ContactInfo &contact, uint32_t sender_tim
       memcpy(&reply[4], telemetry.getBuffer(), tlen);
       return 4 + tlen;
     }
+  } else if (_listener) {
+    return _listener->onUnhandledRequest(contact, sender_timestamp, data, len, reply);
   }
   return 0; // unknown
 }
@@ -748,7 +762,7 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
   if (pending_login && memcmp(&pending_login, contact.id.pub_key, 4) == 0) { // check for login response
     // yes, is response to pending sendLogin()
     pending_login = 0;
-    // [mishmesh] was this login started on-device? if so, route the result to _ui too.
+    // [mishmesh] was this login started on-device? if so, route the result to the listener too.
     bool mm_login = mishmesh_login_pending;
     mishmesh_login_pending = false;
     bool mm_ok = false, mm_admin = false;
@@ -787,7 +801,7 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     // [/mishmesh]
     _serial->writeFrame(out_frame, i);
     // [mishmesh]
-    if (mm_login && _ui) _ui->onRoomLogin(contact.id.pub_key, mm_ok, mm_admin, mm_perms);
+    if (mm_login && _listener) _listener->onRoomLogin(contact.id.pub_key, mm_ok, mm_admin, mm_perms);
     // [/mishmesh]
   } else if (len > 4 && // check for status response
              pending_status &&
@@ -853,6 +867,21 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     memcpy(&out_frame[i], &data[4], len - 4);
     i += (len - 4);
     _serial->writeFrame(out_frame, i);
+  } else {
+    bool handled;
+    if (_listener && len > 4) {
+      handled = _listener->onUnhandledResponse(contact, tag, &data[4], len - 4);
+    } else {
+      handled = false;
+    }
+    if (!handled) {   // let the app know about unknown/unhandled responses (eg. push telemetry packets)
+      int i = 0;
+      out_frame[i++] = PUSH_CODE_BINARY_RESPONSE;
+      out_frame[i++] = 0; // reserved
+      memcpy(&out_frame[i], data, len);
+      i += len;
+      _serial->writeFrame(out_frame, i);
+    }
   }
 }
 
@@ -1099,9 +1128,6 @@ bool MyMesh::uiAddDiscovery(const uint8_t* pubkey) {
 }
 
 // [mishmesh]
-#define CTL_TYPE_NODE_DISCOVER_REQ   0x80
-#define CTL_TYPE_NODE_DISCOVER_RESP  0x90
-
 void MyMesh::uiStartNodeDiscover(uint8_t advTypeMask) {
   _ui_discover_result_count = 0;
   uint8_t data[10];
@@ -1169,7 +1195,7 @@ bool MyMesh::mishmeshSendCli(const uint8_t* pubkey, const char* cmd) {
   if (!recipient) return false;
   uint32_t msg_timestamp = getRTCClock()->getCurrentTimeUnique();  // node RTC: avoid replay-protection trip
   uint32_t est_timeout;
-  int result = sendCommandData(*recipient, msg_timestamp, 0, cmd, est_timeout);
+  int result = sendCommandData(*recipient, msg_timestamp, 0, TXT_TYPE_CLI_DATA, cmd, est_timeout);
   return result != MSG_SEND_FAILED;
 }
 
@@ -1268,7 +1294,7 @@ bool MyMesh::mishmeshSendTextImpl(const mishmesh::ConvoKey& k, const char* text,
   ChannelDetails channel;
   if (!getChannel(k.id[0], channel)) return false;
   // [mishmesh] never transmit on a cleared (all-zero secret) slot: that is the
-  // null/zero-key channel, not a real one (see mm_channelEmpty in BaseChatMesh).
+  // null/zero-key channel, not a real one (see the zero-secret skip in BaseChatMesh).
   {
     bool empty = true;
     for (size_t b = 0; b < sizeof(channel.channel.secret); b++)
@@ -1412,6 +1438,7 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
     }
   }
   // [/mishmesh]
+  if (_listener) _listener->onControlDataRecv(packet);
 }
 
 void MyMesh::onRawDataRecv(mesh::Packet *packet) {
@@ -1431,6 +1458,9 @@ void MyMesh::onRawDataRecv(mesh::Packet *packet) {
     _serial->writeFrame(out_frame, i);
   } else {
     MESH_DEBUG_PRINTLN("onRawDataRecv(), data received while app offline");
+  }
+  if (_listener) {
+    _listener->onRawDataRecv(packet);
   }
 }
 
@@ -1473,6 +1503,9 @@ void MyMesh::onTraceRecv(mesh::Packet *packet, uint32_t tag, uint32_t auth_code,
     _ui_ping.seq++;
   }
   // [/mishmesh]
+  if (_listener) {
+    _listener->onTraceRecv(packet, tag, auth_code, flags, path_snrs, path_hashes, path_len);
+  }
 }
 
 uint32_t MyMesh::calcFloodTimeoutMillisFor(uint32_t pkt_airtime_millis) const {
@@ -1487,11 +1520,12 @@ uint32_t MyMesh::calcDirectTimeoutMillisFor(uint32_t pkt_airtime_millis, uint8_t
 
 void MyMesh::onSendTimeout() {}
 
-MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store, AbstractUITask* ui)
+MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store)
     : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(16), tables),
-      _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui), _iter(0) {
+      _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _listener(NULL), _iter(0) {
   _iter_started = false;
   _cli_rescue = false;
+  cli_command[0] = 0;
   offline_queue_len = 0;
   app_target_ver = 0;
   clearPendingReqs();
@@ -1504,6 +1538,8 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
 
   // defaults
   _prefs.airtime_factor = 1.0;
+  _prefs.tx_delay_factor = 0.5f;
+  _prefs.direct_tx_delay_factor = 0.2f;
   strcpy(_prefs.node_name, "NONAME");
   _prefs.freq = LORA_FREQ;
   _prefs.tz_city_index = -1;   // [mishmesh] default custom/fixed until a city is chosen
@@ -1523,7 +1559,11 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
   _prefs.radio_fem_rxgain = 1;
+#ifdef RADIO_FEM_TXGAIN
+  _prefs.radio_fem_txgain = RADIO_FEM_TXGAIN;   // board-specific default for PA
+#else
   _prefs.radio_fem_txgain = 0;
+#endif
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
   _prefs.setRepeatEn(false);
 #if defined(USE_SX1262) || defined(USE_SX1268)
@@ -1535,7 +1575,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
 #endif
 }
 
-void MyMesh::begin(bool has_display) {
+void MyMesh::begin() {
   BaseChatMesh::begin();
 
   if (!_store->loadMainIdentity(self_id)) {
@@ -1577,6 +1617,8 @@ void MyMesh::begin(bool has_display) {
 
   // sanitise bad pref values
   _prefs.rx_delay_base = constrain(_prefs.rx_delay_base, 0, 20.0f);
+  _prefs.tx_delay_factor = constrain(_prefs.tx_delay_factor, 0, 2.0f);
+  _prefs.direct_tx_delay_factor = constrain(_prefs.direct_tx_delay_factor, 0, 2.0f);
   _prefs.airtime_factor = constrain(_prefs.airtime_factor, 0, 9.0f);
   _prefs.freq = constrain(_prefs.freq, 150.0f, 2500.0f);
   _prefs.bw = constrain(_prefs.bw, 7.8f, 500.0f);
@@ -1594,36 +1636,20 @@ void MyMesh::begin(bool has_display) {
     _prefs.sound_mute_mask = 0x0F;  // all 4 sound categories enabled
   }
 
-#ifdef BLE_PIN_CODE // 123456 by default
-  if (_prefs.ble_pin == 0) {
-#ifdef DISPLAY_CLASS
-    if (has_display && BLE_PIN_CODE == 123456) {
-      StdRNG rng;
-      _active_ble_pin = rng.nextInt(100000, 999999); // random pin each session
-    } else {
-      _active_ble_pin = BLE_PIN_CODE; // otherwise static pin
-    }
-#else
-    _active_ble_pin = BLE_PIN_CODE; // otherwise static pin
-#endif
-  } else {
-    _active_ble_pin = _prefs.ble_pin;
-  }
-#else
-  _active_ble_pin = 0;
-#endif
+  _active_ble_pin = _prefs.ble_pin;
 
   resetContacts();
   _store->loadContacts(this);
   bootstrapRTCfromContacts();
-  addChannel("Public", PUBLIC_GROUP_PSK); // pre-configure Andy's public channel
+  addChannel("Public", PUBLIC_GROUP_PSK); // pre-configure public channel
   _store->loadChannels(this);
 
   radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
   radio_driver.setTxPower(_prefs.tx_power_dbm);
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
-  board.setLoRaFemLnaEnabled(_prefs.radio_fem_rxgain);
-  board.setLoRaFemPaGainEnabled(_prefs.radio_fem_txgain);
+
+  board.attachDynamicPrefs(_prefs.getCustom());
+
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
 }
@@ -1636,6 +1662,9 @@ NodePrefs *MyMesh::getNodePrefs() {
 }
 uint32_t MyMesh::getBLEPin() {
   return _active_ble_pin;
+}
+void MyMesh::setBLEPin(uint32_t active_pin) {
+  _active_ble_pin = active_pin;
 }
 
 // [mishmesh]
@@ -1755,6 +1784,20 @@ void MyMesh::handleCmdFrame(size_t len) {
     memcpy(&out_frame[i], _prefs.node_name, tlen);
     i += tlen;
     _serial->writeFrame(out_frame, i);
+  } else if (cmd_frame[0] == CMD_RUN_CLI_COMMAND && len >= 3) { // V14+
+    int i = 1;
+    char *text = (char *)&cmd_frame[i];
+    int tlen = len - i;
+    text[tlen] = 0; // ensure null
+
+    reply_buf[0] = 0;
+    if (!handleCommand(text, 0, reply_buf)) {
+      strcat(reply_buf, "Unknown command");   // reply_buf may have cmd prefix from 'text'
+    }
+    out_frame[0] = RESP_CODE_CLI_REPLY;
+    int rlen = strlen(reply_buf);
+    memcpy(&out_frame[1], reply_buf, rlen);
+    _serial->writeFrame(out_frame, 1 + rlen);
   } else if (cmd_frame[0] == CMD_SEND_TXT_MSG && len >= 14) {
     int i = 1;
     uint8_t txt_type = cmd_frame[i++];
@@ -1765,16 +1808,16 @@ void MyMesh::handleCmdFrame(size_t len) {
     uint8_t *pub_key_prefix = &cmd_frame[i];
     i += 6;
     ContactInfo *recipient = lookupContactByPubKey(pub_key_prefix, 6);
-    if (recipient && (txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_CLI_DATA)) {
+    if (recipient && (txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_CLI_DATA || txt_type == TXT_TYPE_CLI_COMMAND)) {
       char *text = (char *)&cmd_frame[i];
       int tlen = len - i;
       uint32_t est_timeout;
       text[tlen] = 0; // ensure null
       int result;
       uint32_t expected_ack;
-      if (txt_type == TXT_TYPE_CLI_DATA) {
+      if (txt_type == TXT_TYPE_CLI_DATA || txt_type == TXT_TYPE_CLI_COMMAND) {
         msg_timestamp = getRTCClock()->getCurrentTimeUnique(); // Use node's RTC instead of app timestamp to avoid tripping replay protection
-        result = sendCommandData(*recipient, msg_timestamp, attempt, text, est_timeout);
+        result = sendCommandData(*recipient, msg_timestamp, attempt, txt_type, text, est_timeout);
         expected_ack = 0; // no Ack expected
       } else {
         result = sendMessage(*recipient, msg_timestamp, attempt, text, expected_ack, est_timeout);
@@ -1868,8 +1911,8 @@ void MyMesh::handleCmdFrame(size_t len) {
       writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
     } else if (data_type == DATA_TYPE_RESERVED) {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
-    } else if (payload_len > MAX_CHANNEL_DATA_LENGTH) {
-      MESH_DEBUG_PRINTLN("CMD_SEND_CHANNEL_DATA payload too long: %d > %d", payload_len, MAX_CHANNEL_DATA_LENGTH);
+    } else if (payload_len > MAX_GROUP_DATA_LENGTH) {
+      MESH_DEBUG_PRINTLN("CMD_SEND_CHANNEL_DATA payload too long: %d > %d", payload_len, MAX_GROUP_DATA_LENGTH);
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     } else if (sendGroupData(channel.channel, path, path_len, data_type, payload, payload_len)) {
       writeOKFrame();
@@ -2058,9 +2101,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     int out_len;
     if ((out_len = getFromOfflineQueue(out_frame)) > 0) {
       _serial->writeFrame(out_frame, out_len);
-#ifdef DISPLAY_CLASS
-      if (_ui) _ui->msgRead(offline_queue_len);
-#endif
+      if (_listener) _listener->onQueueSizeChanged(offline_queue_len);
     } else {
       out_frame[0] = RESP_CODE_NO_MORE_MESSAGES;
       _serial->writeFrame(out_frame, 1);
@@ -2200,16 +2241,20 @@ void MyMesh::handleCmdFrame(size_t len) {
 #endif
   } else if (cmd_frame[0] == CMD_SEND_RAW_DATA && len >= 6) {
     int i = 1;
-    int8_t path_len = cmd_frame[i++];
-    if (path_len >= 0 && i + path_len + 4 <= len) { // minimum 4 byte payload
-      uint8_t *path = &cmd_frame[i];
-      i += path_len;
-      auto pkt = createRawData(&cmd_frame[i], len - i);
-      if (pkt) {
-        sendDirect(pkt, path, path_len);
-        writeOKFrame();
+    uint8_t path_len = cmd_frame[i++];
+    if (path_len >= 0 && mesh::Packet::isValidPathLen(path_len)) {
+      uint8_t path[MAX_PATH_SIZE];
+      i += mesh::Packet::writePath(path, &cmd_frame[i], path_len);
+      if (i + 4 > len) {  // min payload 4 bytes
+        writeErrFrame(ERR_CODE_ILLEGAL_ARG);
       } else {
-        writeErrFrame(ERR_CODE_TABLE_FULL);
+        auto pkt = createRawData(&cmd_frame[i], len - i);
+        if (pkt) {
+          sendDirect(pkt, path, path_len);
+          writeOKFrame();
+        } else {
+          writeErrFrame(ERR_CODE_TABLE_FULL);
+        }
       }
     } else {
       writeErrFrame(ERR_CODE_UNSUPPORTED_CMD); // flood, not supported (yet)
@@ -2709,8 +2754,149 @@ void MyMesh::enterCLIRescue() {
   Serial.println("========= CLI Rescue =========");
 }
 
+bool MyMesh::handleCommand(const char* command, uint32_t sender_timestamp, char* reply) {
+  while (*command == ' ') command++; // skip leading spaces
+
+  if (strlen(command) > 4 && command[2] == '|') { // optional prefix (for companion radio CLI)
+    memcpy(reply, command, 3);                    // reflect the prefix back
+    reply += 3;
+    *reply = 0;
+    command += 3;
+  }
+
+  if (_prefs.getRadioPrefs()->handleCommand(command, sender_timestamp, reply)) {  // is radio CLI command?
+    if (_prefs.getRadioPrefs()->isDirty()) { savePrefs(); }
+    return true;
+  }
+
+  // hook for variant-specific CLI processing
+  if (board.handleCommand(command, sender_timestamp, reply)) {
+    if (_prefs.isDirty()) { savePrefs(); }
+    return true;
+  }
+
+  if (strcmp(command, "reboot") == 0) {
+    board.reboot(); // doesn't return
+    return true;
+  }
+
+  if (strcmp(command, "poweroff") == 0 || strcmp(command, "shutdown") == 0) {
+    board.powerOff(); // doesn't return
+    return true;
+  }
+
+  if (memcmp(command, "set name ", 9) == 0) {
+    if (AdvertDataParser::isValidName(&command[9])) {
+      StrHelper::strncpy(_prefs.node_name, &command[9], sizeof(_prefs.node_name));
+      savePrefs();
+      strcpy(reply, "OK");
+    } else {
+      strcpy(reply, "Error, bad chars");
+    }
+    return true;
+  }
+  if (strcmp(command, "get name") == 0) {
+    sprintf(reply, "> %s", _prefs.node_name);
+    return true;
+  }
+
+  if (memcmp(command, "set pin ", 8) == 0) {
+    _prefs.ble_pin = atoi(&command[8]);
+    savePrefs();
+    sprintf(reply, "> pin is now %06d", _prefs.ble_pin);
+    return true;
+  }
+
+#ifdef ENABLE_WIFI_INTERFACE
+  if (memcmp(command, "set wifi.ssid ", 14) == 0) {
+    StrHelper::strncpy(_prefs.wifi_ssid, &command[14], sizeof(_prefs.wifi_ssid));
+    savePrefs();
+    sprintf(reply, "> wifi.ssid is now %s (set wifi.pwd too, then reboot)", _prefs.wifi_ssid);
+    return true;
+  }
+  if (memcmp(command, "set wifi.pwd ", 13) == 0) {
+    StrHelper::strncpy(_prefs.wifi_pwd, &command[13], sizeof(_prefs.wifi_pwd));
+    savePrefs();
+    strcpy(reply, "> wifi.pwd updated (reboot to apply)");
+    return true;
+  }
+  if (strcmp(command, "get wifi.pwd") == 0) {
+    sprintf(reply, "> %s", _prefs.wifi_pwd);
+    return true;
+  }
+  if (strcmp(command, "set wifi.clear") == 0) {
+    _prefs.wifi_ssid[0] = 0;
+    _prefs.wifi_pwd[0] = 0;
+    savePrefs();
+    strcpy(reply, "> wifi config cleared (reboot to apply)");
+    return true;
+  }
+  if (strcmp(command, "get wifi.ssid") == 0) {
+    sprintf(reply, "> %s", _prefs.getWifiSSID()[0] ? _prefs.getWifiSSID() : "(not set)");
+    return true;
+  }
+  if (memcmp(command, "set wifi.enabled ", 17) == 0) {
+    _prefs.wifi_enabled = atoi(&command[17]) ? 1 : 0;
+    savePrefs();
+    sprintf(reply, "> wifi.enabled is now %d (reboot to apply)", _prefs.wifi_enabled);
+    return true;
+  }
+  if (strcmp(command, "get wifi.enabled") == 0) {
+    sprintf(reply, "> %d", _prefs.wifi_enabled);
+    return true;
+  }
+  if (strcmp(command, "get wifi.status") == 0) {
+    strcpy(reply, WiFi.status() == WL_CONNECTED ? "> connected" : "> disconnected");
+    return true;
+  }
+  if (strcmp(command, "get wifi.ip") == 0) {
+    if (WiFi.status() == WL_CONNECTED) {
+      sprintf(reply, "> %s", WiFi.localIP().toString().c_str());
+    } else {
+      strcpy(reply, "> (not connected)");
+    }
+    return true;
+  }
+#endif
+
+  if (strcmp(command, "board") == 0) {
+    strcpy(reply, board.getManufacturerName());
+    return true;
+  }
+
+  if (strcmp(command, "ver") == 0) {
+    sprintf(reply, "%s (Build: %s)", FIRMWARE_VERSION, FIRMWARE_BUILD_DATE);
+    return true;
+  }
+
+  if (strcmp(command, "get tz.offset") == 0) {
+    sprintf(reply, "> %d", _prefs.tz_offset);
+    return true;
+  }
+  if (memcmp(command, "set tz.offset ", 14) == 0) {
+    int8_t tz = atof(&command[14]);
+    if (tz < -12 || tz > 14) {
+      strcpy(reply, "Error, must be from -12 to +14");
+    } else {
+      _prefs.tz_offset = tz;
+      savePrefs();
+      strcpy(reply, "OK");
+    }
+    return true;
+  }
+
+  return false;  // not handled
+}
+
 void MyMesh::checkCLIRescueCmd() {
   int len = strlen(cli_command);
+  // `cli_command` must stay NUL-terminated within its bounds. If it ever isn't,
+  // strlen() above can return >= sizeof(cli_command) and the loop below would
+  // then index past the buffer, so clamp defensively.
+  if (len >= (int)sizeof(cli_command)) {
+    cli_command[0] = 0;
+    len = 0;
+  }
   while (Serial.available() && len < sizeof(cli_command)-1) {
     char c = Serial.read();
     if (c != '\n') {
@@ -2719,22 +2905,18 @@ void MyMesh::checkCLIRescueCmd() {
     }
     Serial.print(c);  // echo
   }
-  if (len == sizeof(cli_command)-1) {  // command buffer full
-    cli_command[sizeof(cli_command)-1] = '\r';
+  if (len == sizeof(cli_command)-1) {  // buffer full: treat as a completed line
+    cli_command[sizeof(cli_command)-2] = '\r';  // place end-of-line marker inside the buffer
+    cli_command[sizeof(cli_command)-1] = 0;     // keep the buffer NUL-terminated
   }
 
   if (len > 0 && cli_command[len - 1] == '\r') {  // received complete line
     cli_command[len - 1] = 0;  // replace newline with C string null terminator
 
-    if (memcmp(cli_command, "set ", 4) == 0) {
-      const char* config = &cli_command[4];
-      if (memcmp(config, "pin ", 4) == 0) {
-        _prefs.ble_pin = atoi(&config[4]);
-        savePrefs();
-        Serial.printf("  > pin is now %06d\n", _prefs.ble_pin);
-      } else {
-        Serial.printf("  Error: unknown config: %s\n", config);
-      }
+    reply_buf[0] = 0;
+    if (handleCommand(cli_command, 0, reply_buf)) {
+      // command was handled, print reply output
+      Serial.print("  "); Serial.print(reply_buf); Serial.println();
     } else if (strcmp(cli_command, "rebuild") == 0) {
       bool success = _store->formatFileSystem();
       if (success) {
@@ -2915,6 +3097,11 @@ void MyMesh::loop() {
     checkCLIRescueCmd();
   } else {
     checkSerialInterface();
+#if defined(ENABLE_WIFI_INTERFACE) && defined(RP2040_PLATFORM) && !defined(ENABLE_USB_INTERFACE)
+    // RP2040 WiFi builds are headless and have no way into the rescue CLI (that needs a
+    // display + long-press), so serve config commands on the otherwise unused USB serial
+    checkCLIRescueCmd();
+#endif
   }
 
   // is there are pending dirty contacts write needed?
@@ -2922,10 +3109,6 @@ void MyMesh::loop() {
     saveContacts();
     dirty_contacts_expiry = 0;
   }
-
-#ifdef DISPLAY_CLASS
-  if (_ui) _ui->setHasConnection(_serial->isConnected());
-#endif
 }
 
 bool MyMesh::advert() {

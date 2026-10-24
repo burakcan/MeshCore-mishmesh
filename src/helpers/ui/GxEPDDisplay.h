@@ -16,6 +16,12 @@
 
 #include "DisplayDriver.h"
 
+#ifndef EINK_MAX_PARTIAL_REFRESH
+  // 60 to prevent ghosting when refreshing every minute ...
+  // set to -1 to disable the counter
+  #define EINK_MAX_PARTIAL_REFRESH -1
+#endif
+
 // [mishmesh] Per-variant panel geometry. The logical canvas the UI draws into is
 // configurable so a board can pick an integer scale onto its panel - non-integer
 // scales smear the pixel fonts. Defaults reproduce the old hardcoded 128x128.
@@ -70,9 +76,12 @@ private:
   bool _init = false;
   bool _isOn = false;
   bool _force_full = false;   // [mishmesh] see refreshFull()
+  bool _retain_when_off = false;   // [mishmesh] see setRetainImageWhenOff()
   uint16_t _curr_color;
   CRC32 display_crc;
   int last_display_crc_value = 0;
+  int _cycles_before_full_refresh;
+  int max_partial_refresh = EINK_MAX_PARTIAL_REFRESH; // so this can be changed by an option after
 
   // [mishmesh] Scale both edges, then subtract. Scaling w/h independently of x/y
   // truncates twice, so abutting rects leave 1px seams on the panel.
@@ -93,6 +102,8 @@ public:
 
   bool isOn() override { return _isOn; }
   bool isEink() override { return true; }
+  void forceFullRefresh() override { _cycles_before_full_refresh = 0; };
+  void resetPartialRefreshCounter() { _cycles_before_full_refresh = max_partial_refresh; };
   // [mishmesh] window_bkg is GxEPD_WHITE here; see DisplayDriver::hasLightBackground
   bool hasLightBackground() const override { return true; }
   bool supportsUiScale() const override;
@@ -103,6 +114,7 @@ public:
   // [mishmesh] a panel refresh blocks for hundreds of ms; hand GxEPD2's busy
   // callback through so the UI can keep sampling buttons meanwhile.
   void setBusyPoll(void (*cb)(const void*), const void* ctx) override;
+  void setRetainImageWhenOff(bool retain) override { _retain_when_off = retain; }
   // [/mishmesh]
   void turnOn() override;
   void turnOff() override;

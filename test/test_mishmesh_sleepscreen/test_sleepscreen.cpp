@@ -241,6 +241,96 @@ TEST(AppletHostSleepFace, StaticFaceNeverAsksForAFullRefresh) {
   EXPECT_EQ(0, d.fullRefreshes);
 }
 
+TEST(AppletHostSleepFace, FacePaintedAfterTurnOffReachesThePanel) {
+  FakeDisplayDriver d(250, 122);
+  d.eink = true;
+  FakeApp app;
+  AppletContext ctx = ctxFor(app);
+  AppletHost host(&d, ctx);
+  StubApplet root;
+  host.setRoot(&root);
+  host.setSleepScreen(1);            // Logo
+
+  uint32_t now = 1000;
+  host.setAutoOffMillis(1000);
+  host.loop(now);
+  const int awake = d.flushes;
+  now += 2000;
+  host.loop(now);
+  ASSERT_FALSE(d.on);
+  EXPECT_EQ(awake + 1, d.flushes);   // the face, flushed with the panel off
+  EXPECT_EQ(0, d.droppedFrames);
+  EXPECT_EQ(0, d.offWipes);          // and turnOff left the glass for it
+}
+
+TEST(AppletHostSleepFace, ClockRepaintsWhileAsleepReachThePanel) {
+  FakeDisplayDriver d(250, 122);
+  d.eink = true;
+  FakeApp app;
+  app.epoch = 3600;
+  AppletContext ctx = ctxFor(app);
+  AppletHost host(&d, ctx);
+  StubApplet root;
+  host.setRoot(&root);
+  host.setSleepScreen(2);            // Clock
+
+  uint32_t now = 1000;
+  sleepHost(host, now);
+  const int asleep = d.flushes;
+  for (int i = 0; i < 120; i++) { now += 1000; host.loop(now); }    // two minutes
+  EXPECT_EQ(3, host.sleepPaintsForTest());
+  EXPECT_EQ(asleep + 2, d.flushes);
+  EXPECT_EQ(0, d.droppedFrames);
+}
+
+TEST(AppletHostSleepFace, HourlyFullRefreshLandsWhileAsleep) {
+  FakeDisplayDriver d(250, 122);
+  d.eink = true;
+  FakeApp app;
+  app.epoch = 3600;
+  AppletContext ctx = ctxFor(app);
+  AppletHost host(&d, ctx);
+  StubApplet root;
+  host.setRoot(&root);
+  host.setSleepScreen(2);
+
+  uint32_t now = 1000;
+  sleepHost(host, now);
+  for (int i = 0; i < 2 * 60 * 60; i++) { now += 1000; host.loop(now); }
+  ASSERT_GE(d.fullRefreshes, 1);
+  EXPECT_EQ(d.fullRefreshes, d.fullFlushes);   // every request went out, none left pending
+  EXPECT_FALSE(d.fullPending);
+  EXPECT_EQ(0, d.droppedFrames);
+}
+
+// Guards the fake itself: without the retain request it behaves like the stock
+// e-ink driver, so a host that stopped asking would fail the three tests above.
+TEST(FakeDisplayDriver, DropsFramesWhileOffUnlessAskedToRetain) {
+  FakeDisplayDriver d(250, 122);
+  d.eink = true;
+  d.startFrame();
+  d.endFrame();
+  EXPECT_EQ(1, d.flushes);
+
+  d.turnOff();
+  EXPECT_EQ(1, d.offWipes);
+  d.refreshFull();
+  d.startFrame();
+  d.endFrame();
+  EXPECT_EQ(1, d.flushes);
+  EXPECT_EQ(1, d.droppedFrames);
+  EXPECT_EQ(0, d.fullFlushes);
+
+  d.setRetainImageWhenOff(true);
+  d.startFrame();
+  d.endFrame();
+  EXPECT_EQ(2, d.flushes);
+  EXPECT_EQ(1, d.fullFlushes);
+  d.turnOn();
+  d.turnOff();
+  EXPECT_EQ(1, d.offWipes);
+}
+
 TEST(AppletHostSleepFace, LogoFaceDrawsInTheForegroundColour) {
   FakeDisplayDriver d(250, 122);
   d.eink = true;

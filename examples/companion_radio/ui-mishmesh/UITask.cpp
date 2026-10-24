@@ -220,7 +220,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   // Drop phantom channel chats left by the null/zero-key channel bug: a channel
   // convo whose slot is cleared (all-zero secret) isn't a real chat. Collect
   // first, then delete (deleteConvo reorders the list). Persists via loop's seq
-  // save. The core fix (mm_channelEmpty) prevents new ones from being created.
+  // save. The core fix (the zero-secret skip in BaseChatMesh) prevents new ones
+  // from being created.
   {
     mishmesh::ConvoKey drop[mishmesh::MAX_CONVOS];
     int nDrop = 0;
@@ -325,15 +326,24 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _sound.play(mishmesh::sound::SoundId::BootJingle);
 }
 
-void UITask::msgRead(int /*msgcount*/) {
+// Both message callbacks fire inside a mesh recv callback, just before MyMesh
+// appends the message to the store. Schedule the index flush and leave the
+// repaint to the next UITask::loop(); don't drive the render pipeline here.
+void UITask::onMessageRecv(mesh::Packet* /*pkt*/, const ContactInfo& /*from*/, uint8_t txt_type,
+                           uint32_t /*sender_timestamp*/, const char* /*text*/) {
+  // CLI frames come through here too; only plain text is a message
+  if (!(txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN)) return;
+  _msgFlushAt = millis() + 8000;
+  if (!hasConnection()) notify(UIEventType::contactMessage);
 }
 
-void UITask::newMsg(uint8_t /*path_len*/, const char* /*from_name*/,
-                    const char* /*text*/, int /*msgcount*/) {
-  // store capture already happened in MyMesh::queueMessage; just schedule
-  // a flush. Fired from inside a mesh recv callback, so don't drive the render
-  // pipeline here - the next UITask::loop() repaints naturally.
+void UITask::onChannelMessageRecv(mesh::Packet* /*pkt*/, ChannelDetails& /*channel_details*/,
+                                  const char* /*text*/) {
+  if (!hasConnection()) notify(UIEventType::channelMessage);
   _msgFlushAt = millis() + 8000;
+}
+
+void UITask::onQueueSizeChanged(int /*msgcount*/) {
 }
 
 void UITask::notify(UIEventType t) {

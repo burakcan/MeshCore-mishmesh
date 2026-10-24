@@ -18,6 +18,14 @@ public:
   bool orientable = false;            // can be turned
   int  rotation = 0;
   int  fullRefreshes = 0;             // refreshFull() calls
+  // Off-panel contract of the real e-ink driver: turnOff() wipes the glass and
+  // endFrame() drops the frame while off, unless the UI asked to retain.
+  bool retainWhenOff = false;
+  int  offWipes = 0;                  // turnOff() calls that blanked the glass
+  int  flushes = 0;                   // frames that reached the panel
+  int  droppedFrames = 0;             // frames ended while off, never shown
+  int  fullFlushes = 0;               // flushes that went out as a full refresh
+  bool fullPending = false;
   std::vector<std::string> calls;     // ordered log of high-level calls
   std::vector<Rect> fills;            // fillRect args (device coords)
   std::vector<Rect> rects;            // drawRect args (device coords)
@@ -40,11 +48,17 @@ public:
   bool supportsOrientation() const override { return orientable; }
   void setDisplayRotation(int quarters) override { rotation = quarters; }
   void turnOn() override { on = true; }
-  void turnOff() override { on = false; }
+  void turnOff() override { on = false; if (!retainWhenOff) offWipes++; }
+  void setRetainImageWhenOff(bool retain) override { retainWhenOff = retain; }
   void clear() override { calls.push_back("clear"); }
   void startFrame(ColorVal bkg = UIColor::window_bkg) override { (void)bkg; calls.push_back("startFrame"); }
-  void endFrame() override { calls.push_back("endFrame"); }
-  void refreshFull() override { fullRefreshes++; calls.push_back("refreshFull"); }
+  void endFrame() override {
+    calls.push_back("endFrame");
+    if (!on && !retainWhenOff) { droppedFrames++; return; }
+    flushes++;
+    if (fullPending) { fullFlushes++; fullPending = false; }
+  }
+  void refreshFull() override { fullRefreshes++; fullPending = true; calls.push_back("refreshFull"); }
   void setTextSize(int) override {}
   void setColor(ColorVal c) override { lastColor = c; }
   void setCursor(int x, int y) override { cursorX = x; cursorY = y; }
