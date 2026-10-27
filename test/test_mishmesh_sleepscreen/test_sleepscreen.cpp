@@ -29,7 +29,18 @@ struct FakeApp : AppServices {
 
 struct StubApplet : Applet {
   StubApplet() : Applet("stub") {}
-  int onRender(Canvas&) override { return 1000; }
+  int renders = 0;
+  int onRender(Canvas&) override { renders++; return 1000; }
+};
+
+struct OnePress : InputSource {
+  bool armed = false;
+  bool poll(InputReport& out) override {
+    if (!armed) return false;
+    armed = false;
+    out.event = InputEvent::Select;
+    return true;
+  }
 };
 
 // Sleeps the host: auto-off is 1s, so one quiet loop past that blanks the panel.
@@ -301,6 +312,34 @@ TEST(AppletHostSleepFace, HourlyFullRefreshLandsWhileAsleep) {
   EXPECT_EQ(d.fullRefreshes, d.fullFlushes);   // every request went out, none left pending
   EXPECT_FALSE(d.fullPending);
   EXPECT_EQ(0, d.droppedFrames);
+}
+
+TEST(AppletHostSleepFace, PressWakesAndTheFirstAwakeFrameReachesThePanel) {
+  FakeDisplayDriver d(250, 122);
+  d.eink = true;
+  FakeApp app;
+  AppletContext ctx = ctxFor(app);
+  AppletHost host(&d, ctx);
+  StubApplet root;
+  OnePress key;
+  host.setRoot(&root);
+  host.addSource(&key);
+  host.setSleepScreen(1);            // Logo
+
+  uint32_t now = 1000;
+  sleepHost(host, now);
+  ASSERT_FALSE(d.on);
+  const int asleep = d.flushes;
+  const int drawn = root.renders;
+
+  key.armed = true;
+  now += 5000;
+  host.loop(now);
+  EXPECT_TRUE(d.on);
+  EXPECT_EQ(drawn + 1, root.renders);
+  EXPECT_EQ(asleep + 1, d.flushes);  // the UI again, over the face
+  EXPECT_EQ(0, d.droppedFrames);
+  EXPECT_EQ(0, d.offWipes);
 }
 
 // Guards the fake itself: without the retain request it behaves like the stock
