@@ -161,19 +161,8 @@ public:
   };
   const TelemetryLatch& uiLastTelemetry() const { return _ui_telemetry; }
   const PingLatch& uiLastPing() const { return _ui_ping; }
-  // [mishmesh] CLI (admin command) reply ring. A few slots keyed by pubkey so a reply
-  // for another contact (e.g. one the phone app requested) can't clobber a reply the
-  // on-device UI is awaiting. Mirrors the telemetry latch, extended to a small ring.
-  static const int MM_CLI_REPLY_MAX = 168;   // one TXT_TYPE_CLI_DATA text frame
-  static const int MM_CLI_SLOTS = 4;
-  struct CliLatch {
-    uint8_t  pubkey[PUB_KEY_SIZE];
-    char     resp[MM_CLI_REPLY_MAX];
-    uint32_t seq;
-  };
-  uint32_t uiCliSeq() const { return _ui_cli_seq; }
-  // Newest ring slot for the 6-byte pubkey with seq > afterSeq; false if none.
-  bool uiCliReply(const uint8_t* pubkey6, uint32_t afterSeq, const char*& resp) const;
+  // [mishmesh] Admin CLI command to a server contact. The reply is not kept here:
+  // it reaches the UI through Listener::onMessageRecv.
   bool mishmeshSendCli(const uint8_t* pubkey, const char* cmd);
   // [/mishmesh]
   // [mishmesh] Binary status (REQ_TYPE_GET_STATUS) latch for the on-device UI + the
@@ -434,9 +423,6 @@ private:
   // [mishmesh]
   TelemetryLatch _ui_telemetry = {};
   PingLatch _ui_ping = {};
-  CliLatch _ui_cli[MM_CLI_SLOTS] = {};
-  uint32_t _ui_cli_seq = 0;   // monotonic; 0 = none yet
-  int      _ui_cli_next = 0;  // next ring slot to write
   StatusLatch _ui_status = {};
   AclLatch _ui_acl = {};   // [mishmesh]
   uint8_t  _ui_login_pub[6] = {0};

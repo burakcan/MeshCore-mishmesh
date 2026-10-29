@@ -40,6 +40,7 @@
 #include <mishmesh/sound/Sounds.h>
 #include <mishmesh/core/AirtimeHistory.h>
 #include <mishmesh/core/ContactsFullLatch.h>
+#include <mishmesh/core/CliReplyRing.h>
 #include <mishmesh/applets/ContactsFullApplet.h>
 #include <mishmesh/core/ExtraFsMsgBackend.h>
 #include <mishmesh/applets/OnboardingApplet.h>
@@ -517,7 +518,7 @@ public:
   uint32_t loginSeq() const override { return _loginSeq; }
   bool loginResult(const uint8_t* pubKey, bool& ok, bool& isAdmin, uint8_t& perms) const override;
   bool isLoggedIn(const uint8_t* pubKey) const override;
-  // admin CLI command channel (delegates to the_mesh; reply latched in MyMesh)
+  // admin CLI command channel (sends via the_mesh; replies latched in _cliReplies)
   bool     sendCliCommand(const uint8_t* pubKey, const char* cmd) override;
   uint32_t cliSeq() const override;
   bool     cliResult(const uint8_t* pubKey, uint32_t afterSeq, bool& ok, const char*& response) const override;
@@ -557,4 +558,5 @@ private:
   uint8_t  _loginPerms = 0;
   uint8_t  _loggedIn[MM_MAX_LOGINS][6] = {{0}};
   int      _loggedInCount = 0;
+  mishmesh::CliReplyRing _cliReplies;
 };

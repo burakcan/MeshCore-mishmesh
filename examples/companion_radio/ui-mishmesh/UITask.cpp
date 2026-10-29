@@ -329,9 +329,12 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 // Both message callbacks fire inside a mesh recv callback, just before MyMesh
 // appends the message to the store. Schedule the index flush and leave the
 // repaint to the next UITask::loop(); don't drive the render pipeline here.
-void UITask::onMessageRecv(mesh::Packet* /*pkt*/, const ContactInfo& /*from*/, uint8_t txt_type,
-                           uint32_t /*sender_timestamp*/, const char* /*text*/) {
-  // CLI frames come through here too; only plain text is a message
+void UITask::onMessageRecv(mesh::Packet* /*pkt*/, const ContactInfo& from, uint8_t txt_type,
+                           uint32_t /*sender_timestamp*/, const char* text) {
+  // Admin CLI replies come through here too. Latch every one, asked for or not:
+  // the phone app may have sent the command, and a waiting panel sorts it out by
+  // sender. TXT_TYPE_CLI_COMMAND is someone commanding us, not a reply.
+  if (txt_type == TXT_TYPE_CLI_DATA) { _cliReplies.latch(from.id.pub_key, text); return; }
   if (!(txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN)) return;
   _msgFlushAt = millis() + 8000;
   if (!hasConnection()) notify(UIEventType::contactMessage);
@@ -776,14 +779,16 @@ bool UITask::isLoggedIn(const uint8_t* pk) const {
   return false;
 }
 
-// admin CLI command channel. Reply arrives asynchronously and is latched
-// in MyMesh::_ui_cli ring (bumped in onCommandDataRecv); we poll it like telemetry.
+// admin CLI command channel. The reply arrives asynchronously and is latched
+// in _cliReplies by onMessageRecv; we poll it like telemetry.
 bool UITask::sendCliCommand(const uint8_t* pk, const char* cmd) {
   return the_mesh.mishmeshSendCli(pk, cmd);
 }
-uint32_t UITask::cliSeq() const { return the_mesh.uiCliSeq(); }
+uint32_t UITask::cliSeq() const { return _cliReplies.seq(); }
 bool UITask::cliResult(const uint8_t* pk, uint32_t afterSeq, bool& ok, const char*& response) const {
-  if (!the_mesh.uiCliReply(pk, afterSeq, response)) return false;
+  const char* r = _cliReplies.newest(pk, afterSeq);
+  if (r == nullptr) return false;
+  response = r;
   ok = true;
   return true;
 }

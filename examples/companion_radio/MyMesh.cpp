@@ -575,17 +575,6 @@ void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t 
 
 void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp, const char *text) {
   markConnectionActive(from); // in case this is from a server, and we have a connection
-  // [mishmesh] latch the CLI reply into a small ring (see MyMesh.h) so a reply for a
-  // different contact can't clobber one the on-device UI is awaiting.
-  {
-    CliLatch& slot = _ui_cli[_ui_cli_next];
-    memcpy(slot.pubkey, from.id.pub_key, PUB_KEY_SIZE);
-    strncpy(slot.resp, text ? text : "", sizeof(slot.resp) - 1);
-    slot.resp[sizeof(slot.resp) - 1] = 0;
-    slot.seq = ++_ui_cli_seq;
-    _ui_cli_next = (_ui_cli_next + 1) % MM_CLI_SLOTS;
-  }
-  // [/mishmesh]
   queueMessage(from, TXT_TYPE_CLI_DATA, pkt, sender_timestamp, NULL, 0, text);
 }
 
@@ -1188,7 +1177,7 @@ bool MyMesh::mishmeshLogin(const uint8_t* pubkey, const char* password) {
 }
 
 // [mishmesh] Send an admin CLI command to a server contact by 6-byte UI handle.
-// Reply arrives asynchronously and is latched in _ui_cli ring via onCommandDataRecv.
+// The reply comes back through Listener::onMessageRecv as TXT_TYPE_CLI_DATA.
 bool MyMesh::mishmeshSendCli(const uint8_t* pubkey, const char* cmd) {
   if (!cmd || !cmd[0]) return false;
   ContactInfo* recipient = lookupContactByPubKey((uint8_t*)pubkey, 6);  // UI handle is a 6-byte prefix
@@ -1197,19 +1186,6 @@ bool MyMesh::mishmeshSendCli(const uint8_t* pubkey, const char* cmd) {
   uint32_t est_timeout;
   int result = sendCommandData(*recipient, msg_timestamp, 0, TXT_TYPE_CLI_DATA, cmd, est_timeout);
   return result != MSG_SEND_FAILED;
-}
-
-bool MyMesh::uiCliReply(const uint8_t* pubkey6, uint32_t afterSeq, const char*& resp) const {
-  const CliLatch* best = nullptr;
-  for (int i = 0; i < MM_CLI_SLOTS; i++) {
-    const CliLatch& s = _ui_cli[i];
-    if (s.seq > afterSeq && memcmp(s.pubkey, pubkey6, 6) == 0 && (best == nullptr || s.seq > best->seq)) {
-      best = &s;
-    }
-  }
-  if (best == nullptr) return false;
-  resp = best->resp;
-  return true;
 }
 // [/mishmesh]
 
