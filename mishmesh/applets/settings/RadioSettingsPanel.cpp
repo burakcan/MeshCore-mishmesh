@@ -31,7 +31,9 @@ const char* RadioSettingsPanel::Model::value(int i) const {
       int m = matchPreset(cfg->freqMhz, cfg->bwKhz, cfg->sf, cfg->cr);
       return m >= 0 ? PRESETS[m].name : "Custom";
     }
-    case 1: case 2: case 3: case 4: case 5:
+    case 5:
+      return formatTxPower(vbuf, sizeof(vbuf), cfg->txPowerDbm, app ? app->txPaTable() : nullptr);
+    case 1: case 2: case 3: case 4:
       return formatRadioField(vbuf, sizeof(vbuf), i, *cfg);
     default:   // Repeater: Off, or the active off-grid frequency
       if (cfg->repeater) { snprintf(vbuf, sizeof(vbuf), "%.3f MHz", cfg->freqMhz); return vbuf; }
@@ -47,6 +49,7 @@ void RadioSettingsPanel::begin(AppletContext& ctx) {
   }
   _dirty = false;
   _model.cfg = &_staged;
+  _model.app = _app;
   _list.setRowHeight(14);
   _list.setModel(&_model);
   _list.resetSelection();
@@ -99,7 +102,9 @@ void RadioSettingsPanel::editFrequency() {
 }
 void RadioSettingsPanel::editTxPower() {
   snprintf(_scratch, sizeof(_scratch), "%d", (int)_staged.txPowerDbm);
-  keypadApplet().configureNumeric(_scratch, sizeof(_scratch) - 1, "TX power (dBm)",
+  // Behind a PA the number typed is the chip drive level, not the output.
+  const char* title = (_app && _app->txPaTable()) ? "Chip power (dBm)" : "TX power (dBm)";
+  keypadApplet().configureNumeric(_scratch, sizeof(_scratch) - 1, title,
                                   &RadioSettingsPanel::onTxDone, this);
   if (_host) _host->push(&keypadApplet());
 }

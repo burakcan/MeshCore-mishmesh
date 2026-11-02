@@ -336,6 +336,79 @@ TEST(RepeaterRadio, LoadingPhaseBeforeFetchComplete) {
   EXPECT_EQ(afterStart, svc.lastCli);   // no new CLI command sent
 }
 
+#include <mishmesh/applets/settings/RadioFormat.h>
+
+namespace {
+// GAT562 30S vendor table (869 MHz), chip settings 0..22, tenths of a dBm.
+const int16_t GAT_OUT[] = {136, 162, 184, 200, 214, 226, 238, 248, 258, 268, 274, 282,
+                           288, 294, 298, 300, 300, 300, 300, 300, 300, 300, 300};
+const mishmesh::TxPaTable GAT_PA = {0, 23, GAT_OUT};
+
+class PaRadioApp : public FakeRadioApp {
+public:
+  const mishmesh::TxPaTable* txPaTable() const override { return &GAT_PA; }
+};
+}
+
+TEST(TxPa, LookupCoversTableOnly) {
+  int16_t out = 0;
+  EXPECT_TRUE(mishmesh::txPaOutputDeciDbm(&GAT_PA, 0, out));   EXPECT_EQ(out, 136);
+  EXPECT_TRUE(mishmesh::txPaOutputDeciDbm(&GAT_PA, 3, out));   EXPECT_EQ(out, 200);
+  EXPECT_TRUE(mishmesh::txPaOutputDeciDbm(&GAT_PA, 14, out));  EXPECT_EQ(out, 298);
+  EXPECT_TRUE(mishmesh::txPaOutputDeciDbm(&GAT_PA, 15, out));  EXPECT_EQ(out, 300);
+  EXPECT_TRUE(mishmesh::txPaOutputDeciDbm(&GAT_PA, 22, out));  EXPECT_EQ(out, 300);
+  EXPECT_FALSE(mishmesh::txPaOutputDeciDbm(&GAT_PA, -1, out));
+  EXPECT_FALSE(mishmesh::txPaOutputDeciDbm(&GAT_PA, 23, out));
+  EXPECT_FALSE(mishmesh::txPaOutputDeciDbm(nullptr, 10, out));
+}
+
+TEST(TxPa, LookupHonoursFirstSetting) {
+  const int16_t t[] = {50, 70};
+  const mishmesh::TxPaTable pa = {-2, 2, t};
+  int16_t out = 0;
+  EXPECT_TRUE(mishmesh::txPaOutputDeciDbm(&pa, -2, out));  EXPECT_EQ(out, 50);
+  EXPECT_TRUE(mishmesh::txPaOutputDeciDbm(&pa, -1, out));  EXPECT_EQ(out, 70);
+  EXPECT_FALSE(mishmesh::txPaOutputDeciDbm(&pa, 0, out));
+}
+
+TEST(TxPa, FormatWithoutPaIsPlainDbm) {
+  char b[24];
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), 22, nullptr), "22 dBm");
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), -9, nullptr), "-9 dBm");
+}
+
+TEST(TxPa, FormatShowsMeasuredOutput) {
+  char b[24];
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), 22, &GAT_PA), "22 -> ~30 dBm");
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), 14, &GAT_PA), "14 -> ~29.8 dBm");
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), 3, &GAT_PA), "3 -> ~20 dBm");
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), 0, &GAT_PA), "0 -> ~13.6 dBm");
+  // Below the table there is no measurement; never present the chip value as output.
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), -9, &GAT_PA), "-9 dBm chip");
+}
+
+TEST(TxPa, FormatFractionalAndNegativeOutput) {
+  const int16_t t[] = {-25, -5, 5};
+  const mishmesh::TxPaTable pa = {0, 3, t};
+  char b[24];
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), 0, &pa), "0 -> ~-2.5 dBm");
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), 1, &pa), "1 -> ~-0.5 dBm");
+  EXPECT_STREQ(mishmesh::formatTxPower(b, sizeof(b), 2, &pa), "2 -> ~0.5 dBm");
+}
+
+TEST(TxPa, PanelRowShowsOutputAndKeepsChipBounds) {
+  PaRadioApp app;
+  app.cfg = {869.618f, 62.5f, 8, 8, 22};
+  mishmesh::RadioSettingsPanel& panel = mishmesh::radioSettings();
+  auto ctx = ctxWith(&app);
+  panel.begin(ctx);
+  EXPECT_STREQ(panel.rowValueForTest(5), "22 -> ~30 dBm");
+  panel.stageTxPower(10);
+  EXPECT_STREQ(panel.rowValueForTest(5), "10 -> ~27.4 dBm");
+  panel.stageTxPower(100);   // the PA table never widens the chip ceiling
+  EXPECT_EQ(panel.stagedConfig().txPowerDbm, 22);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -308,6 +308,7 @@ public:
     return true;
   }
   int8_t txPowerMax() const override { return the_mesh.uiTxPowerMax(); }
+  const mishmesh::TxPaTable* txPaTable() const override;
   void setRadioConfig(const mishmesh::RadioConfig& c) override {
     NodePrefs* p = the_mesh.getNodePrefs();
     if (!p) return;

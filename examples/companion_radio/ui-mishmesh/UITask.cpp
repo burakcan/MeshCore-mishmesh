@@ -27,6 +27,18 @@
 
 // (ExtraFsMsgBackend replaces the old _msgIoBuf snapshot approach)
 
+#ifdef MISHMESH_TX_PA_OUT_DDBM
+static const int16_t TX_PA_OUT_DDBM[] = MISHMESH_TX_PA_OUT_DDBM;
+static const mishmesh::TxPaTable TX_PA_TABLE = {
+  MISHMESH_TX_PA_FIRST_SETTING,
+  (uint8_t)(sizeof(TX_PA_OUT_DDBM) / sizeof(TX_PA_OUT_DDBM[0])),
+  TX_PA_OUT_DDBM,
+};
+const mishmesh::TxPaTable* UITask::txPaTable() const { return &TX_PA_TABLE; }
+#else
+const mishmesh::TxPaTable* UITask::txPaTable() const { return nullptr; }
+#endif
+
 // onboarding finished: hand off to the home screen.
 static void onboardingDone(void* ctx) {
   UITask* self = (UITask*)ctx;

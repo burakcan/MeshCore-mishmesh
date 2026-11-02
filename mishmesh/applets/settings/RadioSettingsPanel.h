@@ -33,6 +33,7 @@ public:
 private:
   struct Model : ListModel {
     const RadioConfig* cfg = nullptr;
+    const AppServices* app = nullptr;
     mutable char vbuf[24];
     enum Row : int { Preset, Freq, Bw, Sf, Cr, Tx, Repeater, ROW_COUNT };
     int count() const override { return ROW_COUNT; }

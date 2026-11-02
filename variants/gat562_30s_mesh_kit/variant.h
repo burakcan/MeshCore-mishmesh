@@ -169,6 +169,15 @@ extern "C"
 	static const uint8_t MISO = PIN_SPI_MISO;
 	static const uint8_t SCK = PIN_SPI_SCK;
 
+// [mishmesh] Display only: vendor-measured output of the onboard PA at 869 MHz
+// for SX1262 settings 0..22, in tenths of a dBm. The PA saturates at 30 dBm from
+// setting 15 up. Source: shop.mtoolstec.com
+// gat562-30s-tx-power-settings-869mhz-output-reference.html
+#define MISHMESH_TX_PA_FIRST_SETTING 0
+#define MISHMESH_TX_PA_OUT_DDBM { 136, 162, 184, 200, 214, 226, 238, 248, 258, 268, 274, 282, \
+                                  288, 294, 298, 300, 300, 300, 300, 300, 300, 300, 300 }
+// [/mishmesh]
+
 // LoRa radio module pins for RAK4631
 
 #define  SX126X_POWER_EN (37)

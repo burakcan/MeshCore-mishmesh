@@ -59,6 +59,15 @@ struct RadioConfig {
   bool    repeater;     // off-grid repeat mode (client_repeat); applied with the rest
 };
 
+// Measured output of a board with an external PA after the LoRa chip: deciDbm[i]
+// is the antenna-port power at chip setting firstSetting + i. Settings outside
+// the table have no measurement.
+struct TxPaTable {
+  int8_t         firstSetting;
+  uint8_t        count;
+  const int16_t* deciDbm;
+};
+
 // Live app/device state applets read. Implemented by the adapter and queried on
 // demand, since battery/time/connection change over an applet's lifetime. Keeps
 // the framework free of companion-specific types (NodePrefs, RTCClock, board).
@@ -103,6 +112,8 @@ struct AppServices {
   virtual bool   radioConfig(RadioConfig& out) const { (void)out; return false; }
   virtual int8_t txPowerMax() const { return 22; }        // board ceiling; floor is -9
   virtual void   setRadioConfig(const RadioConfig&) {}    // persist + apply live (no reboot)
+  // Non-null on boards whose PA makes the chip setting differ from real output.
+  virtual const TxPaTable* txPaTable() const { return nullptr; }
   // Time settings. Defaults keep the framework companion-agnostic (UTC/24h/auto).
   virtual int16_t tzOffsetMinutes() const { return 0; }
   virtual void    setTzOffsetMinutes(int16_t) {}
