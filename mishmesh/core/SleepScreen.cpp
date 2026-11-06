@@ -1,4 +1,5 @@
 #include <mishmesh/core/SleepScreen.h>
+#include <mishmesh/core/custom_sleep_image.h>
 #include <mishmesh/core/Applet.h>
 #include <mishmesh/core/AppletHost.h>
 #include <mishmesh/core/Canvas.h>
@@ -26,6 +27,13 @@ static int drawLogo(Canvas& c, const AppletContext&) {
             MESHCORE_LOGO, MESHCORE_LOGO_W, MESHCORE_LOGO_H, DisplayDriver::LIGHT);
   c.drawXbm((c.width() - MISHMESH_LOGO_W) / 2, top + MESHCORE_LOGO_H + gap,
             MISHMESH_LOGO, MISHMESH_LOGO_W, MISHMESH_LOGO_H, DisplayDriver::LIGHT);
+  return SLEEP_NEVER;
+}
+
+static int drawCustomImage(Canvas& c, const AppletContext&) {
+  c.drawXbm((c.width() - CUSTOM_SLEEP_IMAGE_W) / 2,
+            (c.height() - CUSTOM_SLEEP_IMAGE_H) / 2,
+            CUSTOM_SLEEP_IMAGE, CUSTOM_SLEEP_IMAGE_W, CUSTOM_SLEEP_IMAGE_H, DisplayDriver::LIGHT);
   return SLEEP_NEVER;
 }
 
@@ -123,6 +131,8 @@ static const SleepScreen SCREENS[SLEEP_SCREEN_COUNT] = {
   // gets the panel turned for it rather than being cropped or fractionally scaled.
   { "Logo",       SleepOrient::Landscape, drawLogo },
   { "Clock",      SleepOrient::Either,    drawClock },
+  // Append to preserve the indices stored in existing device preferences.
+  { "Custom image", SleepOrient::Portrait, drawCustomImage },
 };
 
 // Auto first, then the Orientation setting's own labels - a sleep face that is
@@ -132,7 +142,7 @@ static const char* const ORIENT_LABELS[SLEEP_ORIENT_COUNT] = {
 };
 
 static const char* const LABELS[SLEEP_SCREEN_COUNT] = {
-  SCREENS[0].label, SCREENS[1].label, SCREENS[2].label,
+  SCREENS[0].label, SCREENS[1].label, SCREENS[2].label, SCREENS[3].label,
 };
 
 const SleepScreen* sleepScreenAt(int idx) {

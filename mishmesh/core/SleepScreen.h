@@ -33,7 +33,7 @@ struct SleepScreen {
   int (*draw)(Canvas& c, const AppletContext& ctx);
 };
 
-static const int SLEEP_SCREEN_COUNT = 3;
+static const int SLEEP_SCREEN_COUNT = 4;
 
 // Index 0 is the blank face, which is also the default - so unlike the other
 // display prefs this one needs no index+1 sentinel: a zeroed/legacy prefs byte

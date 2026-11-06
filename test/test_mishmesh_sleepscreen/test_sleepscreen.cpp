@@ -305,6 +305,32 @@ TEST(AppletHostSleepFace, ForcedOrientationKeepsTheFlipTheDeviceIsMountedWith) {
   delete host;
 }
 
+TEST(AppletHostSleepFace, CustomImageTurnsToPortraitOnceAndRestoresTheUiOnWake) {
+  for (int rotation = 0; rotation < 4; rotation++) {
+    FakeDisplayDriver d(122, 250);
+    d.lightBackground = true;
+    FakeApp app;
+    AppletContext ctx = ctxFor(app);
+    AppletHost* host = portraitHost(d, ctx, rotation);
+    StubApplet root;
+    host->setRoot(&root);
+    host->setSleepScreen(3);
+
+    uint32_t now = 1000;
+    sleepHost(*host, now);
+    EXPECT_EQ((rotation & 2) | 1, d.rotation);
+    EXPECT_EQ(1, d.xbms);
+    EXPECT_EQ(themedColor(DisplayDriver::LIGHT), d.lastXbmColor);
+    now += 60000;
+    host->loop(now);
+    EXPECT_EQ(1, host->sleepPaintsForTest());
+
+    host->wakeDisplay();
+    EXPECT_EQ(rotation, d.rotation);
+    delete host;
+  }
+}
+
 TEST(AppletHostSleepFace, EitherFaceFollowsTheScreenOnAutoAndObeysAChoice) {
   FakeDisplayDriver d(122, 250);
   FakeApp app;
@@ -440,6 +466,9 @@ TEST(DisplaySettings, SleepScreenRowOnlyOnPanelsThatCanHoldAFace) {
     if (__builtin_strcmp(displaySettings().rowLabelForTest(i), "Sleep screen") == 0) row = i;
   ASSERT_NE(-1, row);
   EXPECT_STREQ("Clock", displaySettings().rowValueForTest(row));
+  app.face = 3;
+  EXPECT_STREQ("Custom image", displaySettings().rowValueForTest(row));
+  EXPECT_STREQ("Custom image", sleepScreenLabels()[3]);
 }
 
 int main(int argc, char** argv) {
