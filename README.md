@@ -110,6 +110,9 @@ export FIRMWARE_VERSION=mishmesh-dev
 sh build.sh build-firmware WioTrackerL1_companion_radio_usb_mishmesh
 ```
 
+For custom e-ink sleep-image setup and conversion instructions, see
+[`docs/custom_sleep_image.md`](./docs/custom_sleep_image.md).
+
 ### Emoji
 
 Emoji use the [EmojiMania](https://idanro.itch.io/emojimania) glyph set - a
