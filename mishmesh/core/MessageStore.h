@@ -65,9 +65,10 @@ public:
   // scan, which runs every few seconds.
   void checkPendingDMs(const ConvoKey* keys, const uint32_t* times,
                        bool* stillPending, int n) const;
-  // Settle outbound DMs left pending by an earlier session as failed; returns
-  // how many were flipped. Call once after begin().
-  int  failStalePendingDMs();
+  // Settle outbound DMs left pending by an earlier session as failed. Call once
+  // after begin(). Costs no flash I/O: it only records where each DM log ended,
+  // and reads report a pending record below that mark as failed.
+  void failStalePendingDMs();
   int  getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const;
 
   void deleteMessage(const ConvoKey& key, int index);
@@ -86,6 +87,10 @@ private:
 
   // Decode a packed record at `r` into `out` (out.text/path point into `r`).
   void decodeRecord(const uint8_t* r, const ConvoKey& key, MsgRecord& out) const;
+  uint32_t staleBytesOf(const ConvoKey& key) const;
+  // `r` holds the record at byte `off` of its log; rewrites its status in the
+  // buffer (not on flash) if it is a stale pending DM.
+  static void settleStale(uint8_t* r, uint32_t off, uint32_t staleBytes);
 
   // Open-chat window: holds the tail records of the active convo that fit WINDOW_BYTES.
   // getMessage() zero-copies from here for recent messages, pages older ones via _recBuf.

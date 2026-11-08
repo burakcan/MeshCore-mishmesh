@@ -97,6 +97,7 @@ void MessageStore::loadWindow(const ConvoKey& key) const {
   _winFirst = totalLive - fitCount;
 
   // Fill _arena: read those tail records in forward order
+  uint32_t stale = staleBytesOf(key);
   uint32_t arenaPos = 0;
   for (int i = fitCount - 1; i >= 0; i--) {
     int ri = (liveHead - 1 - i + MAX_LIVE) % MAX_LIVE;
@@ -104,6 +105,7 @@ void MessageStore::loadWindow(const ConvoKey& key) const {
     uint32_t sz  = liveSz[ri];
     _winOffs[fitCount - 1 - i] = (uint16_t)arenaPos;
     _backend->read(name, off, _arena + arenaPos, sz);
+    settleStale(_arena + arenaPos, off, stale);
     arenaPos += sz;
   }
 
@@ -302,9 +304,12 @@ void MessageStore::rotateIfNeeded(const ConvoKey& key, ConvoSummary& c) {
     pos += sz;
   }
   if (cut == 0 || cut > fileSize) return;
-  _backend->dropFront(name, cut);
+  // A failed rotation (no room for the copy) leaves the log as it was, so the
+  // index must not move either or it drifts away from the file.
+  if (!_backend->dropFront(name, cut)) return;
   c.count = (c.count >= (uint16_t)live) ? c.count - (uint16_t)live : 0;
   c.logBytes = (c.logBytes >= cut) ? c.logBytes - cut : 0;
+  c.staleBytes = (c.staleBytes >= cut) ? c.staleBytes - cut : 0;
   invalidateWindow(key);
 }
 
@@ -525,6 +530,16 @@ int MessageStore::messageCount(const ConvoKey& key) const {
   return ci < 0 ? 0 : (int)_index.rawCount(ci);
 }
 
+uint32_t MessageStore::staleBytesOf(const ConvoKey& key) const {
+  return _index.staleBytes(_index.find(key));
+}
+
+void MessageStore::settleStale(uint8_t* r, uint32_t off, uint32_t staleBytes) {
+  if (off >= staleBytes || codec::recKind(r) != KIND_OUT_DM) return;
+  uint8_t* status = r + codec::REC_HDR + codec::recTextLen(r);
+  if (*status == ST_PENDING) *status = ST_FAILED;
+}
+
 void MessageStore::decodeRecord(const uint8_t* r, const ConvoKey& key, MsgRecord& out) const {
   out.key  = key; out.kind = codec::recKind(r);
   out.senderTime = codec::rd32(r + 8); out.localTime = codec::rd32(r + 12);
@@ -548,6 +563,7 @@ void MessageStore::forEachMessage(const ConvoKey& key,
   if (!_backend || !cb) return;
   char name[15]; codec::keyToName(key, name);
   uint32_t fileSize = _backend->size(name);
+  uint32_t stale = staleBytesOf(key);
   uint32_t pos = 0;
   int idx = 0;
   MsgRecord out;
@@ -560,6 +576,7 @@ void MessageStore::forEachMessage(const ConvoKey& key,
     if (!codec::recDead(_recBuf)) {
       ConvoKey k; codec::rdKey(_recBuf, k);
       if (k.equals(key)) {
+        settleStale(_recBuf, pos, stale);
         decodeRecord(_recBuf, key, out);            // out.text points into _recBuf
         cb(ctx, idx, out);                          // cb must consume before we read again
         idx++;
@@ -587,6 +604,7 @@ bool MessageStore::getMessage(const ConvoKey& key, int index, MsgRecord& out) co
   // Page: stream to the index-th live record
   char name[15]; codec::keyToName(key, name);
   uint32_t fileSize = _backend->size(name);
+  uint32_t stale = staleBytesOf(key);
   uint32_t pos = 0;
   int n = 0;
   while (pos < fileSize) {
@@ -599,6 +617,7 @@ bool MessageStore::getMessage(const ConvoKey& key, int index, MsgRecord& out) co
       ConvoKey k; codec::rdKey(_recBuf, k);
       if (k.equals(key)) {
         if (n == index) {
+          settleStale(_recBuf, pos, stale);
           decodeRecord(_recBuf, key, out);
           return true;
         }
@@ -672,7 +691,7 @@ int MessageStore::pendingDMCount() const {
       if (pos + sz > fileSize) break;
       if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
         const uint8_t* trailer = _recBuf + codec::REC_HDR + codec::recTextLen(_recBuf);
-        if (trailer[0] == ST_PENDING) total++;
+        if (trailer[0] == ST_PENDING && pos >= cs.staleBytes) total++;
       }
       pos += sz;
     }
@@ -696,7 +715,7 @@ bool MessageStore::getPendingDM(int index, ConvoKey& outKey, uint32_t& outSender
       if (pos + sz > fileSize) break;
       if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
         const uint8_t* trailer = _recBuf + codec::REC_HDR + codec::recTextLen(_recBuf);
-        if (trailer[0] == ST_PENDING) {
+        if (trailer[0] == ST_PENDING && pos >= cs.staleBytes) {
           if (n == index) {
             codec::rdKey(_recBuf, outKey); outSenderTime = codec::rd32(_recBuf + 8); return true;
           }
@@ -725,6 +744,7 @@ void MessageStore::checkPendingDMs(const ConvoKey* keys, const uint32_t* times,
     if (walked) continue;                        // this log was covered by an earlier entry
     char name[15]; codec::keyToName(keys[i], name);
     uint32_t fileSize = _backend->size(name);
+    uint32_t stale = staleBytesOf(keys[i]);
     uint32_t pos = 0;
     while (pos < fileSize) {
       uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
@@ -734,7 +754,7 @@ void MessageStore::checkPendingDMs(const ConvoKey* keys, const uint32_t* times,
       if (pos + sz > fileSize) break;
       if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
         const uint8_t* trailer = _recBuf + codec::REC_HDR + codec::recTextLen(_recBuf);
-        if (trailer[0] == ST_PENDING) {
+        if (trailer[0] == ST_PENDING && pos >= stale) {
           ConvoKey rk; codec::rdKey(_recBuf, rk);
           uint32_t st = codec::rd32(_recBuf + 8);
           for (int j = i; j < n; j++)
@@ -746,42 +766,12 @@ void MessageStore::checkPendingDMs(const ConvoKey* keys, const uint32_t* times,
   }
 }
 
-// Boot-time reconciliation: an outbound DM left ST_PENDING by a previous session
-// can never resolve - the ACK match table (_tracked, and MyMesh's expected-ack
-// ring) lives in RAM only, so a late ACK has nothing to match against. Settle
-// them as failed once at startup, otherwise they sit "sending" forever and any
-// future pending sweep would treat them as live traffic.
-int MessageStore::failStalePendingDMs() {
-  if (!_backend) return 0;
-  int changed = 0, count = _index.count();
-  for (int ci = 0; ci < count; ci++) {
-    ConvoSummary cs; if (!_index.get(ci, cs)) continue;
-    if (cs.key.type != 0) continue;
-    char name[15]; codec::keyToName(cs.key, name);
-    uint32_t fileSize = _backend->size(name);
-    uint32_t pos = 0;
-    bool touched = false;
-    while (pos < fileSize) {
-      uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
-      if (got < (uint32_t)codec::REC_HDR) break;
-      uint32_t sz = (uint32_t)codec::recSize(_recBuf);
-      if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
-      if (pos + sz > fileSize) break;
-      if (!codec::recDead(_recBuf) && codec::recKind(_recBuf) == KIND_OUT_DM) {
-        uint16_t textLen = codec::recTextLen(_recBuf);
-        const uint8_t* trailerInBuf = _recBuf + codec::REC_HDR + textLen;
-        if (trailerInBuf[0] == ST_PENDING) {
-          uint8_t patch[1] = { ST_FAILED };
-          _backend->patch(name, pos + (uint32_t)codec::REC_HDR + textLen, patch, 1);
-          changed++; touched = true;
-        }
-      }
-      pos += sz;
-    }
-    if (touched) invalidateWindow(cs.key);
-  }
-  if (changed) _seq++;
-  return changed;
+// An outbound DM left pending by a previous session can never resolve: the ACK
+// tables are RAM only. The log is copy-on-write, so its status byte is not
+// patched; readers settle any pending record below the mark set here.
+void MessageStore::failStalePendingDMs() {
+  _index.markDirectLogsStale();
+  _windowValid = false;
 }
 
 int MessageStore::getDMText(const ConvoKey& key, uint32_t senderTime, char* buf, int cap) const {
@@ -821,10 +811,12 @@ void MessageStore::deleteMessage(const ConvoKey& key, int index) {
   char name[15]; codec::keyToName(key, name);
   uint32_t offOut = 0, lenOut = 0;
   if (!findRecordOffset(name, index, offOut, lenOut)) return;
-  _backend->removeRange(name, offOut, lenOut);
+  // Same rule as rotation: a failed removal leaves the log whole, so the index stays put.
+  if (!_backend->removeRange(name, offOut, lenOut)) return;
   ConvoSummary& c = _index.ensure(key);
   if (c.count > 0) c.count--;
   c.logBytes = (c.logBytes >= lenOut) ? c.logBytes - lenOut : 0;
+  if (offOut < c.staleBytes) c.staleBytes = (c.staleBytes >= lenOut) ? c.staleBytes - lenOut : 0;
   invalidateWindow(key);
   _seq++;
 }
@@ -839,6 +831,7 @@ void MessageStore::clearConvo(const ConvoKey& key) {
   invalidateWindow(key);
   ConvoSummary& c = _index.ensure(key);
   c.count = 0; c.logBytes = 0; c.unread = 0; c.notifyUnread = 0;
+  c.staleBytes = 0;
   _seq++;
 }
 

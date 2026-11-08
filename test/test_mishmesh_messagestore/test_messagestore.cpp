@@ -253,13 +253,12 @@ TEST_F(MSFix, FailStalePendingDMsSettlesPreviousSession) {
   s.markDelivered(0x1112, 42);
   s.appendInbound(dm("CAROL!"), "in", 2, 300, 300, 0, nullptr, 0);
   s.appendOutboundChannel(channelKey(4), "d", 1, 400, 400);          // channel: untouched
-  EXPECT_EQ(2, s.failStalePendingDMs());
+  s.failStalePendingDMs();
   EXPECT_EQ(0, s.pendingDMCount());
   MsgRecord r;
   ASSERT_TRUE(s.getMessage(dm("ALICE!"), 0, r)); EXPECT_EQ(ST_FAILED, r.status);
   ASSERT_TRUE(s.getMessage(dm("ALICE!"), 1, r)); EXPECT_EQ(ST_DELIVERED, r.status);
   ASSERT_TRUE(s.getMessage(dm("BOBBBB"), 0, r)); EXPECT_EQ(ST_FAILED, r.status);
-  EXPECT_EQ(0, s.failStalePendingDMs());                             // nothing left to settle
 }
 
 TEST_F(MSFix, GetDMTextReturnsBody) {
@@ -706,6 +705,182 @@ TEST(IndexReconcile, CountAheadOfLogIsClampedDown) {
   EXPECT_EQ(0, s.messageCount(chan(0)));
   MsgRecord r;
   EXPECT_FALSE(s.getMessage(chan(0), 0, r));
+}
+
+// Boot path (issue #38): the log is copy-on-write on flash, so every status byte
+// rewritten at startup costs a rewrite of the rest of its log. Counts what the
+// store asks the backend to mutate.
+struct CountingBackend : FakeMsgLogBackend {
+  int writes = 0;
+  bool failDropFront = false;
+  bool append(const char* n, const uint8_t* r, uint32_t l) override { writes++; return FakeMsgLogBackend::append(n, r, l); }
+  bool rewrite(const char* n, const uint8_t* d, uint32_t l) override { writes++; return FakeMsgLogBackend::rewrite(n, d, l); }
+  bool remove(const char* n) override { writes++; return FakeMsgLogBackend::remove(n); }
+  bool patch(const char* n, uint32_t o, const uint8_t* d, uint32_t l) override { writes++; return FakeMsgLogBackend::patch(n, o, d, l); }
+  bool dropFront(const char* n, uint32_t b) override {
+    writes++;
+    return failDropFront ? false : FakeMsgLogBackend::dropFront(n, b);
+  }
+  bool removeRange(const char* n, uint32_t o, uint32_t l) override { writes++; return FakeMsgLogBackend::removeRange(n, o, l); }
+  bool truncate(const char* n, uint32_t l) override { writes++; return FakeMsgLogBackend::truncate(n, l); }
+  bool saveIndex(const uint8_t* d, uint32_t l) override { writes++; return FakeMsgLogBackend::saveIndex(d, l); }
+};
+
+static ConvoKey dmN(int i) { ConvoKey k{}; k.type = 0; k.id[0] = (uint8_t)(0xA0 + i); return k; }
+
+TEST(BootSettle, PendingBacklogCostsNoFlashWrites) {
+  CountingBackend backend;
+  {
+    MessageStore s; s.begin(&backend);
+    uint32_t st = 1000;
+    char body[151]; memset(body, 'x', 150); body[150] = 0;   // 40 of these outgrow the window
+    for (int c = 0; c < 8; c++)
+      for (int m = 0; m < 40; m++) { s.appendOutboundDM(dmN(c), body, 150, st, st, 0x5000 + st, 0); st++; }
+    s.saveIndex();
+    EXPECT_EQ(320, s.pendingDMCount());
+  }
+  backend.writes = 0;
+  MessageStore s2; s2.begin(&backend);
+  s2.failStalePendingDMs();
+  EXPECT_EQ(0, backend.writes);
+  EXPECT_EQ(0, s2.pendingDMCount());
+  ConvoKey k; uint32_t st = 0;
+  EXPECT_FALSE(s2.getPendingDM(0, k, st));
+  MsgRecord r;
+  ASSERT_TRUE(s2.getMessage(dmN(3), 0, r));  EXPECT_EQ(ST_FAILED, r.status);   // paged
+  ASSERT_TRUE(s2.getMessage(dmN(3), 39, r)); EXPECT_EQ(ST_FAILED, r.status);   // windowed
+}
+
+TEST(BootSettle, ThisSessionSendsStayLive) {
+  CountingBackend backend;
+  { MessageStore s; s.begin(&backend);
+    s.appendOutboundDM(dm("ALICE!"), "old", 3, 100, 100, 0x1111, 0); s.saveIndex(); }
+  MessageStore s2; s2.begin(&backend);
+  s2.failStalePendingDMs();
+  s2.appendOutboundDM(dm("ALICE!"), "new", 3, 200, 200, 0x2222, 0);
+  EXPECT_EQ(1, s2.pendingDMCount());
+  ConvoKey keys[2] = { dm("ALICE!"), dm("ALICE!") };
+  uint32_t times[2] = { 100, 200 };
+  bool pending[2];
+  s2.checkPendingDMs(keys, times, pending, 2);
+  EXPECT_FALSE(pending[0]);
+  EXPECT_TRUE(pending[1]);
+  MsgRecord r;
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), 0, r)); EXPECT_EQ(ST_FAILED, r.status);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), 1, r)); EXPECT_EQ(ST_PENDING, r.status);
+  s2.markDelivered(0x2222, 9);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), 1, r)); EXPECT_EQ(ST_DELIVERED, r.status);
+}
+
+static void collectStatus(void* ctx, int idx, const MsgRecord& rec) {
+  uint8_t* out = (uint8_t*)ctx;
+  out[idx] = rec.status;
+}
+
+// The status byte stays pending on flash, so the settled view has to hold on
+// every later boot too, and through every reader.
+TEST(BootSettle, HoldsAcrossLaterBootsAndReaders) {
+  CountingBackend backend;
+  { MessageStore s; s.begin(&backend);
+    s.appendOutboundDM(dm("ALICE!"), "a", 1, 100, 100, 0x1111, 0);
+    s.appendOutboundDM(dm("ALICE!"), "b", 1, 101, 101, 0x1112, 0);
+    s.markDelivered(0x1112, 5);
+    s.saveIndex(); }
+  for (int boot = 0; boot < 2; boot++) {
+    MessageStore s; s.begin(&backend);
+    s.failStalePendingDMs();
+    uint8_t status[2] = { 0xFF, 0xFF };
+    s.forEachMessage(dm("ALICE!"), collectStatus, status);
+    EXPECT_EQ(ST_FAILED, status[0]);
+    EXPECT_EQ(ST_DELIVERED, status[1]);
+    EXPECT_EQ(0, s.pendingDMCount());
+  }
+}
+
+TEST(BootSettle, MarkFollowsRotationAndDelete) {
+  CountingBackend backend;
+  { MessageStore s; s.begin(&backend);
+    for (int i = 0; i < PER_CHAT_CAP - 1; i++)
+      s.appendOutboundDM(dm("ALICE!"), "old", 3, 100 + i, 100 + i, 0x1000 + i, 0);
+    s.saveIndex(); }
+  MessageStore s2; s2.begin(&backend);
+  s2.failStalePendingDMs();
+  // Two live sends: the second one arrives at the cap and rotates the log.
+  s2.appendOutboundDM(dm("ALICE!"), "new1", 4, 900, 900, 0x9000, 0);
+  s2.appendOutboundDM(dm("ALICE!"), "new2", 4, 901, 901, 0x9001, 0);
+  int n = s2.messageCount(dm("ALICE!"));
+  ASSERT_LT(n, PER_CHAT_CAP);                    // rotation happened
+  EXPECT_EQ(2, s2.pendingDMCount());
+  MsgRecord r;
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), n - 3, r)); EXPECT_EQ(ST_FAILED, r.status);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), n - 2, r)); EXPECT_EQ(ST_PENDING, r.status);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), n - 1, r)); EXPECT_EQ(ST_PENDING, r.status);
+  s2.deleteMessage(dm("ALICE!"), 0);             // a stale one goes: the mark shifts with it
+  EXPECT_EQ(2, s2.pendingDMCount());
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), n - 4, r)); EXPECT_EQ(ST_FAILED, r.status);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), n - 3, r)); EXPECT_EQ(ST_PENDING, r.status);
+  s2.deleteMessage(dm("ALICE!"), n - 2);         // a live one goes: the mark stays where it is
+  EXPECT_EQ(1, s2.pendingDMCount());
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), n - 4, r)); EXPECT_EQ(ST_FAILED, r.status);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), n - 3, r)); EXPECT_EQ(ST_PENDING, r.status);
+
+  s2.clearConvo(dm("ALICE!"));
+  s2.appendOutboundDM(dm("ALICE!"), "fresh", 5, 950, 950, 0x9500, 0);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), 0, r)); EXPECT_EQ(ST_PENDING, r.status);
+  s2.deleteConvo(dm("ALICE!"));
+  s2.appendOutboundDM(dm("ALICE!"), "again", 5, 960, 960, 0x9600, 0);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), 0, r)); EXPECT_EQ(ST_PENDING, r.status);
+  EXPECT_EQ(1, s2.pendingDMCount());
+}
+
+// Sent after the last index save, then a reset: reconcile adopts the record and
+// it still belongs to the previous session.
+TEST(BootSettle, RecordPastSavedIndexIsStale) {
+  CountingBackend backend;
+  { MessageStore s; s.begin(&backend);
+    s.appendOutboundDM(dm("ALICE!"), "saved", 5, 100, 100, 0x1111, 0);
+    s.saveIndex();
+    s.appendOutboundDM(dm("ALICE!"), "late", 4, 101, 101, 0x1112, 0); }
+  MessageStore s2; s2.begin(&backend);
+  s2.failStalePendingDMs();
+  ASSERT_EQ(2, s2.messageCount(dm("ALICE!")));
+  MsgRecord r;
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), 0, r)); EXPECT_EQ(ST_FAILED, r.status);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), 1, r)); EXPECT_EQ(ST_FAILED, r.status);
+  s2.appendOutboundDM(dm("ALICE!"), "new", 3, 200, 200, 0x2222, 0);
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), 2, r)); EXPECT_EQ(ST_PENDING, r.status);
+  EXPECT_EQ(1, s2.pendingDMCount());
+}
+
+TEST(BootSettle, RebuiltIndexMarksLogsStale) {
+  CountingBackend backend;
+  { MessageStore s; s.begin(&backend);
+    s.appendOutboundDM(dm("ALICE!"), "old", 3, 100, 100, 0x1111, 0); }
+  ASSERT_TRUE(backend.index.empty());            // never saved: boot rebuilds from the logs
+  MessageStore s2; s2.begin(&backend);
+  s2.failStalePendingDMs();
+  MsgRecord r;
+  ASSERT_TRUE(s2.getMessage(dm("ALICE!"), 0, r)); EXPECT_EQ(ST_FAILED, r.status);
+  EXPECT_EQ(0, s2.pendingDMCount());
+}
+
+// A full filesystem cannot make room for the rotation copy. The log is then
+// unchanged, and the index has to keep describing it.
+TEST(BootSettle, FailedRotationLeavesIndexMatchingLog) {
+  CountingBackend backend;
+  MessageStore s; s.begin(&backend);
+  for (int i = 0; i < PER_CHAT_CAP; i++)
+    s.appendInbound(dm("ALICE!"), "m", 1, 100 + i, 100 + i, 0, nullptr, 0);
+  backend.failDropFront = true;
+  s.appendInbound(dm("ALICE!"), "over", 4, 500, 500, 0, nullptr, 0);
+  EXPECT_EQ(PER_CHAT_CAP + 1, s.messageCount(dm("ALICE!")));
+  MsgRecord r;
+  ASSERT_TRUE(s.getMessage(dm("ALICE!"), PER_CHAT_CAP, r));
+  EXPECT_EQ(0, memcmp(r.text, "over", 4));
+  s.saveIndex();
+  MessageStore s2; s2.begin(&backend);            // reconcile finds nothing to repair
+  EXPECT_EQ(PER_CHAT_CAP + 1, s2.messageCount(dm("ALICE!")));
+  EXPECT_EQ(s.totalUnread(), s2.totalUnread());
 }
 
 int main(int argc, char** argv) {

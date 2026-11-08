@@ -66,6 +66,9 @@ struct ConvoSummary {
   uint16_t count;
   uint32_t logBytes;
   char     preview[PREVIEW_LEN];
+  // RAM only, never serialized: length of the log prefix an earlier session
+  // wrote. An outbound DM still pending inside it reads as failed.
+  uint32_t staleBytes;
 };
 
 struct RepeatRec {

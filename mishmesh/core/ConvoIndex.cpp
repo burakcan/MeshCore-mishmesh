@@ -30,6 +30,7 @@ ConvoSummary& ConvoIndex::ensure(const ConvoKey& key) {
   s.count        = 0;
   s.logBytes     = 0;
   s.preview[0]   = 0;
+  s.staleBytes   = 0;
   return s;
 }
 
@@ -117,6 +118,16 @@ uint16_t ConvoIndex::rawCount(int ci) const {
 uint32_t ConvoIndex::logBytes(int ci) const {
   if (ci < 0 || ci >= _count) return 0;
   return _convos[ci].logBytes;
+}
+
+uint32_t ConvoIndex::staleBytes(int ci) const {
+  if (ci < 0 || ci >= _count) return 0;
+  return _convos[ci].staleBytes;
+}
+
+void ConvoIndex::markDirectLogsStale() {
+  for (int i = 0; i < _count; i++)
+    if (_convos[i].key.type == 0) _convos[i].staleBytes = _convos[i].logBytes;
 }
 
 uint16_t ConvoIndex::totalUnread() const {

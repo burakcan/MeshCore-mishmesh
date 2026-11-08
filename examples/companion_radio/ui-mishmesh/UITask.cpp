@@ -216,7 +216,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   }
   _msgStore.begin(&_backend);
   // A DM left pending by the previous session can never be ACK-matched (the ack
-  // tables are RAM-only), so settle it now instead of showing "sending" forever.
+  // tables are RAM-only), so it reads as failed from here on instead of showing
+  // "sending" forever. No flash work: boot must not scale with the backlog.
   _msgStore.failStalePendingDMs();
   _msgSvc.store = &_msgStore;
   _msgSvc.retry = &_retry;            // expose live retry counts to the thread view
