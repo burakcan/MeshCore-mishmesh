@@ -5,6 +5,10 @@
 
 namespace mishmesh {
 
+// freeBytes() when the backend cannot tell. Reads as plenty, so nothing is
+// evicted or emptied on a guess.
+static const uint32_t MSG_FREE_UNKNOWN = 0xFFFFFFFFu;
+
 // One log file's identity for index rebuild / eviction.
 struct MsgLogInfo {
   char     name[15];   // "<14 hex>" NUL-terminated (raw ConvoKey bytes as hex)
@@ -42,7 +46,7 @@ struct MsgLogBackend {
   virtual uint32_t loadIndex(uint8_t* dst, uint32_t cap) const = 0;        // bytes read, 0 if absent
 
   // ---- capacity (backstop) ----
-  virtual uint32_t freeBytes() const = 0;                                  // remaining space
+  virtual uint32_t freeBytes() const = 0;             // remaining space, or MSG_FREE_UNKNOWN
 };
 
 } // namespace mishmesh

@@ -45,11 +45,16 @@ bool ConvoIndex::evictLRU(ConvoKey& victimOut) {
   return true;
 }
 
-ConvoKey ConvoIndex::lruKey() const {
-  int lru = 0;
-  for (int i = 1; i < _count; i++)
-    if (_convos[i].lastTime < _convos[lru].lastTime) lru = i;
-  return _convos[lru].key;
+bool ConvoIndex::lruWithLog(const ConvoKey* skip, ConvoKey& out) const {
+  int lru = -1;
+  for (int i = 0; i < _count; i++) {
+    if (_convos[i].logBytes == 0) continue;
+    if (skip && _convos[i].key.equals(*skip)) continue;
+    if (lru < 0 || _convos[i].lastTime < _convos[lru].lastTime) lru = i;
+  }
+  if (lru < 0) return false;
+  out = _convos[lru].key;
+  return true;
 }
 
 bool ConvoIndex::get(int rankIndex, ConvoSummary& out) const {

@@ -16,6 +16,7 @@ void MessageStore::reset() {
   memset(_tracked, 0, sizeof(_tracked));
   _windowValid = false;
   _winCount = _winFirst = _winTotal = 0;
+  _space = MsgSpacePolicy{ 0, 0, 0, 0 };
 }
 
 void MessageStore::begin(MsgLogBackend* b) {
@@ -32,6 +33,15 @@ void MessageStore::begin(MsgLogBackend* b) {
     MM_PLOG("begin: loadIndex=%lu deserialize=%d", (unsigned long)n, ok ? 1 : 0);
     if (!ok) { rebuildIndex(); MM_PLOG("begin: REBUILT from logs"); }
     else reconcileIndex();
+    // Logs written before the policy existed can have filled the partition.
+    // Whole files only, and a bounded number: boot must not scale with the
+    // backlog. The headroom is not enforced here, an append can restore that
+    // by trimming where this could only delete a chat.
+    for (int i = 0; i < BOOT_EVICT_MAX; i++) {
+      if (_index.totalLogBytes() <= MSG_FLASH_BUDGET && b->freeBytes() >= _space.reserve) break;
+      if (!evictOldest()) break;
+      _seq++;
+    }
     MM_PLOG("begin: convos=%d totalUnread=%u totalNotify=%u",
             _index.count(), (unsigned)totalUnread(), (unsigned)totalNotifyUnread());
   }
@@ -257,16 +267,67 @@ void MessageStore::saveIndex() {
 
 // ---- internal helpers ----
 
+bool MessageStore::mustEvict(uint32_t need) const {
+  uint32_t logs = _index.totalLogBytes() + need;
+  if (logs > MSG_FLASH_BUDGET) return true;
+  uint32_t free = _backend->freeBytes();
+  if (free < need + _space.reserve) return true;
+  return logs > _space.keep && free < need + _space.reserve + _space.headroom;
+}
+
+void MessageStore::evictChat(const ConvoKey& victim) {
+  char vn[15]; codec::keyToName(victim, vn);
+  _backend->remove(vn);
+  invalidateWindow(victim);
+  _index.dropByKey(victim);
+}
+
+bool MessageStore::evictOldest() {
+  ConvoKey v;
+  if (!_index.lruWithLog(nullptr, v)) return false;
+  evictChat(v);
+  return true;
+}
+
+void MessageStore::makeRoom(uint32_t bytes) {
+  if (!_backend) return;
+  while (_backend->freeBytes() < bytes + _space.reserve) {
+    if (!evictOldest()) break;
+    _seq++;
+  }
+}
+
 bool MessageStore::ensureSpace(const ConvoKey& key, uint32_t need) {
   if (!_backend) return true;
-  while (_index.totalLogBytes() + need > MSG_FLASH_BUDGET || _backend->freeBytes() < need) {
-    if (_index.count() == 0) break;
-    if (_index.lruKey().equals(key)) return false;  // can't evict the append target; drop message
-    ConvoKey v; _index.evictLRU(v);                  // guaranteed != key
-    char vn[15]; codec::keyToName(v, vn);
-    _backend->remove(vn);
-    if (_windowValid && _windowKey.equals(v)) _windowValid = false;
+  while (mustEvict(need)) {
+    uint32_t own = _index.logBytes(_index.find(key));
+    ConvoKey v;
+    bool other = _index.lruWithLog(&key, v);
+    // Over the global budget the least-recent other chat goes. Short of
+    // partition space this chat trims itself instead when its log is at least
+    // as large as that chat's, so a busy channel does not push out a quiet DM.
+    bool overBudget = _index.totalLogBytes() + need > MSG_FLASH_BUDGET;
+    bool trimOwn = own != 0 &&
+                   (!other || (!overBudget && own >= _index.logBytes(_index.find(v))));
+    if (trimOwn && dropOldest(key, ROTATE_DROP) == DROP_OK) continue;
+    if (other) { evictChat(v); continue; }
+    if (own == 0) return false;   // nothing left to give up
+    // The trim could not be done. While the reserve is intact the append goes
+    // ahead and the trim is left to a later one.
+    if (!overBudget && _backend->freeBytes() >= need + _space.reserve) return true;
+    // Otherwise empty the log: the message arriving now is worth more than the
+    // ones it replaces.
+    if (!emptyLog(key)) return false;
   }
+  return true;
+}
+
+bool MessageStore::emptyLog(const ConvoKey& key) {
+  char name[15]; codec::keyToName(key, name);
+  if (!_backend->dropFront(name, _backend->size(name))) return false;
+  ConvoSummary& c = _index.ensure(key);
+  c.count = 0; c.logBytes = 0; c.staleBytes = 0; c.unread = 0; c.notifyUnread = 0;
+  invalidateWindow(key);
   return true;
 }
 
@@ -281,36 +342,60 @@ ConvoSummary& MessageStore::ensureSlot(const ConvoKey& key) {
   return _index.ensure(key);
 }
 
-void MessageStore::rotateIfNeeded(const ConvoKey& key, ConvoSummary& c) {
-  if (!_backend || c.count < PER_CHAT_CAP) return;
+MessageStore::DropResult MessageStore::dropOldest(const ConvoKey& key, int n) {
   char name[15]; codec::keyToName(key, name);
-  // Batch rotation: drop ROTATE_DROP live records in one dropFront, amortising
-  // the cost of a full tail-rewrite over multiple appends (vs. one per message).
-  static const int ROTATE_DROP = 16;
   uint32_t fileSize = _backend->size(name);
   uint32_t cut = 0;
   uint32_t pos = 0;
   int live = 0;
-  while (pos < fileSize) {
+  while (pos < fileSize && live < n) {
     uint32_t got = _backend->read(name, pos, _recBuf, (uint32_t)codec::MAX_REC);
     if (got < (uint32_t)codec::REC_HDR) break;
     uint32_t sz = (uint32_t)codec::recSize(_recBuf);
     if (sz == 0 || sz > (uint32_t)codec::MAX_REC) break;
     if (pos + sz > fileSize) break;
-    if (!codec::recDead(_recBuf)) {
-      live++;
-      if (live == ROTATE_DROP) { cut = pos + sz; break; }
-    }
+    if (!codec::recDead(_recBuf)) live++;
     pos += sz;
+    cut = pos;
   }
-  if (cut == 0 || cut > fileSize) return;
-  // A failed rotation (no room for the copy) leaves the log as it was, so the
-  // index must not move either or it drifts away from the file.
-  if (!_backend->dropFront(name, cut)) return;
+  if (cut == 0) return DROP_FAILED;
+  // The backend drops the front by copying the tail to a new file. Running that
+  // out of space wears the flash for nothing, and on LittleFS v1 leaves the
+  // allocator refusing new files until the next write, so look first.
+  uint32_t tail = fileSize - cut;
+  if (_space.blockSize && tail &&
+      _backend->freeBytes() < lfsFootprint(tail, _space.blockSize) + 2 * _space.blockSize)
+    return DROP_NO_ROOM;
+  // A failed drop leaves the log as it was, so the index must not move either
+  // or it drifts away from the file.
+  if (!_backend->dropFront(name, cut)) return DROP_FAILED;
+  ConvoSummary& c = _index.ensure(key);
   c.count = (c.count >= (uint16_t)live) ? c.count - (uint16_t)live : 0;
   c.logBytes = (c.logBytes >= cut) ? c.logBytes - cut : 0;
   c.staleBytes = (c.staleBytes >= cut) ? c.staleBytes - cut : 0;
+  if (c.unread > c.count) c.unread = c.count;
+  if (c.notifyUnread > c.unread) c.notifyUnread = c.unread;
   invalidateWindow(key);
+  return DROP_OK;
+}
+
+// Batch rotation: one dropFront rewrites the whole tail, so drop ROTATE_DROP
+// records at a time and spread that cost over as many appends.
+void MessageStore::rotateIfNeeded(const ConvoKey& key) {
+  if (!_backend || _index.rawCount(_index.find(key)) < PER_CHAT_CAP) return;
+  DropResult r = dropOldest(key, ROTATE_DROP);
+  // Without a space policy, or with free space unknown, a failed rotation
+  // leaves the log one record longer and is tried again on the next append.
+  if (r == DROP_OK || !_space.blockSize || _backend->freeBytes() == MSG_FREE_UNKNOWN) return;
+  // On a managed partition the log must not grow past the cap: the thread view
+  // counts PER_CHAT_CAP messages from the oldest, so the newest would not show.
+  // Other chats give up the room for the copy, least recent first.
+  ConvoKey v;
+  while (r == DROP_NO_ROOM && _index.lruWithLog(&key, v)) {
+    evictChat(v);
+    r = dropOldest(key, ROTATE_DROP);
+  }
+  if (r != DROP_OK) emptyLog(key);
 }
 
 // ---- capture ----
@@ -327,8 +412,9 @@ void MessageStore::appendInbound(const ConvoKey& key, const char* text, uint16_t
     if (!ensureSpace(key, recLen)) return;
   }
 
-  ConvoSummary& c = ensureSlot(key);
-  if (_backend) rotateIfNeeded(key, c);
+  ensureSlot(key);
+  if (_backend) rotateIfNeeded(key);
+  ConvoSummary& c = _index.ensure(key);
 
   if (_backend) {
     uint8_t trailer[2 + MAX_PATH_BYTES];
@@ -362,8 +448,9 @@ void MessageStore::appendOutboundDM(const ConvoKey& key, const char* text, uint1
     if (!ensureSpace(key, recLen)) return;
   }
 
-  ConvoSummary& c = ensureSlot(key);
-  if (_backend) rotateIfNeeded(key, c);
+  ensureSlot(key);
+  if (_backend) rotateIfNeeded(key);
+  ConvoSummary& c = _index.ensure(key);
 
   if (_backend) {
     uint8_t trailer[3] = { ST_PENDING, 0, 0 };
@@ -393,8 +480,9 @@ void MessageStore::appendOutboundChannel(const ConvoKey& key, const char* text, 
     if (!ensureSpace(key, recLen)) return;
   }
 
-  ConvoSummary& c = ensureSlot(key);
-  if (_backend) rotateIfNeeded(key, c);
+  ensureSlot(key);
+  if (_backend) rotateIfNeeded(key);
+  ConvoSummary& c = _index.ensure(key);
 
   if (_backend) {
     uint8_t trailer[2] = { ST_PENDING, 0 };

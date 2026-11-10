@@ -39,6 +39,21 @@ const mishmesh::TxPaTable* UITask::txPaTable() const { return &TX_PA_TABLE; }
 const mishmesh::TxPaTable* UITask::txPaTable() const { return nullptr; }
 #endif
 
+// On-flash record sizes of DataStore::saveContacts / saveChannels.
+static const uint32_t CONTACT_REC_BYTES = 152;
+static const uint32_t CHANNEL_REC_BYTES = 68;
+
+// Size of a file on the filesystem the message logs live on, 0 if absent.
+static uint32_t sharedFileSize(DataStore* ds, const char* path) {
+  File f = ds->openRead(ds->extraFs(), path);
+  if (!f) return 0;
+  uint32_t n = f.size();
+  f.close();
+  return n;
+}
+
+static void contactsSaveHook(void* ctx) { ((UITask*)ctx)->makeRoomForContacts(); }
+
 // onboarding finished: hand off to the home screen.
 static void onboardingDone(void* ctx) {
   UITask* self = (UITask*)ctx;
@@ -212,7 +227,23 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   // wire the flash backend and load persisted index/history.
   {
     DataStore* ds = the_mesh.getStore();
-    if (ds && ds->extraFs()) _backend.begin(*ds->extraFs());
+    if (ds && ds->extraFs()) {
+      _backend.begin(*ds->extraFs());
+      // Contacts, channels, the advert blobs and the /mm prefs live on this
+      // filesystem too. Without QSPI flash all of it is 100 KB, so the store is
+      // told what to leave them; the blob file is the one rewritten in place.
+      mishmesh::SharedFsUse use;
+      use.blockSize        = _backend.blockSize();
+      use.channelsBytes    = sharedFileSize(ds, "/channels2");
+#ifdef MAX_GROUP_CHANNELS
+      use.channelsMaxBytes = MAX_GROUP_CHANNELS * CHANNEL_REC_BYTES;
+#else
+      use.channelsMaxBytes = 0;
+#endif
+      use.rewriteBytes     = sharedFileSize(ds, "/adv_blobs");
+      _msgStore.setSpacePolicy(mishmesh::msgSpacePolicy(use));
+      the_mesh.uiSetContactsSaveHook(contactsSaveHook, this);
+    }
   }
   _msgStore.begin(&_backend);
   // A DM left pending by the previous session can never be ACK-matched (the ack
@@ -1393,6 +1424,17 @@ bool UITask::MsgSvc::channelKeyHex(const mishmesh::ConvoKey& k, char* dst, int c
   if (!the_mesh.getChannel(k.id[0], cd)) return false;
   mesh::Utils::toHex(dst, cd.channel.secret, 16);       // first 16 bytes = the PSK
   return true;
+}
+
+// The contacts file is not reserved for at its full MAX_CONTACTS size (that
+// alone would leave a 100 KB partition no room for messages), so the logs give
+// way each time it is about to grow.
+void UITask::makeRoomForContacts() {
+  DataStore* ds = the_mesh.getStore();
+  uint32_t bs = _backend.blockSize();
+  if (!ds || bs == 0) return;
+  uint32_t next = (uint32_t)the_mesh.getNumContacts() * CONTACT_REC_BYTES;
+  _msgStore.makeRoom(mishmesh::rewriteGrowth(sharedFileSize(ds, "/contacts3"), next, bs));
 }
 
 // --- MishmeshStorage: filesystem key->blob persistence for applets ---

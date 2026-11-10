@@ -7,6 +7,7 @@
 #include "MsgCodec.h"
 #include "ConvoIndex.h"
 #include "MsgLogBackend.h"
+#include "MsgSpacePolicy.h"
 
 namespace mishmesh {
 
@@ -19,6 +20,12 @@ public:
   // Wire up the backend before use. Loads the saved index from the backend;
   // falls back to rebuildIndex() if the index blob is absent or corrupt.
   void begin(MsgLogBackend* b);
+  // What to leave free on a backend shared with other files. Set before begin()
+  // so a store that is already over it is trimmed on the way up.
+  void setSpacePolicy(const MsgSpacePolicy& p) { _space = p; }
+  // Evict whole chats, oldest first, until the backend has `bytes` free on top
+  // of the reserve. For the owner of another file there, before that file grows.
+  void makeRoom(uint32_t bytes);
   // Persist the in-RAM index to the backend's index blob.
   void saveIndex();
 
@@ -130,8 +137,24 @@ private:
   Tracked* openTracked(const ConvoKey& key, uint32_t senderTime, uint8_t kind);
   Tracked* findTracked(const ConvoKey& key, uint32_t senderTime);
 
-  // Evict LRU chat(s) until there's room for `need` bytes; returns false if the only
-  // candidate to evict is `key` itself (hopeless - drop the incoming message).
+  MsgSpacePolicy _space;
+
+  static const int ROTATE_DROP = 16;      // records dropped per rotation
+  static const int BOOT_EVICT_MAX = 8;    // chats begin() may delete; the rest go on later appends
+
+  // True while an append of `need` bytes has to wait for something to be evicted.
+  bool mustEvict(uint32_t need) const;
+  // Delete the least-recently-active chat that has a log. False if there is none.
+  bool evictOldest();
+  void evictChat(const ConvoKey& victim);
+  // Drop the first `n` live records of a log (all of them if it has fewer).
+  // Anything but DROP_OK leaves log and index untouched.
+  enum DropResult { DROP_OK, DROP_NO_ROOM, DROP_FAILED };
+  DropResult dropOldest(const ConvoKey& key, int n);
+  // Truncate a log to nothing, keeping its chat listed. Needs no free space.
+  bool emptyLog(const ConvoKey& key);
+  // Make room for `need` bytes in `key` at the expense of other chats, oldest
+  // first, and of this chat's own oldest messages. False if that is not enough.
   bool ensureSpace(const ConvoKey& key, uint32_t need);
 
   ConvoSummary& ensureSlot(const ConvoKey& key);
@@ -150,7 +173,8 @@ private:
     char     preview[PREVIEW_LEN];
   };
   void scanLog(const char* name, int after, LogScan& out) const;
-  void rotateIfNeeded(const ConvoKey& key, ConvoSummary& c);
+  // May evict other chats, so ConvoSummary references taken earlier are stale after it.
+  void rotateIfNeeded(const ConvoKey& key);
 
   // Window management
   void loadWindow(const ConvoKey& key) const;

@@ -237,6 +237,9 @@ public:
   bool     uiDiscoverScanning();                 // non-const: reads the clock
   int      uiDiscoverResultCount() const { return _ui_discover_result_count; }
   bool     uiGetDiscoverResult(int i, UiDiscoverResult& out) const;
+  // Runs before the contacts file is rewritten. The message logs share its
+  // filesystem and hand space back first.
+  void uiSetContactsSaveHook(void (*fn)(void* ctx), void* ctx) { _mm_save_hook = fn; _mm_save_ctx = ctx; }
   // [/mishmesh]
 
   void uiSetMessageStore(mishmesh::MessageStore* s) { _mm_store = s; }
@@ -441,6 +444,8 @@ private:
   ContactInfo _ui_recent_adverts[UI_MAX_RECENT_ADVERTS];
   int _ui_recent_advert_count = 0;
   void uiNoteRecentAdvert(const ContactInfo& ci);   // called from onDiscoveredContact
+  void (*_mm_save_hook)(void* ctx) = nullptr;
+  void* _mm_save_ctx = nullptr;
   // [/mishmesh]
   // Shared by the CMD_* serial handlers and the UI hooks (DRY - see MyMesh.cpp).
   int  startContactRequest(ContactInfo& contact, uint8_t req_type, uint32_t& tag, uint32_t& est_timeout);

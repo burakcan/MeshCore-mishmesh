@@ -436,12 +436,16 @@ TEST_F(MSFix, EnsureSpaceDoesNotOrphanOnlyChatWhenLRU) {
   ASSERT_EQ(1, s.convoCount());
   ASSERT_EQ(1, s.messageCount(dm("SOLO!!")));
 
-  // SOLO!! is the only chat (and therefore the LRU). ensureSpace must return false
-  // (drop message) without removing the index slot - leaving count consistent with flash.
+  // SOLO!! is the only chat (and therefore the LRU). ensureSpace makes room by
+  // dropping its oldest message, without removing the index slot - leaving count
+  // consistent with flash.
   s.appendInbound(dm("SOLO!!"), "bbb", 3, 2, 2, 0, nullptr, 0);
 
   EXPECT_EQ(1, s.convoCount());                  // slot must survive
   EXPECT_EQ(1, s.messageCount(dm("SOLO!!")));    // count must match the one message on flash
+  MsgRecord r;
+  ASSERT_TRUE(s.getMessage(dm("SOLO!!"), 0, r));
+  EXPECT_EQ(0, memcmp(r.text, "bbb", 3));        // and it is the newer one
 }
 
 TEST_F(MSFix, RebuildIndexRestoresPreview) {

@@ -42,6 +42,8 @@ public:
 
   // ---- capacity ----
   uint32_t freeBytes() const override;
+  // Allocation unit of the filesystem, 0 where the platform does not say.
+  uint32_t blockSize() const;
 
 private:
   FILESYSTEM* _fs;

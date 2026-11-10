@@ -2721,6 +2721,9 @@ static bool save_filter(const ContactInfo& c) {
 }
 
 void MyMesh::saveContacts() {
+  // [mishmesh] the write below removes the file first, so it must not run short
+  if (_mm_save_hook) _mm_save_hook(_mm_save_ctx);
+  // [/mishmesh]
   _store->saveContacts(this, save_filter);
 }
 

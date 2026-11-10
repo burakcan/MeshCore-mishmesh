@@ -388,15 +388,18 @@ static int _countBlock(void* p, lfs_block_t /*block*/) {
 #endif
 
 uint32_t ExtraFsMsgBackend::freeBytes() const {
-  if (!_fs) return 0;
+  if (!_fs) return MSG_FREE_UNKNOWN;
   closeReadCache();   // lfs_traverse walks all blocks; don't leave a file open
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   lfs_t* lfs = _fs->_getFS();
-  if (!lfs || !lfs->cfg) return 0;
+  if (!lfs || !lfs->cfg) return MSG_FREE_UNKNOWN;
   _CountBlockCtx ctx;
   ctx.used  = 0;
   ctx.total = (lfs_size_t)lfs->cfg->block_count;
-  if (lfs_traverse(lfs, _countBlock, &ctx) < 0) return 0;
+  // _countBlock stops the walk itself once every block is counted: that is a
+  // full filesystem. Any other error says nothing about free space.
+  if (lfs_traverse(lfs, _countBlock, &ctx) < 0)
+    return ctx.used >= ctx.total ? 0 : MSG_FREE_UNKNOWN;
   uint32_t blockSize  = (uint32_t)lfs->cfg->block_size;
   uint32_t blockCount = (uint32_t)lfs->cfg->block_count;
   uint32_t usedBytes  = (uint32_t)ctx.used * blockSize;
@@ -404,6 +407,15 @@ uint32_t ExtraFsMsgBackend::freeBytes() const {
   return usedBytes < totalBytes ? totalBytes - usedBytes : 0;
 #else
   return 256u * 1024;   // fallback for non-nRF52 device builds
+#endif
+}
+
+uint32_t ExtraFsMsgBackend::blockSize() const {
+#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  lfs_t* lfs = _fs ? _fs->_getFS() : nullptr;
+  return lfs && lfs->cfg ? (uint32_t)lfs->cfg->block_size : 0;
+#else
+  return 0;
 #endif
 }
 

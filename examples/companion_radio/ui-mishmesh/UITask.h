@@ -202,6 +202,7 @@ public:
 
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
   void finishOnboardingToHome();   // called by onboardingDone callback
+  void makeRoomForContacts();      // called by contactsSaveHook, before a contacts save
 
   // one-shot boot splash drawn from setup() before any applet exists;
   // touches only the passed display, so it runs before begin().

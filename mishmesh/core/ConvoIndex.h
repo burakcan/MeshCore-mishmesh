@@ -20,8 +20,9 @@ public:
   ConvoSummary& ensure(const ConvoKey& key);
   // Remove the least-recently-active slot, report its key. Returns false if empty.
   bool evictLRU(ConvoKey& victimOut);
-  // Peek at the LRU key without removing the slot. Caller must check count() > 0 first.
-  ConvoKey lruKey() const;
+  // Least-recently-active slot that holds a log, `skip` (may be null) excluded.
+  // Slots without one are passed over: evicting them frees no flash. False if none.
+  bool lruWithLog(const ConvoKey* skip, ConvoKey& out) const;
   // Recency-sorted (newest first); same algorithm as MessageStore::getConvo.
   bool get(int rankIndex, ConvoSummary& out) const;
   // Remove a slot outright; used by deleteConvo (Task 11). False if absent.
