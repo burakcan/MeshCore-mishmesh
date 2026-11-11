@@ -30,8 +30,18 @@ void ListMenu::measure(int& w, int& h) const {
   h = _headerH + _rowH * (_model ? _model->count() : 0);
 }
 
+// Stacked height of the empty-state message, which may carry '\n' line breaks.
+static int emptyBlockHeight(const Canvas& c, const char* msg) {
+  int lh = c.lineHeight(fontBody()); if (lh <= 0) lh = c.fontHeight(fontBody());
+  int lines = 1; for (const char* p = msg; *p; ++p) if (*p == '\n') lines++;
+  return (lines - 1) * lh + c.fontHeight(fontBody());
+}
+
 int ListMenu::contentHeight(const Canvas& c) const {
-  return _headerH + (_rowH + rowHeightBonus(c)) * (_model ? _model->count() : 0);
+  int n = _model ? _model->count() : 0;
+  // Zero rows would size a modal to nothing: no message, but input still held.
+  if (n == 0) return _headerH + emptyBlockHeight(c, _emptyText ? _emptyText : "Empty") + 4;
+  return _headerH + (_rowH + rowHeightBonus(c)) * n;
 }
 
 // Kept for callers that need the row-based scroll offset (and tests).
@@ -135,8 +145,7 @@ void ListMenu::draw(Canvas& c, int x, int y, int w, int h) {
     // newline glyph, so a single-line draw would show a tofu block and clip). Draw
     // each line centered and stack them, centering the whole block vertically.
     int lh = view.lineHeight(fontBody()); if (lh <= 0) lh = view.fontHeight(fontBody());
-    int lines = 1; for (const char* p = msg; *p; ++p) if (*p == '\n') lines++;
-    int blockH = (lines - 1) * lh + view.fontHeight(fontBody());
+    int blockH = emptyBlockHeight(view, msg);
     int my = bodyTop + (h - bodyTop - blockH) / 2; if (my < bodyTop) my = bodyTop;
     const char* seg = msg;
     for (int li = 0; ; li++) {

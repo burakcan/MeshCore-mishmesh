@@ -8,6 +8,8 @@
 #include <mishmesh/applets/ContactsApplet.h>
 #include <mishmesh/applets/settings/MessagesSettingsPanel.h>
 #include <mishmesh/core/AppletHost.h>
+#include <mishmesh/core/Anim.h>
+#include <mishmesh/core/QuickReplyStore.h>
 #include "FakeDisplayDriver.h"
 
 TEST(MessagesService, FakeSmoke) {
@@ -1112,6 +1114,63 @@ TEST(MessageThread, OpenAtUnreadKeepsBadgeWhenLeavingEarly) {
   EXPECT_EQ(0u, svc.totalUnread());        // active convo: badge suppressed while open
   host.dispatch(mishmesh::InputEvent::Back);
   EXPECT_GT(svc.totalUnread(), 0u);        // left with unread still below the fold
+}
+
+
+// Opens the quick-replies picker from the action bar, renders one frame and
+// returns the modal's border rect (the only full-width-minus-16 rect on screen).
+static FakeDisplayDriver::Rect openQuickRepliesModal(FakeDisplayDriver& d, int nReplies) {
+  mishmesh::quickReplyStore().begin(nullptr);
+  for (int i = 0; i < nReplies; i++) mishmesh::quickReplyStore().add("On my way");
+  FakeMessagesService svc;
+  auto k = mishmesh::directKey((const uint8_t*)"ALICE!");
+  svc.store.appendInbound(k, "one", 3, 1, 1, 0, nullptr, 0);
+  mishmesh::AppletContext ctx; ctx.messages = &svc;
+  mishmesh::AppletHost host(&d, ctx);
+  host.setRoot(&mishmesh::messagesApplet());
+  mishmesh::messageThreadApplet().setTarget(k);
+  host.push(&mishmesh::messageThreadApplet());
+  host.loop(0);
+  host.dispatch(mishmesh::InputEvent::NavDown);    // Write
+  host.dispatch(mishmesh::InputEvent::NavDown);    // Quick
+  host.dispatch(mishmesh::InputEvent::Select);
+  d.rects.clear(); d.fills.clear();
+  host.loop(50);
+  FakeDisplayDriver::Rect box{0, 0, 0, 0};
+  for (auto& r : d.rects) if (r.w == d.width() - 16) box = r;
+  host.dispatch(mishmesh::InputEvent::Back);       // the applet is a shared singleton
+  mishmesh::quickReplyStore().begin(nullptr);
+  mishmesh::setReducedMotion(false);               // the e-ink host turned it on globally
+  return box;
+}
+
+static int glyphFillsInside(const FakeDisplayDriver& d, const FakeDisplayDriver::Rect& box) {
+  int n = 0;
+  for (auto& f : d.fills)
+    if (f.w < 20 && f.x > box.x && f.y > box.y && f.y + f.h < box.y + box.h) n++;
+  return n;
+}
+
+// With no quick replies saved the picker sized itself to zero rows: a 4px
+// sliver that showed no text but still swallowed every key until Back. On the
+// device that read as the chat freezing.
+TEST(MessageThread, EmptyQuickRepliesModalShowsHint) {
+  FakeDisplayDriver oled;
+  FakeDisplayDriver::Rect box = openQuickRepliesModal(oled, 0);
+  EXPECT_GE(box.h, 20) << "modal too short for the two-line hint";
+  EXPECT_GT(glyphFillsInside(oled, box), 20) << "hint text not drawn inside the modal";
+
+  FakeDisplayDriver eink(250, 122);
+  eink.eink = true;
+  box = openQuickRepliesModal(eink, 0);
+  EXPECT_GE(box.h, 20) << "modal too short for the two-line hint";
+  EXPECT_GT(glyphFillsInside(eink, box), 20) << "hint text not drawn inside the modal";
+}
+
+TEST(MessageThread, QuickRepliesModalSizedToRows) {
+  FakeDisplayDriver d;
+  FakeDisplayDriver::Rect box = openQuickRepliesModal(d, 2);
+  EXPECT_EQ(2 * 14 + 4, box.h);
 }
 
 int main(int argc, char** argv) {
