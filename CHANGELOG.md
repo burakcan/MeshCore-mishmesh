@@ -7,6 +7,15 @@ The release workflow reads the section matching the tag (`mishmesh-v<version>`)
 into the GitHub Release notes, so keep the newest version at the top and start
 its heading with `## v<version>`.
 
+## v1.7.0
+
+**Now built on meshcore v1.18.0** (was v1.17.1)
+
+- GAT562 30S Mesh Kit: Transmit power now shows the real output behind the amplifier, and the chip setting stops at 15, where the output already reaches 30 dBm (#37).
+- Fix: the GAT562 30S could sit at the boot screen for minutes when many direct messages were never acknowledged (#38).
+- Fix: on boards without the extra flash chip (GAT562 30S), message history could fill the storage and contacts could be lost. History now leaves room for them.
+- Fix: the quick replies picker looked frozen when no quick replies were saved.
+
 ## v1.6.1
 
 - Fix: GPS is no longer missing on the GAT562 30S Mesh Kit (#36).
