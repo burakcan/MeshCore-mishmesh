@@ -460,17 +460,22 @@ void ClockApplet::openTimerEditor() {
 }
 
 void ClockApplet::drawEditor(Canvas& c) {
-  // Title line over one row of digits - the frame has no reason to be taller.
-  Canvas box = drawModalChrome(c, 0, 3 + c.lineHeight(fontBody()) + 4
-                                       + c.fontHeight(fontNum()) + 3 + 4);
-  int w = box.width();
-  box.drawText(fontBody(), w / 2, 3, _editor.title, DisplayDriver::LIGHT, TextAlign::Center);
+  const int padding = 3;
+  const int digitsY = padding + c.lineHeight(fontBody()) + 4;
+  const int digitsH = c.fontHeight(fontNum());
+  const int underlineY = digitsY + digitsH + 1;
+  const int underlineH = 2;
+  const int hintY = underlineY + underlineH + 3;
+  const int height = hintY + c.fontHeight(fontCaption()) + padding;
+  Canvas box = drawModalChrome(c, 0, height);
+  const int w = box.width();
+  box.drawText(fontBody(), w / 2, padding, _editor.title, DisplayDriver::LIGHT, TextAlign::Center);
 
-  int nh = c.fontHeight(fontNum());
-  int ty = 3 + c.lineHeight(fontBody()) + 4;
   int colonW = box.textWidth(fontNum(), ":");
   int digitW = box.textWidth(fontNum(), "00");
-  int ampmW = box.textWidth(fontSubtitle(), "PM");   // fontNum has no letters
+  const int amWidth = box.textWidth(fontSubtitle(), "AM");
+  const int pmWidth = box.textWidth(fontSubtitle(), "PM");
+  const int ampmW = amWidth > pmWidth ? amWidth : pmWidth;
   int total = 0;
   for (int i = 0; i < _editor.nFields; i++) {
     total += i == _editor.ampmField ? ampmW : digitW;
@@ -481,26 +486,26 @@ void ClockApplet::drawEditor(Canvas& c) {
     int fw;
     if (i == _editor.ampmField) {
       fw = ampmW;
-      box.drawText(fontSubtitle(), x, ty + nh - c.fontHeight(fontSubtitle()),
-                   _editor.vals[i] ? "PM" : "AM", DisplayDriver::LIGHT);
+      box.drawText(fontSubtitle(), x + fw / 2, digitsY + digitsH - c.fontHeight(fontSubtitle()),
+                   _editor.vals[i] ? "PM" : "AM", DisplayDriver::LIGHT, TextAlign::Center);
     } else {
       fw = digitW;
       char v[4];
       snprintf(v, sizeof(v), "%02u", (unsigned)_editor.vals[i]);
-      box.drawText(fontNum(), x, ty, v, DisplayDriver::LIGHT);
+      box.drawText(fontNum(), x, digitsY, v, DisplayDriver::LIGHT);
     }
     if (i == _editor.sel)
-      box.fillRect(x, ty + nh + 1, fw, 2, DisplayDriver::LIGHT);   // active field
+      box.fillRect(x, underlineY, fw, underlineH, DisplayDriver::LIGHT);
     x += fw;
     if (i < _editor.nFields - 1) {
       if (i + 1 == _editor.ampmField) x += 6;
       else {
-        box.drawText(fontNum(), x + 2, ty, ":", DisplayDriver::LIGHT);
+        box.drawText(fontNum(), x + 2, digitsY, ":", DisplayDriver::LIGHT);
         x += colonW + 4;
       }
     }
   }
-  box.drawText(fontCaption(), w / 2, box.height() - c.lineHeight(fontCaption()) - 2,
+  box.drawText(fontCaption(), w / 2, hintY,
                "Select to save", DisplayDriver::LIGHT, TextAlign::Center);
 }
 
