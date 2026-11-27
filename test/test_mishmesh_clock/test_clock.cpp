@@ -597,6 +597,53 @@ TEST_F(ClockAppletFixture, TimerEditorSetsExactDuration) {
   EXPECT_EQ(3600u + 4 * 60u + 1u, clockService().tmDurationSecs());
 }
 
+TEST_F(ClockAppletFixture, OledTimeEditorsLeaveRoomForTheSaveHint) {
+  auto checkLayout = [&]() {
+    d.rects.clear();
+    d.fills.clear();
+    d.litPixels.clear();
+    render();
+    ASSERT_FALSE(d.rects.empty());
+    const auto box = d.rects.back();
+    const int hintY = box.y + box.h - 3 - Canvas(&d).fontHeight(fontCaption());
+
+    bool foundUnderline = false;
+    for (const auto& rect : d.fills) {
+      if (rect.h != 2 || rect.w < 8 || rect.y < box.y || rect.y >= box.y + box.h) continue;
+      EXPECT_GT(rect.x, box.x);
+      EXPECT_LT(rect.x + rect.w, box.x + box.w);
+      EXPECT_LT(rect.y + rect.h, hintY);
+      foundUnderline = true;
+    }
+    EXPECT_TRUE(foundUnderline);
+
+    FakeDisplayDriver hint;
+    Canvas expected(&hint);
+    expected.drawText(fontCaption(), box.x + box.w / 2, hintY,
+                      "Select to save", DisplayDriver::LIGHT, TextAlign::Center);
+    ASSERT_FALSE(hint.litPixels.empty());
+    for (const auto& pixel : hint.litPixels) EXPECT_TRUE(d.hasLit(pixel.first, pixel.second));
+  };
+
+  app.onInput(InputEvent::NavRight); // Timer tab
+  app.onInput(InputEvent::NavUp);
+  ASSERT_TRUE(app.editingTimerForTest());
+  checkLayout();
+  app.onInput(InputEvent::Back);
+
+  app.onInput(InputEvent::NavRight); // Pomodoro tab
+  app.onInput(InputEvent::NavRight); // Alarm tab
+  app.onInput(InputEvent::Select);
+  ASSERT_TRUE(app.editingAlarmForTest());
+  checkLayout();
+  app.onInput(InputEvent::Back);
+
+  svc.fmt12 = true;
+  app.onInput(InputEvent::Select);
+  app.onInput(InputEvent::NavLeft); // AM/PM field
+  checkLayout();
+}
+
 TEST_F(ClockAppletFixture, TimerEditorCancelKeepsDuration) {
   app.onInput(InputEvent::NavRight);     // Timer tab
   app.onInput(InputEvent::NavDown);      // open editor (either direction)
